@@ -30,16 +30,27 @@ Notes:
 `workdir` equal to the workspace or anywhere inside its tree counts as
 current; everything that escapes it is "outside" and needs confirmation.
 
-## Single approval gate (DSH's own approval is off)
+## Approval layering (DSH's own approval stays ON)
 
-- The plugin **auto-answers every DSH sandbox-escalation approval**
-  (`approval/request` whose reason starts with `escalate sandbox to`, for ANY
-  tool) with `allowed-once` (config `suppressDshApproval`, default
-  `true`). You will only ever see this plugin's own confirmation dialog.
-- ⚠️ Do NOT set the DSH/session approval policy to `never`: `never` rejects
-  every ask *before* listeners run, so this plugin's confirmation dialog
-  would be auto-rejected too. Keep the policy at `ask` and let the plugin
-  auto-answer DSH's prompts. (The ask dialog's text reminds you of this.)
+The plugin does **NOT** suppress DSH's own approval. It is hardcoded off
+(2026-08-22 user decision — there is **no** `suppressDshApproval` config).
+
+- **Shell commands** (`bash`/`pwsh`/`ssh_*`): policed by this plugin only —
+  whitelist exact-match (zero prompt) / system-dangerous (deny) / non-workspace
+  (ask via this plugin's 3-button dialog). A **whitelisted** command's own
+  in-tool sandbox escalation is auto-granted by callId correlation, so
+  whitelisted commands stay prompt-free end-to-end.
+- **Everything else** — file tools writing outside the workspace, any
+  `sandbox_permissions` escalation the plugin does not own: **DSH's original
+  approval still prompts the human**. The plugin is NOT a blanket
+  auto-approver; it only adds a command-level gate on top of DSH's approval.
+- **Whitelist writes are human-gated.** The dialog's 加入白名单 button is your
+  own click (= your approval). The model tools `dsh_approve_whitelist_add` /
+  `dsh_approve_whitelist_remove` **require a human approval prompt** before
+  touching `~/.dsh/dsh-approve.json` — an agent cannot whitelist autonomously.
+- ⚠️ Keep the DSH/session approval policy at `ask`. Setting it to `never`
+  rejects every ask *before* listeners run, so this plugin's confirmation
+  dialog would be auto-rejected too.
 
 ## Architecture (zero DSH-core changes)
 
@@ -71,8 +82,9 @@ two-button one):
 | 加入白名单 (add to whitelist) | button — the dialog `POST`s the exact command to `/dsh-approve/whitelist-add` (a route the plugin registers on the core `webServer` service) | persisted instantly, then this run is allowed; never blocked/asked again |
 | 允许一次 (Allow once) | button | this command runs now |
 
-Everything in the whitelist — added by config or by
-`dsh_approve_whitelist_add` — is exact-full-match and never intercepted again.
+Everything in the whitelist — added by the dialog button (your click) or by
+`dsh_approve_whitelist_add` (which requires your approval first) — is
+exact-full-match and never intercepted again.
 
 ## Install
 
@@ -144,15 +156,17 @@ content-hashes `lib/client.js` into a new `rev` — refresh the browser with a
 - `denyPatterns` — extra regex deny patterns on top of the built-in floor
   (invalid regexes are dropped with a log line).
 - `enforceDanger` — `false` disables the built-in danger floor (advanced).
-- `suppressDshApproval` — `false` keeps DSH's own sandbox-escalation prompts
-  instead of auto-answering them.
+  There is NO `suppressDshApproval` key: DSH's own approval is always kept on
+  (see "Approval layering").
 
 ## Model tools
 
-- `dsh_approve_status` — active state, whitelist, floors, suppression flag.
+- `dsh_approve_status` — active state, whitelist, danger floor.
 - `dsh_approve_whitelist_add(command)` — persist one exact command to the
-  whitelist (live). Use when the user says "加入白名单".
+  whitelist (live). **Requires human approval** — the agent raises a DSH
+  approval prompt and is denied unless you allow it.
 - `dsh_approve_whitelist_remove(command)` — remove one exact command.
+  **Also requires human approval.**
 
 ## Security notes
 
@@ -163,14 +177,14 @@ content-hashes `lib/client.js` into a new `rev` — refresh the browser with a
   block device, disk tools, power state, fork bomb, sudo mkfs/dd); rm, curl/sh,
   and chmod/chown root recursion were removed from it (2026-08-22) and can be
   re-added through `denyPatterns` if you want them hard-blocked again.
-- With `suppressDshApproval: true`, sandbox escalation is auto-granted for
-  every tool — the trade-off you asked for ("DSH approval off, one gate").
-  A whitelisted shell command's escalation ask is auto-granted via `callId`
-  correlation; every non-escalation ask this plugin does not own still
-  reaches the human.
-- Whitelist writes are atomic (tmp + rename) and only touch the exact
-  `whitelist` key; `denyPatterns`/`enforceDanger`/`suppressDshApproval` are
-  preserved.
+- DSH's own sandbox-escalation approval is **left intact** (hardcoded, no
+  config): file tools / escalations the plugin does not own still ask the
+  human. A whitelisted shell command's escalation ask is auto-granted via
+  `callId` correlation so whitelisted commands never re-prompt.
+- Whitelist writes are atomic (tmp + rename) and human-gated: the model tools
+  raise an approval prompt before touching `~/.dsh/dsh-approve.json`; only the
+  dialog's 加入白名单 button (your click) writes directly. `denyPatterns` /
+  `enforceDanger` are preserved on write.
 
 ## License
 

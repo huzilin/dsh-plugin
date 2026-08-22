@@ -21,10 +21,14 @@ DSH 命令白名单插件，基于 DSH 的 `tools/pre-execute` 与 `approval/req
 
 “当前目录” = 会话工作区（`agent.session.header.cwd`）。`workdir` 等于工作区或位于其目录树内（子目录）都算“当前”；越过工作区树之外的才叫“非当前目录”，需要确认。
 
-## 唯一审批闸门（DSH 自身审批已关闭）
+## 审批分层（DSH 自身审批保持开启）
 
-- 插件会**自动代答所有 DSH 沙箱升级审批**（`approval/request` 中 reason 以 `escalate sandbox to` 开头的请求，任意工具），直接返回 `allowed-once`（配置项 `suppressDshApproval`，默认 `true`）。你只会看到本插件的确认框。
-- ⚠️ 不要把 DSH/会话审批策略设为 `never`：`never` 会在任何监听器运行**之前**就拒绝所有请求，本插件的确认框也会被一并自动拒绝。请保持策略为 `ask`，让插件代答 DSH 的提示（弹框文案里会提醒这一点）。
+插件**不代答 DSH 自身审批** —— 这是硬编码的（2026-08-22 用户决定，**没有** `suppressDshApproval` 配置项）。
+
+- **Shell 命令**（`bash`/`pwsh`/`ssh_*`）：只由本插件把关 —— 白名单精确匹配（零提示）/ 系统级危险（拒绝）/ 非当前目录（弹本插件的三按钮框）。被**白名单**的命令自身沙箱升级按 callId 关联自动放行，白名单命令全程不再询问。
+- **其余一切**（文件工具写工作区外、本插件不拥有的任何 `sandbox_permissions` 升级）：**DSH 原有审批照常弹给你**。插件不是一刀切的自动放行器，只在其上叠加命令级闸门。
+- **白名单写入必须经你审批**。弹框「加入白名单」按钮是你亲手点击（= 你的授权）；模型工具 `dsh_approve_whitelist_add` / `dsh_approve_whitelist_remove` 在改动 `~/.dsh/dsh-approve.json` **之前会先弹审批框** —— agent 不能自主写白名单。
+- ⚠️ 保持 DSH/会话审批策略为 `ask`。设为 `never` 会在监听器运行前拒绝所有请求，本插件的确认框也会被一并自动拒绝。
 
 ## 架构（零内核改动）
 
@@ -49,7 +53,7 @@ DSH 命令白名单插件，基于 DSH 的 `tools/pre-execute` 与 `approval/req
 | 加入白名单 | 弹框按钮（直连插件路由） | 精确命令**立即落盘**，本次放行，以后永不拦截/不再询问 |
 | 允许一次 | 按钮 | 本次放行该命令 |
 
-白名单（无论手动编辑还是 `dsh_approve_whitelist_add` 添加）都是**完整相同**精确匹配，加入后不再被拦截。
+白名单（弹框按钮你亲手添加，或 `dsh_approve_whitelist_add` **经你审批后**添加）都是**完整相同**精确匹配，加入后不再被拦截。
 
 ## 安装
 
@@ -106,21 +110,20 @@ cd ~/.dsh/profiles/web && pnpm add link:/Users/huzilin/workdir/dsh-plugin/packag
 
 - `whitelist` —— 精确完整命令字符串，任何目录都自动放行（配置**每次判定都重新读取**，手动编辑与运行时添加都即时生效，无需重启）。
 - `denyPatterns` —— 在内置危险兜底之上的额外正则黑名单（非法正则会丢弃并记日志）。
-- `enforceDanger` —— 设为 `false` 关闭内置危险兜底（高级）。
-- `suppressDshApproval` —— 设为 `false` 则保留 DSH 自身的沙箱升级弹框，不再自动代答。
+- `enforceDanger` —— 设为 `false` 关闭内置危险兜底（高级）。**没有** `suppressDshApproval` 键：DSH 自身审批始终保留（见「审批分层」）。
 
 ## 模型工具
 
-- `dsh_approve_status` —— 当前状态、白名单、危险兜底、代答开关。
-- `dsh_approve_whitelist_add(command)` —— 把一条精确命令写入白名单（即时落盘）。用户说「加入白名单」时使用。
-- `dsh_approve_whitelist_remove(command)` —— 移除一条精确命令。
+- `dsh_approve_status` —— 当前状态、白名单、危险兜底。
+- `dsh_approve_whitelist_add(command)` —— 把一条精确命令写入白名单（即时落盘）。**必须先经你审批**：agent 发起时会弹 DSH 审批框，未获批准则拒绝写入。
+- `dsh_approve_whitelist_remove(command)` —— 移除一条精确命令。**同样必须先经你审批**。
 
 ## 安全说明
 
 - 拒绝是 fail-closed：deny/ask 用 `prepend: true` 短路 `tools/pre-execute` 瀑布，且后续任何单调守卫仍可拒绝。
 - 危险兜底只保留系统级破坏类（mkfs、dd 写裸盘、分区工具、电源状态、fork bomb、sudo mkfs/dd）；`rm`/`curl`/`sh`/`chmod -R /`、`chown -R /` 已于 2026-08-22 移出内置兜底，如需重新硬拦截请在 `denyPatterns` 里加正则。
-- `suppressDshApproval: true` 时对任意工具自动放行沙箱升级 —— 这是你要的取舍（「关 DSH 审批、单闸门」）。白名单 shell 命令的升级询问按 callId 关联自动放行；其余非升级询问仍交给人工。
-- 白名单写入是原子的（tmp + rename），只动 `whitelist` 键，`denyPatterns`/`enforceDanger`/`suppressDshApproval` 原样保留。
+- DSH 自身沙箱升级审批**保持开启**（硬编码，无配置项）：插件不拥有的升级（文件工具等）照常弹人工确认；被白名单的 shell 命令升级询问按 callId 关联自动放行，白名单命令不再重复弹框。
+- 白名单写入是原子的（tmp + rename）且**必须经人工审批**：模型工具先弹审批框再动 `~/.dsh/dsh-approve.json`；只有弹框「加入白名单」按钮（你亲自点击）直接写入。`denyPatterns`/`enforceDanger` 写入时原样保留。
 
 ## License
 

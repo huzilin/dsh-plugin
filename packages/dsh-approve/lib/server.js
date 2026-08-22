@@ -27,7 +27,6 @@ import { decide, classifyCommand, SHELL_TOOLS, REMOTE_TOOLS, DANGEROUS_PATTERNS 
 
 const CONFIG_PATH = join(homedir(), '.dsh', 'dsh-approve.json')
 const MOUNT_MARKER = join(homedir(), '.dsh', 'dsh-approve.mounted')
-const ESCALATION_PREFIX = 'escalate sandbox to'
 
 /** Compiled deny patterns: the built-in floor plus the user's extras. */
 function compileDenyPatterns(extra = []) {
@@ -41,15 +40,14 @@ function compileDenyPatterns(extra = []) {
 
 /** Load + validate the config file (re-read per decision → edits apply immediately). */
 function freshConfig() {
-  const fallback = { whitelist: [], denyPatterns: [], enforceDanger: true, suppressDshApproval: true, denyPatternsCompiled: compileDenyPatterns() }
+  const fallback = { whitelist: [], denyPatterns: [], enforceDanger: true, denyPatternsCompiled: compileDenyPatterns() }
   try {
     if (!existsSync(CONFIG_PATH)) return fallback
     const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))
     const whitelist = (Array.isArray(raw.whitelist) ? raw.whitelist : []).filter(e => typeof e === 'string' && e.trim() !== '').map(e => e.trim())
     const denyPatterns = Array.isArray(raw.denyPatterns) ? raw.denyPatterns : []
     const enforceDanger = raw.enforceDanger !== false
-    const suppressDshApproval = raw.suppressDshApproval !== false
-    return { whitelist, denyPatterns, enforceDanger, suppressDshApproval, denyPatternsCompiled: compileDenyPatterns(denyPatterns) }
+    return { whitelist, denyPatterns, enforceDanger, denyPatternsCompiled: compileDenyPatterns(denyPatterns) }
   } catch (e) {
     console.error(`[dsh-approve] failed to read ${CONFIG_PATH}: ${String(e?.message ?? e)} — defaults (fail closed)`)
     return fallback
@@ -118,7 +116,7 @@ export default {
           try { const p = await readBody(req); const cmd = typeof p.command === 'string' ? p.command.trim() : ''; const wl = whitelistRemove(cmd); json(res, 200, { ok: true, command: cmd, whitelist: wl, whitelistCount: wl.length }) } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }) }
         }})
         ws.register({ kind: 'exact', path: '/dsh-approve/status', handler: async (_req, res) => {
-          try { const st = freshConfig(); json(res, 200, { active: true, plugin: 'dsh-approve', configPath: CONFIG_PATH, whitelist: st.whitelist, whitelistCount: st.whitelist.length, enforceDanger: st.enforceDanger, suppressDshApproval: st.suppressDshApproval }) } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }) }
+          try { const st = freshConfig(); json(res, 200, { active: true, plugin: 'dsh-approve', configPath: CONFIG_PATH, whitelist: st.whitelist, whitelistCount: st.whitelist.length, enforceDanger: st.enforceDanger }) } catch (e) { json(res, 500, { ok: false, error: String(e?.message ?? e) }) }
         }})
         console.log('[dsh-approve] HTTP routes registered: /dsh-approve/*')
         routesRegistered = true
@@ -144,8 +142,10 @@ export default {
     }, { prepend: true })
 
     ctx.on('approval/request', async (req, next) => {
-      const cfg = freshConfig()
-      if (req && typeof req.reason === 'string' && req.reason.startsWith(ESCALATION_PREFIX) && cfg.suppressDshApproval) return 'allowed-once'
+      // Only grant an approval when the call was ALREADY user-whitelisted in
+      // pre-execute (its own in-tool sandbox escalation then never re-prompts).
+      // DSH's own sandbox-escalation approval is otherwise left intact: the
+      // plugin does NOT suppress it (hardcoded off since 2026-08-22).
       if (req && SHELL_TOOLS.has(req.toolName) && req.callId !== undefined && whitelistedCalls.has(req.callId)) { whitelistedCalls.delete(req.callId); return 'allowed-once' }
       return next()
     }, { prepend: true })
@@ -155,14 +155,28 @@ export default {
     /* ---- model tools ---- */
     const registerTool = (def) => { try { ctx.tools.register(def) } catch (e) { console.warn(`[dsh-approve] tool "${def.name}" failed: ${String(e?.message ?? e)}`) } }
     const jsonOutput = () => ({ schema: { type: 'object', additionalProperties: true }, render(_, v) { return [{ type: 'text', text: JSON.stringify(v, null, 2) }] } })
-    registerTool({ name: 'dsh_approve_status', description: 'Report dsh-approve state: whitelist entries, danger floor, suppression flag.', parameters: { type: 'object', properties: {} }, output: jsonOutput(), async execute() { const st = freshConfig(); return { active: true, plugin: 'dsh-approve', configPath: CONFIG_PATH, whitelist: st.whitelist, whitelistCount: st.whitelist.length, enforceDanger: st.enforceDanger, suppressDshApproval: st.suppressDshApproval } } })
-    registerTool({ name: 'dsh_approve_whitelist_add', description: 'Append ONE exact shell command to the whitelist (persisted, live).', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The exact full command string.' } }, required: ['command'] }, output: jsonOutput(), async execute(args) { const cmd = typeof args?.command === 'string' ? args.command.trim() : ''; if (!cmd) return { ok: false, error: 'command must be a non-empty string' }; const wl = whitelistAdd(cmd); return { ok: true, command: cmd, whitelist: wl, whitelistCount: wl.length } } })
-    registerTool({ name: 'dsh_approve_whitelist_remove', description: 'Remove ONE exact shell command from the whitelist (persisted, live).', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The exact full command string.' } }, required: ['command'] }, output: jsonOutput(), async execute(args) { const cmd = typeof args?.command === 'string' ? args.command.trim() : ''; if (!cmd) return { ok: false, error: 'command must be a non-empty string' }; const wl = whitelistRemove(cmd); return { ok: true, command: cmd, whitelist: wl, whitelistCount: wl.length } } })
+    registerTool({ name: 'dsh_approve_status', description: 'Report dsh-approve state: whitelist entries, danger floor.', parameters: { type: 'object', properties: {} }, output: jsonOutput(), async execute() { const st = freshConfig(); return { active: true, plugin: 'dsh-approve', configPath: CONFIG_PATH, whitelist: st.whitelist, whitelistCount: st.whitelist.length, enforceDanger: st.enforceDanger } } })
+        const requireHumanApproval = async (exec, action, cmd) => {
+      const approval = typeof ctx.get === 'function' ? ctx.get('approval') : undefined
+      const agent = exec && exec.agent
+      if (!approval || !agent) return { ok: false, error: '无审批通道/无 agent —— 白名单写入须经用户审批，已拒绝' }
+      const outcome = await approval.request({
+        agent,
+        toolName: 'dsh-approve',
+        callId: exec ? exec.callId : undefined,
+        signal: exec ? exec.signal : undefined,
+        reason: `dsh-approve：需要你确认${action}白名单（精确完整匹配）：\n命令：${cmd}`,
+      })
+      if (outcome !== 'allowed-once') return { ok: false, error: '未获用户审批，拒绝写入白名单' }
+      return undefined
+    }
+    registerTool({ name: 'dsh_approve_whitelist_add', description: 'Append ONE exact shell command to the whitelist — REQUIRES human approval (agent cannot whitelist autonomously).', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The exact full command string.' } }, required: ['command'] }, output: jsonOutput(), async execute(args, exec) { const cmd = typeof args?.command === 'string' ? args.command.trim() : ''; if (!cmd) return { ok: false, error: 'command must be a non-empty string' }; const denied = await requireHumanApproval(exec, '将命令加入', cmd); if (denied) return denied; const wl = whitelistAdd(cmd); return { ok: true, command: cmd, whitelist: wl, whitelistCount: wl.length } } })
+    registerTool({ name: 'dsh_approve_whitelist_remove', description: 'Remove ONE exact shell command from the whitelist — REQUIRES human approval.', parameters: { type: 'object', properties: { command: { type: 'string', description: 'The exact full command string.' } }, required: ['command'] }, output: jsonOutput(), async execute(args, exec) { const cmd = typeof args?.command === 'string' ? args.command.trim() : ''; if (!cmd) return { ok: false, error: 'command must be a non-empty string' }; const denied = await requireHumanApproval(exec, '将命令移出', cmd); if (denied) return denied; const wl = whitelistRemove(cmd); return { ok: true, command: cmd, whitelist: wl, whitelistCount: wl.length } } })
 
     /* ---- mount marker + boot log ---- */
     writeMountMarker()
     ensureRoutes()
     const cfg = freshConfig()
-    console.log(`[dsh-approve] mounted (${cfg.whitelist.length} whitelist entries, enforceDanger=${cfg.enforceDanger}, suppressDshApproval=${cfg.suppressDshApproval})`)
+    console.log(`[dsh-approve] mounted (${cfg.whitelist.length} whitelist entries, enforceDanger=${cfg.enforceDanger})`)
   },
 }
