@@ -25,7 +25,7 @@ dsh-plugin/
   `exports["./client"]` 指向它。构建用
   `/Users/huzilin/workdir/deepseek-harness/node_modules/.bin/tsdown`（DSH 客户端 face）。
 
-## 部署到运行中的 DSH（走远端，不用本地链接）
+## 部署到 DSH
 
 ```sh
 dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-name>'
@@ -43,7 +43,7 @@ dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-n
 
 插件各自的安装/配置详见 `packages/<plugin-name>/README.md`。
 
-## 当前插件
+## dsh-approve
 
 - [dsh-approve](packages/dsh-approve/) —— DSH 命令白名单：非当前目录命令需确认
   （弹框三动作：拒绝 / 加入白名单 / 允许一次），白名单精确匹配后永不拦截。
