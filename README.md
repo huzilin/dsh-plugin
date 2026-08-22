@@ -38,10 +38,17 @@ dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-n
 5. 客户端半区变更后**必须清浏览器缓存刷新**（rev 变化在线生效，但旧 index.html
    会持续加载旧 boot graph；Pake 桌面壳尤甚，网页端无痕窗口最稳）。
 
+本机若 `dsh` 不在 PATH，在 deepseek-harness 检出内用 `pnpm dsh` 等价调用（如
+`pnpm dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-name>'`）。
+
 插件各自的安装/配置详见 `packages/<plugin-name>/README.md`。
 
 ## 当前插件
 
 - [dsh-approve](packages/dsh-approve/) —— DSH 命令白名单：非当前目录命令需确认
-  （弹框三动作：拒绝 / 加入白名单 / 允许一次），白名单精确匹配后永不拦截；
-  DSH 自身审批由插件代答、单闸门。
+  （弹框三动作：拒绝 / 加入白名单 / 允许一次），白名单精确匹配后永不拦截。
+  安装：
+  ```sh
+  dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/dsh-approve'
+  ```
+  注意：DSH 自身审批（沙箱升级等）**保持开启兜底**；白名单写入**必须经用户审批**（agent 不能自主写）。
