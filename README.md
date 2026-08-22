@@ -25,17 +25,17 @@ dsh-plugin/
   `exports["./client"]` 指向它。构建用
   `/Users/huzilin/workdir/deepseek-harness/node_modules/.bin/tsdown`（DSH 客户端 face）。
 
-## 部署到运行中的 DSH
+## 部署到运行中的 DSH（走远端，不用本地链接）
 
-1. `cd ~/.dsh/profiles/web && pnpm add link:/Users/huzilin/workdir/dsh-plugin/packages/<plugin-name>`
-2. 在 `~/.dsh/profiles/web/cordis.patch.yml` 加 insert 行：
-   ```yaml
-   - insert:
-       - id: <plugin-name>
-         name: '<plugin-name>'
-   ```
-3. 改完**冷启动**（不要热插）：kill 3080 后重跑 `dsh web`。
-4. 客户端半区变更后**必须清浏览器缓存刷新**（rev 变化在线生效，但旧 index.html
+```sh
+dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-name>'
+```
+
+1. 依赖以真实包安装（无本地符号链接），`dsh plugin` 自动把它加入 profile 的 bundle 层；
+2. 在 `~/.dsh/profiles/web/cordis.patch.yml` **保持 `[]`**（bundle 层已挂载，用户层再加会双挂载）；
+3. 改完**冷启动**（不要热插）：kill 3080 后重跑 `dsh web`；
+4. 本地修改流程：commit → push → `cd ~/.dsh/profiles/web && pnpm update dsh-approve` → 重启；
+5. 客户端半区变更后**必须清浏览器缓存刷新**（rev 变化在线生效，但旧 index.html
    会持续加载旧 boot graph；Pake 桌面壳尤甚，网页端无痕窗口最稳）。
 
 插件各自的安装/配置详见 `packages/<plugin-name>/README.md`。

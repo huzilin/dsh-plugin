@@ -86,34 +86,27 @@ Everything in the whitelist — added by the dialog button (your click) or by
 `dsh_approve_whitelist_add` (which requires your approval first) — is
 exact-full-match and never intercepted again.
 
-## Install
+## Install (from the GitHub monorepo)
 
 ```sh
-dsh plugin --profile web add link:/Users/huzilin/workdir/dsh-plugin/packages/dsh-approve
+dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/dsh-approve'
 ```
 
-Restart `dsh web` (this registers the package as a profile bundle layer).
+This installs the package from the remote repo as a real dependency (no local
+symlink), and `dsh plugin` automatically appends it to the profile's bundle
+layers. Then restart `dsh web` **once**:
 
-**User-layer (no pnpm) install** — ⚠️ known caveat: a running `dsh web`
-watches the profile's `cordis.patch.yml`, but live-INSERTING a new plugin row
-into the hot-reloaded user layer currently wedges the running host's tool
-pipeline (`Cannot read properties of undefined (reading 'kind')`). Do NOT
-hot-insert: write the row, then restart `dsh web` once with the row present
-at boot (cold mount is fine). Install steps:
-
-```sh
-cd ~/.dsh/profiles/web && pnpm add link:/Users/huzilin/workdir/dsh-plugin/packages/dsh-approve
-```
-
-`~/.dsh/profiles/web/cordis.patch.yml`:
-
-```yaml
-- insert:
-    - id: dsh-approve
-      name: 'dsh-approve'
-```
+- The host half mounts via the **bundle layer** (`dsh.profile.bundles`), so
+  **no user-layer `cordis.patch.yml` insert row is needed** — keep that file
+  as `[]` to avoid double-mounting.
+- The client half is discovered from `dsh.client` in package.json and served
+  as `/plugins/dsh-approve/client.js`.
 
 Mount marker (created once on apply, for verification): `~/.dsh/dsh-approve.mounted`.
+
+> Updating after a local push: `cd ~/.dsh/profiles/web && pnpm update dsh-approve`,
+> then restart `dsh web` (the client bundle rev changes need a cache-cleared
+> browser reload).
 
 ## Build (client half)
 

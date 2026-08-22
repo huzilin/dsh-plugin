@@ -55,29 +55,20 @@ DSH 命令白名单插件，基于 DSH 的 `tools/pre-execute` 与 `approval/req
 
 白名单（弹框按钮你亲手添加，或 `dsh_approve_whitelist_add` **经你审批后**添加）都是**完整相同**精确匹配，加入后不再被拦截。
 
-## 安装
+## 安装（从 GitHub monorepo）
 
 ```sh
-dsh plugin --profile web add link:/Users/huzilin/workdir/dsh-plugin/packages/dsh-approve
+dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/dsh-approve'
 ```
 
-重启 `dsh web`（该方式把插件注册为 profile 的 bundle 层）。
+从远端仓库安装为真实依赖（**不再用本地符号链接**），`dsh plugin` 会自动把它加入 profile 的 bundle 层。随后**重启一次** `dsh web`：
 
-**用户层安装（不依赖 pnpm）** —— ⚠️ 注意：运行中的 `dsh web` 虽然会监听 profile 的 `cordis.patch.yml`，但把新插件行**热插入**用户层目前会把宿主工具管线打崩（`Cannot read properties of undefined (reading 'kind')`）。不要热插：先写入这行，再带着它重启一次 `dsh web`（冷启动挂载没有问题）。步骤：
-
-```sh
-cd ~/.dsh/profiles/web && pnpm add link:/Users/huzilin/workdir/dsh-plugin/packages/dsh-approve
-```
-
-`~/.dsh/profiles/web/cordis.patch.yml`：
-
-```yaml
-- insert:
-    - id: dsh-approve
-      name: 'dsh-approve'
-```
+- 宿主半区经 **bundle 层**（`dsh.profile.bundles`）挂载 —— **不需要**在 `cordis.patch.yml` 用户层里加 insert 行，保持该文件为 `[]` 以免双挂载。
+- 客户端半区由 `dsh.client` 声明被发现，以 `/plugins/dsh-approve/client.js` 提供。
 
 挂载标记（apply 时写入一次，用于验证是否加载）：`~/.dsh/dsh-approve.mounted`。
+
+> 本地 push 后更新：`cd ~/.dsh/profiles/web && pnpm update dsh-approve`，再重启 `dsh web`（客户端 rev 变化需清缓存刷新浏览器）。
 
 ## 构建（客户端半区）
 
