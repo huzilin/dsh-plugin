@@ -1,0 +1,49 @@
+{
+  "name": "dsh-approve",
+  "version": "0.1.0",
+  "description": "DSH command whitelist plugin: non-workspace commands need confirmation unless they exactly match the whitelist; dangerous commands (rm, mkfs, ...) are always denied. · DSH 命令白名单插件：非当前目录命令需确认（精确白名单命中则放行），危险命令一律拒绝。",
+  "type": "module",
+  "main": "lib/server.js",
+  "exports": {
+    ".": {
+      "default": "./lib/server.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./policy": {
+      "default": "./lib/policy.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "whitelist",
+    "approval",
+    "security"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "immediately": true
+    }
+  },
+  "scripts": {
+    "test": "node --test test/policy.test.js"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

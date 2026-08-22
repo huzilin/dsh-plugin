@@ -1,0 +1,7 @@
+# dsh-approve bundle patch.
+# Activate with `dsh plugin --profile web add link:/Users/huzilin/workdir/dsh-approve`
+# (or add the same row to the profile's own cordis.patch.yml user layer for a
+# live HMR mount — the package must then be resolvable from the profile).
+- insert:
+    - id: dsh-approve
+      name: 'dsh-approve'
