@@ -378,6 +378,7 @@ function layoutGraph(tickets: ParsedTicket[]) {
 
 function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
   const [sel, setSel] = useState<number | null>(null)
+  const [hover, setHover] = useState<number | null>(null)
   const L = useMemo(() => layoutGraph(tickets), [tickets])
   const { pos, sidePos, edges, W, H, startCapY, endCapY, endY } = L
   const focus = tickets.find(t => ticketNum(t.file) === sel) ?? null
@@ -391,7 +392,7 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, overflow: 'hidden' }}>
       <div style={{ padding: '12px 16px 8px', display: 'flex', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Relation</span>
-        <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · click node to highlight edges</span>
+        <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · hover / click node to highlight edges</span>
       </div>
       <div style={{ flex: 1, overflow: 'auto', position: 'relative', cursor: 'default' }} onClick={() => setSel(null)}>
         <div style={{ position: 'relative', width: W, height: H, margin: '0 auto' }}>
@@ -399,7 +400,7 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
           {[...pos.entries()].map(([n, p]) => {
             const t = tickets.find(x => ticketNum(x.file) === n)!
             return (
-              <div key={n} style={{ position: 'absolute', display: 'flex', background: CARD, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', zIndex: 3, boxShadow: sel === n ? '0 4px 20px rgba(0,0,0,.5), 0 0 0 2px #fff3' : '0 3px 12px rgba(0,0,0,.3)', border: `1px solid ${BORDER}`, width: NODE_W, height: NODE_H, left: p.x, top: p.y }} onClick={e => { e.stopPropagation(); setSel(n) }}>
+              <div key={n} style={{ position: 'absolute', display: 'flex', background: CARD, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', zIndex: 3, boxShadow: sel === n || hover === n ? '0 4px 20px rgba(0,0,0,.5), 0 0 0 2px #fff3' : '0 3px 12px rgba(0,0,0,.3)', border: `1px solid ${BORDER}`, width: NODE_W, height: NODE_H, left: p.x, top: p.y }} onClick={e => { e.stopPropagation(); setSel(n) }} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
                 <span style={{ width: 4, flexShrink: 0, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, background: DOT[displayStatus(t)] }} />
                 <div style={{ padding: '7px 8px 7px 8px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -415,7 +416,7 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
           {[...sidePos.entries()].map(([n, p]) => {
             const t = tickets.find(x => ticketNum(x.file) === n)!
             return (
-              <div key={n} style={{ position: 'absolute', display: 'flex', background: CARD_DARK, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', zIndex: 3, boxShadow: '0 2px 8px rgba(0,0,0,.3)', border: '2px dashed #383860', width: NODE_W, height: NODE_H, left: p.x, top: p.y }} onClick={e => { e.stopPropagation(); setSel(n) }}>
+              <div key={n} style={{ position: 'absolute', display: 'flex', background: CARD_DARK, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', zIndex: 3, boxShadow: '0 2px 8px rgba(0,0,0,.3)', border: '2px dashed #383860', width: NODE_W, height: NODE_H, left: p.x, top: p.y }} onClick={e => { e.stopPropagation(); setSel(n) }} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
                 <span style={{ width: 4, flexShrink: 0, background: '#383860' }} />
                 <div style={{ padding: '7px 8px 7px 8px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -431,20 +432,21 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
           <div style={{ position: 'absolute', left: W / 2 - CAP_W / 2, top: endCapY, display: 'flex', alignItems: 'center', justifyContent: 'center', width: CAP_W, height: CAP_H, borderRadius: 999, background: CARD, border: `2px solid ${BORDER}`, fontSize: 12, fontWeight: 800, color: TEXT, boxShadow: '0 2px 10px rgba(0,0,0,.4)' }}>End</div>
           <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 1 }}>
             <defs>
-              <marker id="da" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#666688" /></marker>
+              <marker id="da" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#454570" /></marker>
               <marker id="da2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={TEXT} /></marker>
             </defs>
             {edges.map(e => {
               const aPos = e.from === -1 ? { cx: W / 2, y: startCapY } : pos.get(e.from)
               const bPos = e.to === -2 ? { cx: W / 2, y: endY } : (pos.get(e.to) ?? sidePos.get(e.to))
               if (!aPos || !bPos) return null
-              const connected = sel === null || conn(sel).has(e.key)
+              const active = hover ?? sel
+              const connected = active === null || conn(active).has(e.key)
               const sx = aPos.cx, sy = e.from === -1 ? startCapY + CAP_H : aPos.y + NODE_H
               const ex = e.to === -2 ? W / 2 : bPos.cx
               const ey = e.to === -2 ? endY : (e.dashed ? bPos.y : bPos.y + NODE_H / 2)
-              const sw = e.dashed ? 1.4 : connected ? 3 : 1.6
-              const sc = e.dashed ? '#888' : connected ? TEXT : '#666688'
-              return <path key={e.key} d={mk(sx, sy, ex, ey)} fill="none" stroke={sc} strokeWidth={sw} strokeDasharray={e.dashed ? '5 4' : undefined} opacity={sel !== null && !connected ? 0.5 : 1} markerEnd={connected && !e.dashed ? 'url(#da2)' : e.dashed ? undefined : 'url(#da)'} style={{ transition: 'stroke-width .18s, opacity .18s' }} />
+              const sw = e.dashed ? 1.4 : connected ? 3 : 1.4
+              const sc = e.dashed ? '#666688' : connected ? TEXT : '#454570'
+              return <path key={e.key} d={mk(sx, sy, ex, ey)} fill="none" stroke={sc} strokeWidth={sw} strokeDasharray={e.dashed ? '5 4' : undefined} opacity={active !== null && !connected ? 0.45 : 1} markerEnd={connected && !e.dashed ? 'url(#da2)' : e.dashed ? undefined : 'url(#da)'} style={{ transition: 'stroke-width .18s, opacity .18s' }} />
             })}
           </svg>
         </div>

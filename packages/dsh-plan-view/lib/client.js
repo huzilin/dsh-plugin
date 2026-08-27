@@ -1112,6 +1112,7 @@ window.__ModuleLoader__.load({
 		}
 		function ViewD({ tickets, planDir, scope }) {
 			const [sel, setSel] = (0, react.useState)(null);
+			const [hover, setHover] = (0, react.useState)(null);
 			const { pos, sidePos, edges, W, H, startCapY, endCapY, endY } = (0, react.useMemo)(() => layoutGraph(tickets), [tickets]);
 			const focus = tickets.find((t) => ticketNum(t.file) === sel) ?? null;
 			const conn = (n) => {
@@ -1147,7 +1148,7 @@ window.__ModuleLoader__.load({
 								fontSize: 12,
 								color: "#888"
 							},
-							children: [tickets.length, " tickets · click node to highlight edges"]
+							children: [tickets.length, " tickets · hover / click node to highlight edges"]
 						})]
 					}),
 					(0, react_jsx_runtime.jsx)("div", {
@@ -1197,7 +1198,7 @@ window.__ModuleLoader__.load({
 											overflow: "hidden",
 											cursor: "pointer",
 											zIndex: 3,
-											boxShadow: sel === n ? "0 4px 20px rgba(0,0,0,.5), 0 0 0 2px #fff3" : "0 3px 12px rgba(0,0,0,.3)",
+											boxShadow: sel === n || hover === n ? "0 4px 20px rgba(0,0,0,.5), 0 0 0 2px #fff3" : "0 3px 12px rgba(0,0,0,.3)",
 											border: `1px solid ${BORDER}`,
 											width: NODE_W,
 											height: NODE_H,
@@ -1208,6 +1209,8 @@ window.__ModuleLoader__.load({
 											e.stopPropagation();
 											setSel(n);
 										},
+										onMouseEnter: () => setHover(n),
+										onMouseLeave: () => setHover(null),
 										children: [(0, react_jsx_runtime.jsx)("span", { style: {
 											width: 4,
 											flexShrink: 0,
@@ -1298,6 +1301,8 @@ window.__ModuleLoader__.load({
 											e.stopPropagation();
 											setSel(n);
 										},
+										onMouseEnter: () => setHover(n),
+										onMouseLeave: () => setHover(null),
 										children: [(0, react_jsx_runtime.jsx)("span", { style: {
 											width: 4,
 											flexShrink: 0,
@@ -1402,7 +1407,7 @@ window.__ModuleLoader__.load({
 										orient: "auto-start-reverse",
 										children: (0, react_jsx_runtime.jsx)("path", {
 											d: "M 0 0 L 10 5 L 0 10 z",
-											fill: "#666688"
+											fill: "#454570"
 										})
 									}), (0, react_jsx_runtime.jsx)("marker", {
 										id: "da2",
@@ -1426,19 +1431,20 @@ window.__ModuleLoader__.load({
 											y: endY
 										} : pos.get(e.to) ?? sidePos.get(e.to);
 										if (!aPos || !bPos) return null;
-										const connected = sel === null || conn(sel).has(e.key);
+										const active = hover ?? sel;
+										const connected = active === null || conn(active).has(e.key);
 										const sx = aPos.cx, sy = e.from === -1 ? startCapY + CAP_H : aPos.y + NODE_H;
 										const ex = e.to === -2 ? W / 2 : bPos.cx;
 										const ey = e.to === -2 ? endY : e.dashed ? bPos.y : bPos.y + NODE_H / 2;
-										const sw = e.dashed ? 1.4 : connected ? 3 : 1.6;
-										const sc = e.dashed ? "#888" : connected ? TEXT : "#666688";
+										const sw = e.dashed ? 1.4 : connected ? 3 : 1.4;
+										const sc = e.dashed ? "#666688" : connected ? TEXT : "#454570";
 										return (0, react_jsx_runtime.jsx)("path", {
 											d: mk(sx, sy, ex, ey),
 											fill: "none",
 											stroke: sc,
 											strokeWidth: sw,
 											strokeDasharray: e.dashed ? "5 4" : void 0,
-											opacity: sel !== null && !connected ? .5 : 1,
+											opacity: active !== null && !connected ? .45 : 1,
 											markerEnd: connected && !e.dashed ? "url(#da2)" : e.dashed ? void 0 : "url(#da)",
 											style: { transition: "stroke-width .18s, opacity .18s" }
 										}, e.key);
