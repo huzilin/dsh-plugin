@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "description": "DSH plan tab: reads .plan/ wayfinder maps and renders a list + dependency graph view.",
   "type": "module",
-  "main": "lib/client.js",
+  "main": "lib/server.js",
   "exports": {
     ".": {
+      "default": "./lib/server.js"
+    },
+    "./client": {
       "default": "./lib/client.js"
     },
     "./package.json": "./package.json"
