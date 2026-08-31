@@ -9,7 +9,9 @@ dsh-plugin/
 ├── package.json          # workspace 根（pnpm）
 ├── pnpm-workspace.yaml   # packages/*
 └── packages/
-    └── dsh-approve/      # 命令白名单插件（当前唯一插件）
+    ├── dsh-approve/      # 命令白名单插件
+    ├── dsh-plan-view/    # Plan 标签页（客户端）
+    └── dsh-tool-deny/    # 预设级工具裁剪（省 token）
 ```
 
 ## 新增插件

@@ -1,0 +1,23 @@
+{
+  "name": "dsh-tool-deny",
+  "version": "0.1.0",
+  "description": "Preset-scoped plugin: deny host-injected tools from this preset's toolset via ctx.tools.restrict({deny}) — removes them from the model-facing schema AND system prompt, saving real tokens for small-context presets.",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "tools",
+    "token-saving"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
