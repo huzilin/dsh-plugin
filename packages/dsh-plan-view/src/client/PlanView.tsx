@@ -336,23 +336,36 @@ function layoutGraph(tickets: ParsedTicket[]) {
     })
   }
   const maxCount = Math.max(...layers.map(o => o.length), 1)
-  const W = Math.max(600, maxCount * STEP_X + 40)
+  const W_MAIN = Math.max(600, maxCount * STEP_X + 40)
+  // Out-of-scope nodes live in their own lane to the right of the main DAG,
+  // never on top of it: x is lane-aligned, y keeps the tier of the parent
+  // (or the first row when there is no parent). Same-tier OOS nodes spread
+  // horizontally so they never overlap each other.
+  const sideGap = 48
+  const sideRows = new Map<number, ParsedTicket[]>()
+  let maxSideRow = 0
+  for (const t of side) {
+    const p = t.blockedBy.find(b => byNum.has(b) && !byNum.get(b)!.outOfScope)
+    let tier = 0
+    if (p !== undefined) {
+      const parentTier = layers.findIndex(l => l.some(tk => ticketNum(tk.file) === p))
+      tier = (parentTier >= 0 ? parentTier : 0) + 1
+    }
+    const yKey = RUNG_TOP + tier * RUNG_STEP
+    if (!sideRows.has(yKey)) sideRows.set(yKey, [])
+    sideRows.get(yKey)!.push(t)
+    maxSideRow = Math.max(maxSideRow, sideRows.get(yKey)!.length)
+  }
+  const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN
   const pos = new Map<number, Pos>()
   layers.forEach((o, li) => {
-    const lw = o.length * STEP_X - 24; const left = (W - lw) / 2
+    const lw = o.length * STEP_X - 24; const left = (W_MAIN - lw) / 2
     o.forEach((t, i) => { const x = left + i * STEP_X; pos.set(ticketNum(t.file), { x, cx: x + NODE_W / 2, y: RUNG_TOP + li * RUNG_STEP }) })
   })
+  const laneX = W_MAIN + sideGap
   const sidePos = new Map<number, Pos>()
-  for (const t of side) {
-    const n = ticketNum(t.file); const p = t.blockedBy.find(b => byNum.has(b) && !byNum.get(b)!.outOfScope)
-    const pp = p !== undefined ? pos.get(p) : undefined
-    if (pp) {
-      const parentTier = layers.findIndex(l => l.some(tk => ticketNum(tk.file) === p))
-      const sideTier = parentTier + 1; const sideY = RUNG_TOP + sideTier * RUNG_STEP
-      const tierTk = layers[sideTier] ?? []
-      const rightmost = tierTk.length > 0 ? Math.max(...tierTk.map(tk => pos.get(ticketNum(tk.file))!.x)) : (W - NODE_W) / 2
-      sidePos.set(n, { x: rightmost + STEP_X, cx: rightmost + STEP_X + NODE_W / 2, y: sideY })
-    } else { sidePos.set(n, { x: W / 2 - NODE_W / 2, cx: W / 2, y: RUNG_TOP }) }
+  for (const [y, row] of sideRows) {
+    row.forEach((t, i) => { const n = ticketNum(t.file); const x = laneX + i * STEP_X; sidePos.set(n, { x, cx: x + NODE_W / 2, y }) })
   }
   const childrenOf = new Map<number, number[]>()
   const edges: GraphEdge[] = []
@@ -372,15 +385,16 @@ function layoutGraph(tickets: ParsedTicket[]) {
     if (p !== undefined) edges.push({ from: p, to: n, dashed: true, key: `d${p}-${n}` })
   }
   const endY = RUNG_TOP + (maxL - 1) * RUNG_STEP + END_GAP
-  const H = endY + CAP_H / 2 + 40
-  return { pos, sidePos, edges, W, H, endY, startCapY: START_Y - CAP_H / 2, endCapY: endY - CAP_H / 2 }
+  const maxSideY = sidePos.size > 0 ? Math.max(...[...sidePos.values()].map(p => p.y)) : 0
+  const H = Math.max(endY + CAP_H / 2 + 40, maxSideY + NODE_H + 40)
+  return { pos, sidePos, edges, W, H, capX: W_MAIN / 2, endY, startCapY: START_Y - CAP_H / 2, endCapY: endY - CAP_H / 2 }
 }
 
 function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
   const [sel, setSel] = useState<number | null>(null)
   const [hover, setHover] = useState<number | null>(null)
   const L = useMemo(() => layoutGraph(tickets), [tickets])
-  const { pos, sidePos, edges, W, H, startCapY, endCapY, endY } = L
+  const { pos, sidePos, edges, W, H, capX, startCapY, endCapY, endY } = L
   const focus = tickets.find(t => ticketNum(t.file) === sel) ?? null
   const conn = (n: number) => {
     const keys = new Set<string>()
@@ -396,7 +410,7 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
       </div>
       <div style={{ flex: 1, overflow: 'auto', position: 'relative', cursor: 'default' }} onClick={() => setSel(null)}>
         <div style={{ position: 'relative', width: W, height: H, margin: '0 auto' }}>
-          <div style={{ position: 'absolute', left: W / 2 - CAP_W / 2, top: startCapY, display: 'flex', alignItems: 'center', justifyContent: 'center', width: CAP_W, height: CAP_H, borderRadius: 999, background: CARD, border: `2px solid ${BORDER}`, fontSize: 12, fontWeight: 800, color: TEXT, boxShadow: '0 2px 10px rgba(0,0,0,.4)' }}>Start</div>
+          <div style={{ position: 'absolute', left: capX - CAP_W / 2, top: startCapY, display: 'flex', alignItems: 'center', justifyContent: 'center', width: CAP_W, height: CAP_H, borderRadius: 999, background: CARD, border: `2px solid ${BORDER}`, fontSize: 12, fontWeight: 800, color: TEXT, boxShadow: '0 2px 10px rgba(0,0,0,.4)' }}>Start</div>
           {[...pos.entries()].map(([n, p]) => {
             const t = tickets.find(x => ticketNum(x.file) === n)!
             return (
@@ -429,20 +443,20 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
               </div>
             )
           })}
-          <div style={{ position: 'absolute', left: W / 2 - CAP_W / 2, top: endCapY, display: 'flex', alignItems: 'center', justifyContent: 'center', width: CAP_W, height: CAP_H, borderRadius: 999, background: CARD, border: `2px solid ${BORDER}`, fontSize: 12, fontWeight: 800, color: TEXT, boxShadow: '0 2px 10px rgba(0,0,0,.4)' }}>End</div>
+          <div style={{ position: 'absolute', left: capX - CAP_W / 2, top: endCapY, display: 'flex', alignItems: 'center', justifyContent: 'center', width: CAP_W, height: CAP_H, borderRadius: 999, background: CARD, border: `2px solid ${BORDER}`, fontSize: 12, fontWeight: 800, color: TEXT, boxShadow: '0 2px 10px rgba(0,0,0,.4)' }}>End</div>
           <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 1 }}>
             <defs>
               <marker id="da" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#454570" /></marker>
               <marker id="da2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={TEXT} /></marker>
             </defs>
             {edges.map(e => {
-              const aPos = e.from === -1 ? { cx: W / 2, y: startCapY } : pos.get(e.from)
-              const bPos = e.to === -2 ? { cx: W / 2, y: endY } : (pos.get(e.to) ?? sidePos.get(e.to))
+              const aPos = e.from === -1 ? { cx: capX, y: startCapY } : pos.get(e.from)
+              const bPos = e.to === -2 ? { cx: capX, y: endY } : (pos.get(e.to) ?? sidePos.get(e.to))
               if (!aPos || !bPos) return null
               const active = hover ?? sel
               const connected = active === null || conn(active).has(e.key)
               const sx = aPos.cx, sy = e.from === -1 ? startCapY + CAP_H : aPos.y + NODE_H
-              const ex = e.to === -2 ? W / 2 : bPos.cx
+              const ex = e.to === -2 ? capX : bPos.cx
               const ey = e.to === -2 ? endY : (e.dashed ? bPos.y : bPos.y + NODE_H / 2)
               const sw = e.dashed ? 1.4 : connected ? 3 : 1.4
               const sc = e.dashed ? '#666688' : connected ? TEXT : '#454570'

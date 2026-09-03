@@ -4,13 +4,9 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-		let react_jsx_runtime = require("react/jsx-runtime");
 		let react = require("react");
-		//#region lib/types/client/api.js
-		/**
-		* Minimal fetch wrapper for DSH sidebar API — reads fs.tree and fs.read.
-		* Self-contained: does not depend on better-sidebar's internal api module.
-		*/
+		let react_jsx_runtime = require("react/jsx-runtime");
+		//#region src/client/api.ts
 		async function call(method, payload) {
 			const resp = await fetch(`/sidebar/api/${method}`, {
 				method: "POST",
@@ -35,7 +31,7 @@ window.__ModuleLoader__.load({
 			return call("fs.read", scopePayload(scope, { path }));
 		}
 		//#endregion
-		//#region lib/types/client/PlanView.js
+		//#region src/client/PlanView.tsx
 		/**
 		* Plan view v2: reads .plan/ wayfinder maps, derives ticket status per
 		* the TRACKER-MARKDOWN contract, and renders three views:
@@ -163,7 +159,7 @@ window.__ModuleLoader__.load({
 				scope
 			]);
 			const body = fullBody ?? ticket.body;
-			return (0, react_jsx_runtime.jsx)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					position: "fixed",
 					inset: 0,
@@ -174,7 +170,7 @@ window.__ModuleLoader__.load({
 					zIndex: 100
 				},
 				onClick: onClose,
-				children: (0, react_jsx_runtime.jsxs)("div", {
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					style: {
 						width: "min(560px, 90vw)",
 						maxHeight: "78vh",
@@ -186,18 +182,18 @@ window.__ModuleLoader__.load({
 					},
 					onClick: (e) => e.stopPropagation(),
 					children: [
-						(0, react_jsx_runtime.jsxs)("div", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "flex",
 								alignItems: "center",
 								gap: 8
 							},
 							children: [
-								(0, react_jsx_runtime.jsx)("span", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: { color: DOT[displayStatus(ticket)] },
 									children: TYPE_THEME[ticket.type ?? ""]?.icon ?? "…"
 								}),
-								(0, react_jsx_runtime.jsx)("span", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: {
 										fontSize: 16,
 										fontWeight: 700,
@@ -207,7 +203,7 @@ window.__ModuleLoader__.load({
 									},
 									children: ticket.title
 								}),
-								(0, react_jsx_runtime.jsx)("button", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 									style: {
 										background: "transparent",
 										border: "none",
@@ -220,7 +216,7 @@ window.__ModuleLoader__.load({
 								})
 							]
 						}),
-						(0, react_jsx_runtime.jsxs)("div", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "flex",
 								gap: 6,
@@ -228,7 +224,7 @@ window.__ModuleLoader__.load({
 								marginTop: 8
 							},
 							children: [
-								(0, react_jsx_runtime.jsxs)("span", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									style: {
 										fontSize: 11,
 										padding: "2px 9px",
@@ -239,7 +235,7 @@ window.__ModuleLoader__.load({
 									},
 									children: ["#", ticketNum(ticket.file)]
 								}),
-								ticket.type && (0, react_jsx_runtime.jsx)("span", {
+								ticket.type && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: {
 										fontSize: 11,
 										padding: "2px 9px",
@@ -249,7 +245,7 @@ window.__ModuleLoader__.load({
 									},
 									children: ticket.type
 								}),
-								(0, react_jsx_runtime.jsx)("span", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: {
 										fontSize: 11,
 										padding: "2px 9px",
@@ -260,7 +256,7 @@ window.__ModuleLoader__.load({
 									},
 									children: STATUS_LABELS[displayStatus(ticket)]
 								}),
-								ticket.claimedBy && (0, react_jsx_runtime.jsxs)("span", {
+								ticket.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									style: {
 										fontSize: 11,
 										padding: "2px 9px",
@@ -270,7 +266,7 @@ window.__ModuleLoader__.load({
 									},
 									children: ["👤 ", ticket.claimedBy]
 								}),
-								ticket.blockedBy.length > 0 && (0, react_jsx_runtime.jsxs)("span", {
+								ticket.blockedBy.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									style: {
 										fontSize: 11,
 										padding: "2px 9px",
@@ -282,7 +278,7 @@ window.__ModuleLoader__.load({
 								})
 							]
 						}),
-						(0, react_jsx_runtime.jsx)("div", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
 								marginTop: 14,
 								fontSize: 12.5,
@@ -314,7 +310,7 @@ window.__ModuleLoader__.load({
 			const active = tickets.filter((t) => !t.outOfScope);
 			const done = tickets.filter((t) => t.resolved).length;
 			const pct = active.length > 0 ? Math.round(done / active.length * 100) : 0;
-			return (0, react_jsx_runtime.jsxs)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
@@ -323,19 +319,19 @@ window.__ModuleLoader__.load({
 					color: TEXT
 				},
 				children: [
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							padding: "12px 16px 0",
 							display: "flex",
 							justifyContent: "space-between"
 						},
-						children: [(0, react_jsx_runtime.jsx)("span", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							style: {
 								fontSize: 14,
 								fontWeight: 700
 							},
 							children: "Kanban"
-						}), (0, react_jsx_runtime.jsxs)("span", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							style: {
 								fontSize: 12,
 								color: "#888"
@@ -348,7 +344,7 @@ window.__ModuleLoader__.load({
 							]
 						})]
 					}),
-					destination && (0, react_jsx_runtime.jsx)("div", {
+					destination && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
 							margin: "8px 16px 0",
 							padding: "8px 12px",
@@ -360,14 +356,14 @@ window.__ModuleLoader__.load({
 						},
 						children: destination
 					}),
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							margin: "8px 16px 0",
 							display: "flex",
 							alignItems: "center",
 							gap: 10
 						},
-						children: [(0, react_jsx_runtime.jsx)("div", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
 								flex: 1,
 								height: 6,
@@ -376,13 +372,13 @@ window.__ModuleLoader__.load({
 								border: `1px solid ${BORDER}`,
 								overflow: "hidden"
 							},
-							children: (0, react_jsx_runtime.jsx)("div", { style: {
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
 								height: "100%",
 								width: `${pct}%`,
 								borderRadius: 3,
 								background: "linear-gradient(90deg, #2ecc71, #7c6bff)"
 							} })
-						}), (0, react_jsx_runtime.jsxs)("span", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							style: {
 								fontSize: 12,
 								fontWeight: 700,
@@ -393,7 +389,7 @@ window.__ModuleLoader__.load({
 							children: [pct, "%"]
 						})]
 					}),
-					(0, react_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
 							flex: 1,
 							display: "flex",
@@ -401,7 +397,7 @@ window.__ModuleLoader__.load({
 							padding: "12px 16px",
 							overflowX: "auto"
 						},
-						children: STATUS_ORDER.filter((s) => groups[s].length > 0).map((s) => (0, react_jsx_runtime.jsxs)("div", {
+						children: STATUS_ORDER.filter((s) => groups[s].length > 0).map((s) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								flex: "1 1 0",
 								minWidth: 200,
@@ -412,7 +408,7 @@ window.__ModuleLoader__.load({
 								borderRadius: 10,
 								overflow: "hidden"
 							},
-							children: [(0, react_jsx_runtime.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								style: {
 									padding: "7px 10px",
 									display: "flex",
@@ -422,20 +418,20 @@ window.__ModuleLoader__.load({
 									background: "#121224"
 								},
 								children: [
-									(0, react_jsx_runtime.jsx)("span", { style: {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
 										width: 7,
 										height: 7,
 										borderRadius: "50%",
 										background: DOT[s]
 									} }),
-									(0, react_jsx_runtime.jsx)("span", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										style: {
 											fontWeight: 700,
 											fontSize: 12
 										},
 										children: STATUS_LABELS[s]
 									}),
-									(0, react_jsx_runtime.jsx)("span", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										style: {
 											fontSize: 11,
 											color: "#888"
@@ -443,7 +439,7 @@ window.__ModuleLoader__.load({
 										children: groups[s].length
 									})
 								]
-							}), (0, react_jsx_runtime.jsx)("div", {
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								style: {
 									flex: 1,
 									overflowY: "auto",
@@ -452,7 +448,7 @@ window.__ModuleLoader__.load({
 									flexDirection: "column",
 									gap: 6
 								},
-								children: groups[s].map((t) => (0, react_jsx_runtime.jsxs)("div", {
+								children: groups[s].map((t) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									style: {
 										padding: 8,
 										borderRadius: 8,
@@ -461,14 +457,14 @@ window.__ModuleLoader__.load({
 										cursor: "pointer"
 									},
 									onClick: () => setFocus(t),
-									children: [(0, react_jsx_runtime.jsxs)("div", {
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: {
 											display: "flex",
 											alignItems: "center",
 											gap: 6
 										},
 										children: [
-											(0, react_jsx_runtime.jsx)("span", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												style: {
 													fontSize: 10,
 													fontFamily: "monospace",
@@ -484,11 +480,11 @@ window.__ModuleLoader__.load({
 												},
 												children: String(ticketNum(t.file)).padStart(2, "0")
 											}),
-											(0, react_jsx_runtime.jsx)("span", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												style: { fontSize: 12 },
 												children: TYPE_THEME[t.type ?? ""]?.icon ?? "?"
 											}),
-											(0, react_jsx_runtime.jsx)("span", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												style: {
 													flex: 1,
 													fontSize: 12,
@@ -501,7 +497,7 @@ window.__ModuleLoader__.load({
 												children: t.title
 											})
 										]
-									}), (0, react_jsx_runtime.jsxs)("div", {
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: {
 											display: "flex",
 											gap: 4,
@@ -509,7 +505,7 @@ window.__ModuleLoader__.load({
 											flexWrap: "wrap"
 										},
 										children: [
-											t.type && (0, react_jsx_runtime.jsx)("span", {
+											t.type && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												style: {
 													fontSize: 10,
 													padding: "1px 5px",
@@ -519,7 +515,7 @@ window.__ModuleLoader__.load({
 												},
 												children: t.type
 											}),
-											t.claimedBy && (0, react_jsx_runtime.jsxs)("span", {
+											t.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 												style: {
 													fontSize: 10,
 													padding: "1px 5px",
@@ -529,7 +525,7 @@ window.__ModuleLoader__.load({
 												},
 												children: ["👤 ", t.claimedBy]
 											}),
-											t.blockedBy.length > 0 && (0, react_jsx_runtime.jsxs)("span", {
+											t.blockedBy.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 												style: {
 													fontSize: 10,
 													padding: "1px 5px",
@@ -545,7 +541,7 @@ window.__ModuleLoader__.load({
 							})]
 						}, s))
 					}),
-					focus && (0, react_jsx_runtime.jsx)(DetailModal, {
+					focus && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
 						ticket: focus,
 						planDir,
 						scope,
@@ -602,7 +598,7 @@ window.__ModuleLoader__.load({
 				dir: 1
 			});
 			const arrow = (key) => sort.key === key ? sort.dir === 1 ? " ↑" : " ↓" : "";
-			return (0, react_jsx_runtime.jsxs)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
@@ -611,7 +607,7 @@ window.__ModuleLoader__.load({
 					color: TEXT
 				},
 				children: [
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							padding: "10px 16px",
 							background: HEADER_BG,
@@ -621,13 +617,13 @@ window.__ModuleLoader__.load({
 							justifyContent: "space-between",
 							gap: 10
 						},
-						children: [(0, react_jsx_runtime.jsx)("span", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							style: {
 								fontSize: 14,
 								fontWeight: 700
 							},
 							children: "Table"
-						}), (0, react_jsx_runtime.jsxs)("span", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							style: {
 								fontSize: 12,
 								color: "#888"
@@ -640,13 +636,13 @@ window.__ModuleLoader__.load({
 							]
 						})]
 					}),
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							flex: 1,
 							display: "flex",
 							overflow: "hidden"
 						},
-						children: [(0, react_jsx_runtime.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								width: 200,
 								flexShrink: 0,
@@ -659,7 +655,7 @@ window.__ModuleLoader__.load({
 								overflowY: "auto"
 							},
 							children: [
-								(0, react_jsx_runtime.jsxs)("div", { children: [(0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: {
 										fontSize: 10,
 										fontWeight: 700,
@@ -668,7 +664,7 @@ window.__ModuleLoader__.load({
 										marginBottom: 4
 									},
 									children: "Search"
-								}), (0, react_jsx_runtime.jsx)("input", {
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 									style: {
 										width: "100%",
 										padding: "5px 8px",
@@ -684,7 +680,7 @@ window.__ModuleLoader__.load({
 									value: query,
 									onChange: (e) => setQuery(e.target.value)
 								})] }),
-								(0, react_jsx_runtime.jsxs)("div", { children: [(0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: {
 										fontSize: 10,
 										fontWeight: 700,
@@ -693,7 +689,7 @@ window.__ModuleLoader__.load({
 										marginBottom: 4
 									},
 									children: "Status"
-								}), STATUS_ORDER.map((s) => (0, react_jsx_runtime.jsxs)("label", {
+								}), STATUS_ORDER.map((s) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 									style: {
 										display: "flex",
 										alignItems: "center",
@@ -704,12 +700,12 @@ window.__ModuleLoader__.load({
 										padding: "1px 0"
 									},
 									children: [
-										(0, react_jsx_runtime.jsx)("input", {
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 											type: "checkbox",
 											checked: statusSet.has(s),
 											onChange: () => setStatusSet(toggle(statusSet, s))
 										}),
-										(0, react_jsx_runtime.jsx)("span", {
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											style: { color: DOT[s] },
 											children: "●"
 										}),
@@ -717,7 +713,7 @@ window.__ModuleLoader__.load({
 										STATUS_LABELS[s]
 									]
 								}, s))] }),
-								(0, react_jsx_runtime.jsxs)("div", { children: [(0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: {
 										fontSize: 10,
 										fontWeight: 700,
@@ -726,7 +722,7 @@ window.__ModuleLoader__.load({
 										marginBottom: 4
 									},
 									children: "Type"
-								}), (0, react_jsx_runtime.jsx)("div", {
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: {
 										display: "flex",
 										flexWrap: "wrap",
@@ -734,7 +730,7 @@ window.__ModuleLoader__.load({
 									},
 									children: Object.keys(TYPE_THEME).map((t) => {
 										const on = typeSet.has(t);
-										return (0, react_jsx_runtime.jsxs)("span", {
+										return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 											style: {
 												fontSize: 10,
 												padding: "2px 7px",
@@ -753,7 +749,7 @@ window.__ModuleLoader__.load({
 										}, t);
 									})
 								})] }),
-								(0, react_jsx_runtime.jsxs)("label", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 									style: {
 										display: "flex",
 										alignItems: "center",
@@ -762,13 +758,13 @@ window.__ModuleLoader__.load({
 										color: "#c8c8e8",
 										cursor: "pointer"
 									},
-									children: [(0, react_jsx_runtime.jsx)("input", {
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 										type: "checkbox",
 										checked: onlyBlocked,
 										onChange: (e) => setOnlyBlocked(e.target.checked)
 									}), " Only blocked"]
 								}),
-								(0, react_jsx_runtime.jsx)("button", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 									style: {
 										marginTop: "auto",
 										padding: "6px 0",
@@ -788,20 +784,20 @@ window.__ModuleLoader__.load({
 									children: "Reset"
 								})
 							]
-						}), (0, react_jsx_runtime.jsx)("div", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
 								flex: 1,
 								overflowY: "auto",
 								padding: 12
 							},
-							children: rows.length === 0 ? (0, react_jsx_runtime.jsx)("div", {
+							children: rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								style: {
 									padding: 40,
 									textAlign: "center",
 									color: "#55557a"
 								},
 								children: "No matching tickets"
-							}) : (0, react_jsx_runtime.jsxs)("table", {
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
 								style: {
 									width: "100%",
 									borderCollapse: "separate",
@@ -811,8 +807,8 @@ window.__ModuleLoader__.load({
 									overflow: "hidden",
 									fontSize: 12
 								},
-								children: [(0, react_jsx_runtime.jsx)("thead", { children: (0, react_jsx_runtime.jsxs)("tr", { children: [
-									(0, react_jsx_runtime.jsxs)("th", {
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("thead", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", { children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("th", {
 										style: {
 											textAlign: "left",
 											padding: "7px 10px",
@@ -827,7 +823,7 @@ window.__ModuleLoader__.load({
 										onClick: () => sortBy("num"),
 										children: ["# ", arrow("num")]
 									}),
-									(0, react_jsx_runtime.jsx)("th", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", {
 										style: {
 											textAlign: "left",
 											padding: "7px 10px",
@@ -840,7 +836,7 @@ window.__ModuleLoader__.load({
 										},
 										children: "Title"
 									}),
-									(0, react_jsx_runtime.jsxs)("th", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("th", {
 										style: {
 											textAlign: "left",
 											padding: "7px 10px",
@@ -855,7 +851,7 @@ window.__ModuleLoader__.load({
 										onClick: () => sortBy("type"),
 										children: ["Type ", arrow("type")]
 									}),
-									(0, react_jsx_runtime.jsxs)("th", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("th", {
 										style: {
 											textAlign: "left",
 											padding: "7px 10px",
@@ -870,7 +866,7 @@ window.__ModuleLoader__.load({
 										onClick: () => sortBy("status"),
 										children: ["Status ", arrow("status")]
 									}),
-									(0, react_jsx_runtime.jsx)("th", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", {
 										style: {
 											textAlign: "left",
 											padding: "7px 10px",
@@ -883,7 +879,7 @@ window.__ModuleLoader__.load({
 										},
 										children: "Owner"
 									}),
-									(0, react_jsx_runtime.jsx)("th", {
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", {
 										style: {
 											textAlign: "left",
 											padding: "7px 10px",
@@ -896,16 +892,16 @@ window.__ModuleLoader__.load({
 										},
 										children: "Blocked"
 									})
-								] }) }), (0, react_jsx_runtime.jsx)("tbody", { children: rows.map((t) => {
+								] }) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("tbody", { children: rows.map((t) => {
 									const th = TYPE_THEME[t.type ?? ""] ?? {
 										icon: "?",
 										color: "#888"
 									};
-									return (0, react_jsx_runtime.jsxs)("tr", {
+									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", {
 										style: { cursor: "pointer" },
 										onClick: () => setDetail(t),
 										children: [
-											(0, react_jsx_runtime.jsx)("td", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
 													borderBottom: `1px solid #1e1e3a`,
@@ -915,7 +911,7 @@ window.__ModuleLoader__.load({
 												},
 												children: String(ticketNum(t.file)).padStart(2, "0")
 											}),
-											(0, react_jsx_runtime.jsx)("td", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
 													borderBottom: `1px solid #1e1e3a`,
@@ -928,12 +924,12 @@ window.__ModuleLoader__.load({
 												},
 												children: t.title
 											}),
-											(0, react_jsx_runtime.jsx)("td", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
 													borderBottom: `1px solid #1e1e3a`
 												},
-												children: (0, react_jsx_runtime.jsxs)("span", {
+												children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 													style: {
 														padding: "1px 6px",
 														borderRadius: 999,
@@ -949,18 +945,18 @@ window.__ModuleLoader__.load({
 													]
 												})
 											}),
-											(0, react_jsx_runtime.jsx)("td", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
 													borderBottom: `1px solid #1e1e3a`
 												},
-												children: (0, react_jsx_runtime.jsxs)("span", {
+												children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 													style: {
 														display: "flex",
 														alignItems: "center",
 														gap: 5
 													},
-													children: [(0, react_jsx_runtime.jsx)("span", { style: {
+													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
 														width: 7,
 														height: 7,
 														borderRadius: "50%",
@@ -968,7 +964,7 @@ window.__ModuleLoader__.load({
 													} }), STATUS_LABELS[displayStatus(t)]]
 												})
 											}),
-											(0, react_jsx_runtime.jsx)("td", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
 													borderBottom: `1px solid #1e1e3a`,
@@ -976,7 +972,7 @@ window.__ModuleLoader__.load({
 												},
 												children: t.claimedBy ?? "—"
 											}),
-											(0, react_jsx_runtime.jsx)("td", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
 													borderBottom: `1px solid #1e1e3a`,
@@ -992,7 +988,7 @@ window.__ModuleLoader__.load({
 							})
 						})]
 					}),
-					detail && (0, react_jsx_runtime.jsx)(DetailModal, {
+					detail && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
 						ticket: detail,
 						planDir,
 						scope,
@@ -1030,10 +1026,26 @@ window.__ModuleLoader__.load({
 				});
 			}
 			const maxCount = Math.max(...layers.map((o) => o.length), 1);
-			const W = Math.max(600, maxCount * STEP_X + 40);
+			const W_MAIN = Math.max(600, maxCount * STEP_X + 40);
+			const sideGap = 48;
+			const sideRows = /* @__PURE__ */ new Map();
+			let maxSideRow = 0;
+			for (const t of side) {
+				const p = t.blockedBy.find((b) => byNum.has(b) && !byNum.get(b).outOfScope);
+				let tier = 0;
+				if (p !== void 0) {
+					const parentTier = layers.findIndex((l) => l.some((tk) => ticketNum(tk.file) === p));
+					tier = (parentTier >= 0 ? parentTier : 0) + 1;
+				}
+				const yKey = RUNG_TOP + tier * RUNG_STEP;
+				if (!sideRows.has(yKey)) sideRows.set(yKey, []);
+				sideRows.get(yKey).push(t);
+				maxSideRow = Math.max(maxSideRow, sideRows.get(yKey).length);
+			}
+			const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN;
 			const pos = /* @__PURE__ */ new Map();
 			layers.forEach((o, li) => {
-				const left = (W - (o.length * STEP_X - 24)) / 2;
+				const left = (W_MAIN - (o.length * STEP_X - 24)) / 2;
 				o.forEach((t, i) => {
 					const x = left + i * STEP_X;
 					pos.set(ticketNum(t.file), {
@@ -1043,26 +1055,17 @@ window.__ModuleLoader__.load({
 					});
 				});
 			});
+			const laneX = W_MAIN + sideGap;
 			const sidePos = /* @__PURE__ */ new Map();
-			for (const t of side) {
+			for (const [y, row] of sideRows) row.forEach((t, i) => {
 				const n = ticketNum(t.file);
-				const p = t.blockedBy.find((b) => byNum.has(b) && !byNum.get(b).outOfScope);
-				if (p !== void 0 ? pos.get(p) : void 0) {
-					const sideTier = layers.findIndex((l) => l.some((tk) => ticketNum(tk.file) === p)) + 1;
-					const sideY = RUNG_TOP + sideTier * RUNG_STEP;
-					const tierTk = layers[sideTier] ?? [];
-					const rightmost = tierTk.length > 0 ? Math.max(...tierTk.map((tk) => pos.get(ticketNum(tk.file)).x)) : (W - NODE_W) / 2;
-					sidePos.set(n, {
-						x: rightmost + STEP_X,
-						cx: rightmost + STEP_X + NODE_W / 2,
-						y: sideY
-					});
-				} else sidePos.set(n, {
-					x: W / 2 - NODE_W / 2,
-					cx: W / 2,
-					y: RUNG_TOP
+				const x = laneX + i * STEP_X;
+				sidePos.set(n, {
+					x,
+					cx: x + NODE_W / 2,
+					y
 				});
-			}
+			});
 			const childrenOf = /* @__PURE__ */ new Map();
 			const edges = [];
 			for (const t of grid) {
@@ -1099,12 +1102,14 @@ window.__ModuleLoader__.load({
 				});
 			}
 			const endY = RUNG_TOP + (maxL - 1) * RUNG_STEP + END_GAP;
+			const maxSideY = sidePos.size > 0 ? Math.max(...[...sidePos.values()].map((p) => p.y)) : 0;
 			return {
 				pos,
 				sidePos,
 				edges,
 				W,
-				H: endY + CAP_H / 2 + 40,
+				H: Math.max(endY + CAP_H / 2 + 40, maxSideY + NODE_H + 40),
+				capX: W_MAIN / 2,
 				endY,
 				startCapY: START_Y - CAP_H / 2,
 				endCapY: endY - CAP_H / 2
@@ -1113,7 +1118,7 @@ window.__ModuleLoader__.load({
 		function ViewD({ tickets, planDir, scope }) {
 			const [sel, setSel] = (0, react.useState)(null);
 			const [hover, setHover] = (0, react.useState)(null);
-			const { pos, sidePos, edges, W, H, startCapY, endCapY, endY } = (0, react.useMemo)(() => layoutGraph(tickets), [tickets]);
+			const { pos, sidePos, edges, W, H, capX, startCapY, endCapY, endY } = (0, react.useMemo)(() => layoutGraph(tickets), [tickets]);
 			const focus = tickets.find((t) => ticketNum(t.file) === sel) ?? null;
 			const conn = (n) => {
 				const keys = /* @__PURE__ */ new Set();
@@ -1121,7 +1126,7 @@ window.__ModuleLoader__.load({
 				return keys;
 			};
 			const mk = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1} ${(y1 + y2) / 2}, ${x2} ${(y1 + y2) / 2}, ${x2} ${y2}`;
-			return (0, react_jsx_runtime.jsxs)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
@@ -1131,19 +1136,19 @@ window.__ModuleLoader__.load({
 					overflow: "hidden"
 				},
 				children: [
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							padding: "12px 16px 8px",
 							display: "flex",
 							justifyContent: "space-between"
 						},
-						children: [(0, react_jsx_runtime.jsx)("span", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							style: {
 								fontSize: 14,
 								fontWeight: 700
 							},
 							children: "Relation"
-						}), (0, react_jsx_runtime.jsxs)("span", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							style: {
 								fontSize: 12,
 								color: "#888"
@@ -1151,7 +1156,7 @@ window.__ModuleLoader__.load({
 							children: [tickets.length, " tickets · hover / click node to highlight edges"]
 						})]
 					}),
-					(0, react_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
 							flex: 1,
 							overflow: "auto",
@@ -1159,7 +1164,7 @@ window.__ModuleLoader__.load({
 							cursor: "default"
 						},
 						onClick: () => setSel(null),
-						children: (0, react_jsx_runtime.jsxs)("div", {
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								position: "relative",
 								width: W,
@@ -1167,10 +1172,10 @@ window.__ModuleLoader__.load({
 								margin: "0 auto"
 							},
 							children: [
-								(0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: {
 										position: "absolute",
-										left: W / 2 - CAP_W / 2,
+										left: capX - CAP_W / 2,
 										top: startCapY,
 										display: "flex",
 										alignItems: "center",
@@ -1189,7 +1194,7 @@ window.__ModuleLoader__.load({
 								}),
 								[...pos.entries()].map(([n, p]) => {
 									const t = tickets.find((x) => ticketNum(x.file) === n);
-									return (0, react_jsx_runtime.jsxs)("div", {
+									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: {
 											position: "absolute",
 											display: "flex",
@@ -1211,13 +1216,13 @@ window.__ModuleLoader__.load({
 										},
 										onMouseEnter: () => setHover(n),
 										onMouseLeave: () => setHover(null),
-										children: [(0, react_jsx_runtime.jsx)("span", { style: {
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
 											width: 4,
 											flexShrink: 0,
 											borderTopLeftRadius: 10,
 											borderBottomLeftRadius: 10,
 											background: DOT[displayStatus(t)]
-										} }), (0, react_jsx_runtime.jsxs)("div", {
+										} }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
 												padding: "7px 8px 7px 8px",
 												flex: 1,
@@ -1226,14 +1231,14 @@ window.__ModuleLoader__.load({
 												flexDirection: "column",
 												gap: 3
 											},
-											children: [(0, react_jsx_runtime.jsxs)("div", {
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												style: {
 													display: "flex",
 													alignItems: "center",
 													gap: 5
 												},
 												children: [
-													(0, react_jsx_runtime.jsx)("span", {
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														style: {
 															fontSize: 9,
 															fontFamily: "monospace",
@@ -1249,11 +1254,11 @@ window.__ModuleLoader__.load({
 														},
 														children: String(n).padStart(2, "0")
 													}),
-													(0, react_jsx_runtime.jsx)("span", {
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														style: { fontSize: 12 },
 														children: TYPE_THEME[t.type ?? ""]?.icon ?? "?"
 													}),
-													(0, react_jsx_runtime.jsx)("span", {
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														style: {
 															fontSize: 11,
 															fontWeight: 700,
@@ -1267,21 +1272,21 @@ window.__ModuleLoader__.load({
 														children: t.title
 													})
 												]
-											}), (0, react_jsx_runtime.jsxs)("div", {
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												style: {
 													fontSize: 9,
 													color: "#8a8ab0",
 													display: "flex",
 													gap: 6
 												},
-												children: [STATUS_LABELS[displayStatus(t)], t.claimedBy && (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [" 👤 ", t.claimedBy] })]
+												children: [STATUS_LABELS[displayStatus(t)], t.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [" 👤 ", t.claimedBy] })]
 											})]
 										})]
 									}, n);
 								}),
 								[...sidePos.entries()].map(([n, p]) => {
 									const t = tickets.find((x) => ticketNum(x.file) === n);
-									return (0, react_jsx_runtime.jsxs)("div", {
+									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: {
 											position: "absolute",
 											display: "flex",
@@ -1303,11 +1308,11 @@ window.__ModuleLoader__.load({
 										},
 										onMouseEnter: () => setHover(n),
 										onMouseLeave: () => setHover(null),
-										children: [(0, react_jsx_runtime.jsx)("span", { style: {
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
 											width: 4,
 											flexShrink: 0,
 											background: "#383860"
-										} }), (0, react_jsx_runtime.jsxs)("div", {
+										} }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
 												padding: "7px 8px 7px 8px",
 												flex: 1,
@@ -1316,14 +1321,14 @@ window.__ModuleLoader__.load({
 												flexDirection: "column",
 												gap: 3
 											},
-											children: [(0, react_jsx_runtime.jsxs)("div", {
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												style: {
 													display: "flex",
 													alignItems: "center",
 													gap: 5
 												},
 												children: [
-													(0, react_jsx_runtime.jsx)("span", {
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														style: {
 															fontSize: 9,
 															fontFamily: "monospace",
@@ -1339,11 +1344,11 @@ window.__ModuleLoader__.load({
 														},
 														children: String(n).padStart(2, "0")
 													}),
-													(0, react_jsx_runtime.jsx)("span", {
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														style: { fontSize: 12 },
 														children: "⛔"
 													}),
-													(0, react_jsx_runtime.jsx)("span", {
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														style: {
 															fontSize: 11,
 															fontWeight: 700,
@@ -1357,7 +1362,7 @@ window.__ModuleLoader__.load({
 														children: t.title
 													})
 												]
-											}), (0, react_jsx_runtime.jsx)("div", {
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												style: {
 													fontSize: 9,
 													color: "#8a8ab0"
@@ -1367,10 +1372,10 @@ window.__ModuleLoader__.load({
 										})]
 									}, n);
 								}),
-								(0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: {
 										position: "absolute",
-										left: W / 2 - CAP_W / 2,
+										left: capX - CAP_W / 2,
 										top: endCapY,
 										display: "flex",
 										alignItems: "center",
@@ -1387,7 +1392,7 @@ window.__ModuleLoader__.load({
 									},
 									children: "End"
 								}),
-								(0, react_jsx_runtime.jsxs)("svg", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
 									width: W,
 									height: H,
 									style: {
@@ -1397,7 +1402,7 @@ window.__ModuleLoader__.load({
 										pointerEvents: "none",
 										zIndex: 1
 									},
-									children: [(0, react_jsx_runtime.jsxs)("defs", { children: [(0, react_jsx_runtime.jsx)("marker", {
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("defs", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("marker", {
 										id: "da",
 										viewBox: "0 0 10 10",
 										refX: "8.5",
@@ -1405,11 +1410,11 @@ window.__ModuleLoader__.load({
 										markerWidth: "6",
 										markerHeight: "6",
 										orient: "auto-start-reverse",
-										children: (0, react_jsx_runtime.jsx)("path", {
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 											d: "M 0 0 L 10 5 L 0 10 z",
 											fill: "#454570"
 										})
-									}), (0, react_jsx_runtime.jsx)("marker", {
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("marker", {
 										id: "da2",
 										viewBox: "0 0 10 10",
 										refX: "8.5",
@@ -1417,28 +1422,28 @@ window.__ModuleLoader__.load({
 										markerWidth: "6",
 										markerHeight: "6",
 										orient: "auto-start-reverse",
-										children: (0, react_jsx_runtime.jsx)("path", {
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 											d: "M 0 0 L 10 5 L 0 10 z",
 											fill: TEXT
 										})
 									})] }), edges.map((e) => {
 										const aPos = e.from === -1 ? {
-											cx: W / 2,
+											cx: capX,
 											y: startCapY
 										} : pos.get(e.from);
 										const bPos = e.to === -2 ? {
-											cx: W / 2,
+											cx: capX,
 											y: endY
 										} : pos.get(e.to) ?? sidePos.get(e.to);
 										if (!aPos || !bPos) return null;
 										const active = hover ?? sel;
 										const connected = active === null || conn(active).has(e.key);
 										const sx = aPos.cx, sy = e.from === -1 ? startCapY + CAP_H : aPos.y + NODE_H;
-										const ex = e.to === -2 ? W / 2 : bPos.cx;
+										const ex = e.to === -2 ? capX : bPos.cx;
 										const ey = e.to === -2 ? endY : e.dashed ? bPos.y : bPos.y + NODE_H / 2;
 										const sw = e.dashed ? 1.4 : connected ? 3 : 1.4;
 										const sc = e.dashed ? "#666688" : connected ? TEXT : "#454570";
-										return (0, react_jsx_runtime.jsx)("path", {
+										return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 											d: mk(sx, sy, ex, ey),
 											fill: "none",
 											stroke: sc,
@@ -1453,7 +1458,7 @@ window.__ModuleLoader__.load({
 							]
 						})
 					}),
-					focus && (0, react_jsx_runtime.jsx)(DetailModal, {
+					focus && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
 						ticket: focus,
 						planDir,
 						scope,
@@ -1497,7 +1502,7 @@ window.__ModuleLoader__.load({
 				if (!mapRaw) return null;
 				return mapRaw.match(/## Destination\s*\n([\s\S]*?)(?=\n## |\n$)/)?.[1]?.trim().split("\n")[0]?.trim() ?? null;
 			}, [mapRaw]);
-			if (loading) return (0, react_jsx_runtime.jsx)("div", {
+			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
@@ -1508,7 +1513,7 @@ window.__ModuleLoader__.load({
 				},
 				children: "Loading…"
 			});
-			if (error) return (0, react_jsx_runtime.jsx)("div", {
+			if (error) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
@@ -1529,7 +1534,7 @@ window.__ModuleLoader__.load({
 				color: active ? TEXT : "#888",
 				fontSize: 12
 			});
-			return (0, react_jsx_runtime.jsxs)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
@@ -1540,7 +1545,7 @@ window.__ModuleLoader__.load({
 					fontSize: 14
 				},
 				children: [
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							display: "flex",
 							gap: 2,
@@ -1549,19 +1554,19 @@ window.__ModuleLoader__.load({
 							background: HEADER_BG
 						},
 						children: [
-							(0, react_jsx_runtime.jsx)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								style: toggleBtn(variant === "A"),
 								onClick: () => setVariant("A"),
 								children: "📋 Kanban"
 							}),
-							(0, react_jsx_runtime.jsx)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								style: toggleBtn(variant === "D"),
 								onClick: () => setVariant("D"),
 								children: "📊 Relation"
 							}),
-							(0, react_jsx_runtime.jsx)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								style: toggleBtn(variant === "C"),
 								onClick: () => setVariant("C"),
@@ -1569,18 +1574,18 @@ window.__ModuleLoader__.load({
 							})
 						]
 					}),
-					variant === "A" && (0, react_jsx_runtime.jsx)(ViewA, {
+					variant === "A" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewA, {
 						tickets,
 						planDir: effortDir,
 						scope,
 						destination
 					}),
-					variant === "D" && (0, react_jsx_runtime.jsx)(ViewD, {
+					variant === "D" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewD, {
 						tickets,
 						planDir: effortDir,
 						scope
 					}),
-					variant === "C" && (0, react_jsx_runtime.jsx)(ViewC, {
+					variant === "C" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
 						tickets,
 						planDir: effortDir,
 						scope
@@ -1589,19 +1594,19 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
-		//#region lib/types/client/index.js
+		//#region src/client/index.tsx
 		const inject = ["betterSidebar", "slots"];
 		function apply(ctx) {
 			ctx.effect(() => ctx.betterSidebar.registerTab({
 				id: "dsh-plan-view:plan",
 				title: () => "Plan",
-				icon: (size) => (0, react_jsx_runtime.jsxs)("svg", {
+				icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
 					width: size,
 					height: size,
 					viewBox: "0 0 16 16",
 					fill: "none",
 					children: [
-						(0, react_jsx_runtime.jsx)("rect", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
 							x: "1",
 							y: "1",
 							width: "14",
@@ -1610,7 +1615,7 @@ window.__ModuleLoader__.load({
 							stroke: "currentColor",
 							strokeWidth: "1.5"
 						}),
-						(0, react_jsx_runtime.jsx)("line", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
 							x1: "4",
 							y1: "5",
 							x2: "12",
@@ -1618,7 +1623,7 @@ window.__ModuleLoader__.load({
 							stroke: "currentColor",
 							strokeWidth: "1.2"
 						}),
-						(0, react_jsx_runtime.jsx)("line", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
 							x1: "4",
 							y1: "8",
 							x2: "12",
@@ -1626,7 +1631,7 @@ window.__ModuleLoader__.load({
 							stroke: "currentColor",
 							strokeWidth: "1.2"
 						}),
-						(0, react_jsx_runtime.jsx)("line", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
 							x1: "4",
 							y1: "11",
 							x2: "9",
@@ -1638,7 +1643,7 @@ window.__ModuleLoader__.load({
 				}),
 				order: 46,
 				single: true,
-				component: (props) => (0, react_jsx_runtime.jsx)(PlanView, { ...props })
+				component: (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlanView, { ...props })
 			}));
 		}
 		//#endregion
