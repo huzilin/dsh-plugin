@@ -37,54 +37,53 @@ The plugin does **NOT** suppress DSH's own approval. It is hardcoded off
 
 - **Shell commands** (`bash`/`pwsh`/`ssh_*`): policed by this plugin only —
   whitelist exact-match (zero prompt) / system-dangerous (deny) / non-workspace
-  (ask via this plugin's 3-button dialog). A **whitelisted** command's own
+  (ask — presented by DSH core `ui-approval`). A **whitelisted** command's own
   in-tool sandbox escalation is auto-granted by callId correlation, so
   whitelisted commands stay prompt-free end-to-end.
 - **Everything else** — file tools writing outside the workspace, any
   `sandbox_permissions` escalation the plugin does not own: **DSH's original
   approval still prompts the human**. The plugin is NOT a blanket
   auto-approver; it only adds a command-level gate on top of DSH's approval.
-- **Whitelist writes are human-gated.** The dialog's 加入白名单 button is your
-  own click (= your approval). The model tools `dsh_approve_whitelist_add` /
-  `dsh_approve_whitelist_remove` **require a human approval prompt** before
-  touching `~/.dsh/dsh-approve.json` — an agent cannot whitelist autonomously.
+- **Whitelist writes are human-gated.** The model tools
+  `dsh_approve_whitelist_add` / `dsh_approve_whitelist_remove` **require a
+  human approval prompt** before touching `~/.dsh/dsh-approve.json` — an agent
+  cannot whitelist autonomously.
 - ⚠️ Keep the DSH/session approval policy at `ask`. Setting it to `never`
-  rejects every ask *before* listeners run, so this plugin's confirmation
-  dialog would be auto-rejected too.
+  rejects every ask *before* listeners run, so no confirmation dialog appears.
 
 ## Architecture (zero DSH-core changes)
 
-The plugin is a **single package with two halves**, no DSH core modification:
+The plugin is a **pure host plugin**, no DSH core modification:
 
 | Half | File | Role |
 | --- | --- | --- |
 | Host | `lib/server.js` (Node, `main`/`exports["."]`) | policy engine, `tools/pre-execute` / `approval/request` / `tools/post-execute` hooks, model tools, direct HTTP routes |
-| Client | `lib/client.js` (browser bundle, `exports["./client"]`) | **takes over the approval dialog** — a `conversation.composer` chain entry registered at `priority: 0.5` (chain slots elect ascending priority; 0.5 beats the core panel's 1, while question takeovers at 0 still win when both kinds are pending) |
 
-The client half is fully self-sufficient: the exact command comes from the ask
-reason's `命令：` line, the 加入白名单 button POSTs to the host's
-`/dsh-approve/whitelist-add` route, and answering rides the carrier's
-`respond()` (same wire shape as the core PendingApproval).
+The approval-dialog UI is entirely DSH core `ui-approval` (the native panel on
+`conversation.composer`). This plugin's `approval/request` hook auto-grants
+already-whitelisted calls; non-whitelisted commands that need a human decision
+are presented by the core panel (Reject / Allow once).
 
-> ⚠️ The browser must fetch a FRESH boot manifest to load the client half:
-> clear the browser/webview cache (or use an incognito window) after changing
-> the client bundle. The `dsh.client.immediately: true` declaration makes the
-> module load at boot.
+> Historical: an earlier version registered a custom three-button composer
+> panel (with an "add to whitelist" button) at `priority: 0.5`. Its selector
+> read the deprecated `ComposerChainProps.interactions` array (the current core
+> currency is a single `pendingInteraction`), so it crashed on render. That
+> client half was removed; whitelisting now goes through the human-gated model
+> tool `dsh_approve_whitelist_add`.
 
-## The confirmation dialog (three actions)
+## The confirmation dialog (presented by DSH core ui-approval)
 
-The plugin's own panel renders the approval dialog (replacing the stock
-two-button one):
+Non-whitelisted commands that need a human decision are presented by DSH
+core's approval panel (`ui-approval`): Reject / Allow once.
 
-| Action | How | Effect |
-| --- | --- | --- |
-| 拒绝 (Reject) | button | this command is blocked |
-| 加入白名单 (add to whitelist) | button — the dialog `POST`s the exact command to `/dsh-approve/whitelist-add` (a route the plugin registers on the core `webServer` service) | persisted instantly, then this run is allowed; never blocked/asked again |
-| 允许一次 (Allow once) | button | this command runs now |
+> ⚠️ Keep the DSH/session approval policy at `ask`. Setting it to `never`
+> rejects every ask *before* listeners run, so no confirmation dialog appears.
 
-Everything in the whitelist — added by the dialog button (your click) or by
-`dsh_approve_whitelist_add` (which requires your approval first) — is
-exact-full-match and never intercepted again.
+Everything in the whitelist — added via `dsh_approve_whitelist_add` (which
+requires your approval first) — is exact-full-match and never intercepted
+again. If you want an "add to whitelist + allow" one-click button in the
+dialog itself, that needs a custom composer panel (this plugin does not ship
+one anymore).
 
 ## Install (from the GitHub monorepo)
 
@@ -96,35 +95,19 @@ This installs the package from the remote repo as a real dependency (no local
 symlink), and `dsh plugin` automatically appends it to the profile's bundle
 layers. Then restart `dsh web` **once**:
 
-- The host half mounts via the **bundle layer** (`dsh.profile.bundles`), so
+- The plugin mounts via the **bundle layer** (`dsh.profile.bundles`), so
   **no user-layer `cordis.patch.yml` insert row is needed** — keep that file
   as `[]` to avoid double-mounting.
-- The client half is discovered from `dsh.client` in package.json and served
-  as `/plugins/dsh-approve/client.js`.
+- Pure host plugin — no client bundle.
 
 Mount marker (created once on apply, for verification): `~/.dsh/dsh-approve.mounted`.
 
 > Updating after a local push: `cd ~/.dsh/profiles/web && pnpm update dsh-approve`,
-> then restart `dsh web` (the client bundle rev changes need a cache-cleared
-> browser reload).
+> then restart `dsh web`.
 
-## Build (client half)
+## Build
 
-The host half (`lib/server.js`) is plain JS — no build. The client half is a
-tsdown bundle (`src/client/ → lib/client.js`) using the DSH client face:
-
-```sh
-/Users/huzilin/workdir/deepseek-harness/node_modules/.bin/tsdown
-```
-
-Run from this package root. After rebuilding, the DSH `modules` service
-content-hashes `lib/client.js` into a new `rev` — refresh the browser with a
-**cache-cleared** reload (or restart `dsh web`).
-
-> Note: do not add the row while `dsh web` is running (hot reload of an
-> insert wedges the host; stop, edit, start). If you later also run
-> `dsh plugin add` (route 1), remove the user-layer row — otherwise the
-> plugin mounts twice (duplicate hook listeners and a clashing status tool).
+The plugin (`lib/server.js`) is plain JS — no build step.
 
 ## Config
 
@@ -175,9 +158,9 @@ content-hashes `lib/client.js` into a new `rev` — refresh the browser with a
   human. A whitelisted shell command's escalation ask is auto-granted via
   `callId` correlation so whitelisted commands never re-prompt.
 - Whitelist writes are atomic (tmp + rename) and human-gated: the model tools
-  raise an approval prompt before touching `~/.dsh/dsh-approve.json`; only the
-  dialog's 加入白名单 button (your click) writes directly. `denyPatterns` /
-  `enforceDanger` are preserved on write.
+  raise an approval prompt before touching `~/.dsh/dsh-approve.json` (there is
+  no direct-write dialog-button path anymore — the old client panel was
+  removed). `denyPatterns` / `enforceDanger` are preserved on write.
 
 ## License
 

@@ -25,35 +25,29 @@ DSH 命令白名单插件，基于 DSH 的 `tools/pre-execute` 与 `approval/req
 
 插件**不代答 DSH 自身审批** —— 这是硬编码的（2026-08-22 用户决定，**没有** `suppressDshApproval` 配置项）。
 
-- **Shell 命令**（`bash`/`pwsh`/`ssh_*`）：只由本插件把关 —— 白名单精确匹配（零提示）/ 系统级危险（拒绝）/ 非当前目录（弹本插件的三按钮框）。被**白名单**的命令自身沙箱升级按 callId 关联自动放行，白名单命令全程不再询问。
+- **Shell 命令**（`bash`/`pwsh`/`ssh_*`）：只由本插件把关 —— 白名单精确匹配（零提示）/ 系统级危险（拒绝）/ 非当前目录（走 DSH 核心 `ui-approval` 审批面板）。被**白名单**的命令自身沙箱升级按 callId 关联自动放行，白名单命令全程不再询问。
 - **其余一切**（文件工具写工作区外、本插件不拥有的任何 `sandbox_permissions` 升级）：**DSH 原有审批照常弹给你**。插件不是一刀切的自动放行器，只在其上叠加命令级闸门。
-- **白名单写入必须经你审批**。弹框「加入白名单」按钮是你亲手点击（= 你的授权）；模型工具 `dsh_approve_whitelist_add` / `dsh_approve_whitelist_remove` 在改动 `~/.dsh/dsh-approve.json` **之前会先弹审批框** —— agent 不能自主写白名单。
-- ⚠️ 保持 DSH/会话审批策略为 `ask`。设为 `never` 会在监听器运行前拒绝所有请求，本插件的确认框也会被一并自动拒绝。
+- **白名单写入必须经你审批**。模型工具 `dsh_approve_whitelist_add` / `dsh_approve_whitelist_remove` 在改动 `~/.dsh/dsh-approve.json` **之前会先弹 DSH 审批框** —— agent 不能自主写白名单。审批弹框 UI 由 DSH 核心 `ui-approval` 提供（本插件不再覆盖 composer）。
 
 ## 架构（零内核改动）
 
-插件是**同一个包的两个半区**，不修改 DSH 内核任何文件：
+插件是**纯宿主插件**，不修改 DSH 内核任何文件：
 
 | 半区 | 文件 | 职责 |
 | --- | --- | --- |
 | 宿主 | `lib/server.js`（Node，`main`/`exports["."]`） | 策略引擎、`tools/pre-execute` / `approval/request` / `tools/post-execute` 钩子、模型工具、直连 HTTP 路由 |
-| 客户端 | `lib/client.js`（浏览器包，`exports["./client"]`） | **接管审批弹框** —— 以 `priority: 0.5` 注册到 `conversation.composer` 链（chain 槽按 priority 升序选举：0.5 早于内核面板的 1，而提问接管在 0、两者并存时提问仍优先） |
 
-客户端半区完全自足：精确命令取自 ask 文案的 `命令：` 行，「加入白名单」按钮直连 POST `/dsh-approve/whitelist-add`，应答走载体的 `respond()`（与内核 PendingApproval 同线格式）。
+审批弹框 UI 完全交给 DSH 核心 `ui-approval`（`conversation.composer` 上的原生面板）。本插件经 `approval/request` 钩子处理白名单命令的自动放行，需要人工确认的非白名单命令由核心面板呈现拒绝/允许。
 
-> ⚠️ 浏览器必须拿到**最新启动清单**才能加载客户端半区：改过客户端包后要清浏览器/webview 缓存（或用无痕窗口）刷新。`dsh.client.immediately: true` 让模块在启动时加载。
+> 历史：旧版曾在 `conversation.composer` 注册自定义三按钮面板（含「加入白名单」），因其按已废弃的客户端 API 选择器读取 `interactions`（现核心 currency 为单个 `pendingInteraction`）导致选择器崩溃，已移除该客户端半区。
 
-## 确认框（三个动作）
+## 确认框（由 DSH 核心 ui-approval 呈现）
 
-插件自己的面板渲染审批弹框（替换原生两按钮面板），按钮**直连宿主插件**：
+需要人工确认的非白名单命令，由 DSH 核心的审批面板（`ui-approval`）呈现：拒绝 / 允许一次。
 
-| 动作 | 怎么操作 | 效果 |
-| --- | --- | --- |
-| 拒绝 | 按钮 | 阻止该命令 |
-| 加入白名单 | 弹框按钮（直连插件路由） | 精确命令**立即落盘**，本次放行，以后永不拦截/不再询问 |
-| 允许一次 | 按钮 | 本次放行该命令 |
+> ⚠️ 保持 DSH/会话审批策略为 `ask`。设为 `never` 会在监听器运行前拒绝所有请求，任何确认框都会被一并自动拒绝。
 
-白名单（弹框按钮你亲手添加，或 `dsh_approve_whitelist_add` **经你审批后**添加）都是**完整相同**精确匹配，加入后不再被拦截。
+白名单（通过模型工具 `dsh_approve_whitelist_add` **经你审批后**添加）都是**完整相同**精确匹配，加入后不再被拦截。若你想在审批弹框里一键「加入白名单」+ 放行，需另做自定义 composer 面板（本插件当前不提供）。
 
 ## 安装（从 GitHub monorepo）
 
@@ -63,24 +57,12 @@ dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/dsh-appro
 
 从远端仓库安装为真实依赖（**不再用本地符号链接**），`dsh plugin` 会自动把它加入 profile 的 bundle 层。随后**重启一次** `dsh web`：
 
-- 宿主半区经 **bundle 层**（`dsh.profile.bundles`）挂载 —— **不需要**在 `cordis.patch.yml` 用户层里加 insert 行，保持该文件为 `[]` 以免双挂载。
-- 客户端半区由 `dsh.client` 声明被发现，以 `/plugins/dsh-approve/client.js` 提供。
+- 插件经 **bundle 层**（`dsh.profile.bundles`）挂载 —— **不需要**在 `cordis.patch.yml` 用户层里加 insert 行，保持该文件为 `[]` 以免双挂载。
+- 纯宿主插件，无客户端 bundle。
 
 挂载标记（apply 时写入一次，用于验证是否加载）：`~/.dsh/dsh-approve.mounted`。
 
-> 本地 push 后更新：`cd ~/.dsh/profiles/web && pnpm update dsh-approve`，再重启 `dsh web`（客户端 rev 变化需清缓存刷新浏览器）。
-
-## 构建（客户端半区）
-
-宿主半区（`lib/server.js`）是纯 JS，无需构建。客户端半区是一份 tsdown 构建产物（`src/client/ → lib/client.js`，使用 DSH 客户端 face）：
-
-```sh
-/Users/huzilin/workdir/deepseek-harness/node_modules/.bin/tsdown
-```
-
-在本包根目录运行。重建后 DSH `modules` 服务会对 `lib/client.js` 内容重新哈希成新 `rev` —— 用**清过缓存**的浏览器刷新（或重启 `dsh web`）。
-
-> 注意：不要在 `dsh web` 运行中往里加这行（热插入会打崩宿主；先停、再改、再启）。如果之后又用 `dsh plugin add`（第一种方式），请删掉用户层这一行，否则插件会被挂载两次（重复的 hook 监听器 + 状态工具注册冲突）。
+> 本地 push 后更新：`cd ~/.dsh/profiles/web && pnpm update dsh-approve`，再重启 `dsh web`。
 
 ## 配置
 
@@ -114,7 +96,7 @@ dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/dsh-appro
 - 拒绝是 fail-closed：deny/ask 用 `prepend: true` 短路 `tools/pre-execute` 瀑布，且后续任何单调守卫仍可拒绝。
 - 危险兜底只保留系统级破坏类（mkfs、dd 写裸盘、分区工具、电源状态、fork bomb、sudo mkfs/dd）；`rm`/`curl`/`sh`/`chmod -R /`、`chown -R /` 已于 2026-08-22 移出内置兜底，如需重新硬拦截请在 `denyPatterns` 里加正则。
 - DSH 自身沙箱升级审批**保持开启**（硬编码，无配置项）：插件不拥有的升级（文件工具等）照常弹人工确认；被白名单的 shell 命令升级询问按 callId 关联自动放行，白名单命令不再重复弹框。
-- 白名单写入是原子的（tmp + rename）且**必须经人工审批**：模型工具先弹审批框再动 `~/.dsh/dsh-approve.json`；只有弹框「加入白名单」按钮（你亲自点击）直接写入。`denyPatterns`/`enforceDanger` 写入时原样保留。
+- 白名单写入是原子的（tmp + rename）且**必须经人工审批**：模型工具先弹审批框再动 `~/.dsh/dsh-approve.json`（无弹框直接写入路径 —— 旧版弹框按钮已被移除）。`denyPatterns`/`enforceDanger` 写入时原样保留。
 
 ## License
 

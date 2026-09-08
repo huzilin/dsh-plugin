@@ -8,9 +8,6 @@
     ".": {
       "default": "./lib/server.js"
     },
-    "./client": {
-      "default": "./lib/client.js"
-    },
     "./policy": {
       "default": "./lib/policy.js"
     },
@@ -29,15 +26,6 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ],
-      "immediately": true
     }
   },
   "scripts": {
