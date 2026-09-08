@@ -56,7 +56,7 @@ shadow 掉第一方 `tool:grep` / `tool:glob` 段（`systemPrompt.section()` 同
 
 本插件**复用已有的 zvec 引擎**，不新增第二份：`@sugarforever/dsh-zvec-grep` 已把它装进 profile。若未装该插件，需自行 `pnpm add @zvec/zvec-grep`。
 
-> **坑（已实测）**：`link:` 安装的插件，Node 按**真实路径**（profile 树外）解析裸标识符，profile 里 hoist 的 `@zvec/zvec-grep` 看不见 → `ERR_MODULE_NOT_FOUND`。且 `import.meta.resolve` 的 parent 参数在部分 Node 版本被忽略、`require.resolve` 看不到 `exports`-only 的 ESM 包。因此插件改为**按目录探测**：依次尝试 `DSH_ZVEC_ROUTER_RESOLVE_FROM` → `$DSH_HOME/profiles/web` → `$DSH_HOME/profiles/desktop`，读该包 `package.json` 的 `exports`/`main` 得到入口文件，用绝对 URL import；全失败才回落到裸标识符。
+> **坑（已实测）**：`link:` 安装的插件，Node 按**真实路径**（profile 树外）解析裸标识符，profile 里 hoist 的 `@zvec/zvec-grep` 看不见 → `ERR_MODULE_NOT_FOUND`。且 `import.meta.resolve` 的 parent 参数在部分 Node 版本被忽略、`require.resolve` 看不到 `exports`-only 的 ESM 包。因此插件改为**按目录探测**，优先级：`DSH_ZVEC_ROUTER_RESOLVE_FROM` → `$DSH_HOME/profiles/{web,desktop}` → `~/.dsh/profiles/{web,desktop}`（内置缺省，harness 默认落 `~/.dsh` 却不导出 `DSH_HOME`，故直接写死兜底，无需任何环境变量即可命中）。读该包 `package.json` 的 `exports`/`main` 得到入口文件，用绝对 URL import；全失败才回落到裸标识符。
 
 ## 配置
 

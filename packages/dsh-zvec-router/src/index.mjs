@@ -62,9 +62,10 @@ const ENGINE_SPEC = '@zvec/zvec-grep'
  * profile (this one ships from `~/workdir/dsh-plugin/...`), and Node resolves a
  * bare specifier from the module's REAL path — so the profile's hoisted copy is
  * invisible and the import fails. Set this to the profile directory to resolve
- * from there instead; leave unset to resolve from this module's own location.
- * Read once at first use, not at import time, so a config change needs no
- * reload trickery.
+ * from there instead; when unset the plugin falls back to
+ * `$DSH_HOME/profiles/{web,desktop}` and finally the hardcoded default
+ * `~/.dsh/profiles/{web,desktop}` (see {@link resolveRoots}). Read once at
+ * import time.
  */
 const RESOLVE_FROM_DIR = process.env.DSH_ZVEC_ROUTER_RESOLVE_FROM ?? ''
 
@@ -195,16 +196,33 @@ async function loadEngineModule() {
  * and fails. Probing explicit roots is the portable fix: `import.meta.resolve`
  * ignores its parent argument on some Node versions, and `require.resolve`
  * cannot see an `exports`-only ESM package.
+ *
+ * Root precedence:
+ * 1. {@link RESOLVE_FROM_DIR} — explicit one-off override.
+ * 2. `$DSH_HOME/profiles/{web,desktop}` when `DSH_HOME` is set.
+ * 3. `~/.dsh/profiles/{web,desktop}` — hardcoded default so the engine is
+ *    still found when a `dsh web` server is launched without `DSH_HOME`
+ *    exported (the harness reads `~/.dsh` by default but does not export it).
  * @returns {string[]} candidate profile directories.
  */
 function resolveRoots() {
   const roots = []
   if (RESOLVE_FROM_DIR !== '') roots.push(RESOLVE_FROM_DIR)
-  const home = process.env.DSH_HOME ?? ''
-  if (home !== '') {
-    for (const profile of ['web', 'desktop']) roots.push(`${home}/profiles/${profile}`)
-  }
+  const fromEnv = process.env.DSH_HOME
+  const home = fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : defaultDshHome()
+  for (const profile of ['web', 'desktop']) roots.push(`${home}/profiles/${profile}`)
   return roots
+}
+
+/**
+ * The default DSH home: `~/.dsh`. Mirrors the harness's own fallback in
+ * `resolveDshHome()` (`packages/util/home-paths`), which defaults to `~/.dsh`
+ * when `$DSH_HOME` is unset rather than requiring the env var to be exported.
+ * @returns {string} the absolute harness home directory.
+ */
+function defaultDshHome() {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || ''
+  return `${homeDir}/.dsh`
 }
 
 /**
