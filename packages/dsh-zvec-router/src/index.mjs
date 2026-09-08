@@ -37,8 +37,8 @@
 /** Cordis plugin name. */
 export const name = 'zvec-router'
 
-/** The tools service must exist before this plugin can register into it. */
-export const inject = ['tools', 'systemPrompt']
+/** The preset-scope services this plugin uses directly. */
+export const inject = ['tools', 'systemPrompt', 'agents']
 
 /** Default result budget per route, overridable through plugin config. */
 const DEFAULTS = {
@@ -459,8 +459,14 @@ function createCodeSearchTool(cache, config) {
 
 /**
  * Guidance that replaces the first-party `tool:grep` / `tool:glob` sections for
- * every agent under this plugin's scope.
- * @param {boolean} hasTool - whether `code_search` is mounted in this scope.
+ * one agent. The sections MUST be registered on the AGENT's own scope (via
+ * `agent.ctx`), never on the preset's scope: `tool:grep` / `tool:glob` are
+ * registered by `@deepseek-ai/dsh-tool-fs-search` as rows of the SAME preset
+ * composition, so a preset-scope section with the same name is a duplicate
+ * registration and fails the mount loudly (which is exactly what happened in
+ * the first release). Registering on the deeper agent scope shadows the preset
+ * copy — the documented most-specific-wins mechanism.
+ * @param {boolean} hasTool - whether `code_search` is mounted.
  * @returns {{ name: string, text: string }[]} the sections to register.
  */
 function routingSections(hasTool) {
@@ -486,6 +492,13 @@ function routingSections(hasTool) {
 
 /**
  * Mount the routing tool and guidance.
+ *
+ * The `code_search` tool has a unique name, so it registers on the preset's
+ * own scope (visible to every agent composed under it, like `grep` / `glob`).
+ * The `tool:grep` / `tool:glob` SHADOW sections, however, must go on each
+ * AGENT's scope: their names are already taken by `tool-fs-search` rows in the
+ * same preset composition, and a same-scope duplicate fails the mount.
+ *
  * @param {import('@deepseek-ai/cordis').Context} ctx - plugin context.
  * @param {unknown} config - raw Cordis config object.
  * @returns {void}
@@ -501,14 +514,27 @@ export function apply(ctx, config) {
     ctx.tools.register(createCodeSearchTool(cache, resolved))
   }
 
+  // Per-agent section shadowing. Registering on `agent.ctx` scopes the sections
+  // to that one agent (a descendant of the preset standing scope), so they
+  // shadow the `tool-fs-search` originals instead of colliding with them.
+  // A section fiber registered under the agent's ctx is torn down with the
+  // agent, so no explicit disposal is needed here.
+  const sections = routingSections(resolved.mountTool)
+  const installSections = (agent) => {
+    agent.ctx.inject(['systemPrompt'], (scope) => {
+      for (const section of sections) {
+        scope.systemPrompt.section({
+          name: section.name,
+          order: scope.systemPrompt.getSectionOrder(section.name === 'tool:grep' ? 'TOOL_GREP' : 'TOOL_GLOB'),
+          text: section.text,
+        })
+      }
+    })
+  }
+
   if (resolved.routePrompt) {
-    for (const section of routingSections(resolved.mountTool)) {
-      ctx.systemPrompt.section({
-        name: section.name,
-        order: ctx.systemPrompt.getSectionOrder(section.name === 'tool:grep' ? 'TOOL_GREP' : 'TOOL_GLOB'),
-        text: section.text,
-      })
-    }
+    for (const agent of ctx.agents.list()) installSections(agent)
+    ctx.on('agent/created', ({ agent }) => { installSections(agent) })
   }
 
   ctx.effect(() => async () => {
