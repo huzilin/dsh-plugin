@@ -1,0 +1,31 @@
+{
+  "name": "dsh-zvec-router",
+  "version": "0.1.0",
+  "description": "Preset-scoped workspace retrieval routing for DeepSeek Harness: a `code_search` composite tool returning exact (ripgrep, exhaustive) and semantic (zvec index, ranked) evidence in one call, plus prompt guidance that routes search by evidence kind.",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "zvec",
+    "search",
+    "retrieval"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "optionalDependencies": {
+    "@zvec/zvec-grep": "^0.2.1"
+  }
+}
