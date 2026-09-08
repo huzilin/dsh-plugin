@@ -1,4 +1,13 @@
 packages:
   - 'packages/*'
+  # External workspace: the local DeepSeek Harness checkout. dsh-restart's host
+  # half depends on @deepseek-ai/dsh-* packages that are NOT published to npm at
+  # the version this plugin targets (0.1.2-rc.1). Listing the harness as a
+  # workspace here lets pnpm resolve those names to the checkout's built sources
+  # (the harness is itself a pnpm workspace with linkWorkspacePackages: true).
+  # Point this at your harness checkout; it is a dev-only resolution path and is
+  # not baked into the published tarball (dsh-restart declares them as optional
+  # peerDependencies).
+  - '/Users/huzilin/workdir/deepseek-harness/packages/*/*'
 allowBuilds:
   esbuild: true
