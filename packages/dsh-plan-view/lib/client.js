@@ -1897,27 +1897,47 @@ window.__ModuleLoader__.load({
 				if (!mapRaw) return null;
 				return mapRaw.match(/## Destination\s*\n([\s\S]*?)(?=\n## |\n$)/)?.[1]?.trim().split("\n")[0]?.trim() ?? null;
 			}, [data?.efforts, effortIdx]);
+			const refreshBtn = (label = "⟳ 刷新") => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				onClick: () => void load(),
+				disabled: loading,
+				title: "重新读取 .plan（别处改了文件时用）",
+				style: {
+					padding: "5px 10px",
+					border: `1px solid ${BORDER}`,
+					borderRadius: 6,
+					background: "transparent",
+					color: loading ? "#555" : "#aaa",
+					cursor: loading ? "default" : "pointer",
+					fontSize: 12
+				},
+				children: loading ? "读取中…" : label
+			});
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
+					flexDirection: "column",
 					alignItems: "center",
 					justifyContent: "center",
+					gap: 10,
 					background: BG,
 					color: "#888"
 				},
 				children: "Loading…"
 			});
-			if (error || !data) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			if (error || !data) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
 					display: "flex",
+					flexDirection: "column",
 					alignItems: "center",
 					justifyContent: "center",
+					gap: 10,
 					background: BG,
 					color: "#888"
 				},
-				children: "No .plan found in current directory."
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "No .plan found in current directory." }), refreshBtn("⟳ 重新读取")]
 			});
 			const planDir = data.effortDir;
 			const tabBtn = (active) => ({
@@ -1968,15 +1988,16 @@ window.__ModuleLoader__.load({
 					fontSize: 14
 				},
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							display: "flex",
 							gap: 4,
 							padding: "6px 8px",
 							borderBottom: `1px solid ${BORDER}`,
-							background: HEADER_BG
+							background: HEADER_BG,
+							alignItems: "center"
 						},
-						children: tabs.map((t) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+						children: [tabs.map((t) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 							type: "button",
 							style: tabBtn(top === t.id),
 							onClick: () => setTop(t.id),
@@ -1988,7 +2009,10 @@ window.__ModuleLoader__.load({
 								},
 								children: t.count
 							})]
-						}, t.id))
+						}, t.id)), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: { marginLeft: "auto" },
+							children: refreshBtn()
+						})]
 					}),
 					top === "route" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 						data.efforts.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {

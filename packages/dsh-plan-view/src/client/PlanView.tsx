@@ -788,8 +788,32 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     return m?.[1]?.trim().split('\n')[0]?.trim() ?? null
   }, [data?.efforts, effortIdx])
 
-  if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: BG, color: '#888' }}>Loading…</div>
-  if (error || !data) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: BG, color: '#888' }}>No .plan found in current directory.</div>
+  // Both early returns keep the refresh control: "no .plan found" is exactly the
+  // state where re-reading is the thing you want, and a modal dead-end with no
+  // way out is worse than the error itself.
+  const refreshBtn = (label = '⟳ 刷新') => (
+    <button
+      type="button"
+      onClick={() => void load()}
+      disabled={loading}
+      title="重新读取 .plan（别处改了文件时用）"
+      style={{ padding: '5px 10px', border: `1px solid ${BORDER}`, borderRadius: 6, background: 'transparent', color: loading ? '#555' : '#aaa', cursor: loading ? 'default' : 'pointer', fontSize: 12 }}
+    >
+      {loading ? '读取中…' : label}
+    </button>
+  )
+
+  if (loading) {
+    return <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: BG, color: '#888' }}>Loading…</div>
+  }
+  if (error || !data) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: BG, color: '#888' }}>
+        <span>No .plan found in current directory.</span>
+        {refreshBtn('⟳ 重新读取')}
+      </div>
+    )
+  }
 
   const planDir = data.effortDir
   const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
@@ -803,13 +827,16 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14 }}>
-      <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>
+      <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, alignItems: 'center' }}>
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
             {t.label}
             <span style={{ marginLeft: 5, fontSize: 11, color: t.id === 'approvals' && t.count > 0 ? '#ffa94d' : '#777' }}>{t.count}</span>
           </button>
         ))}
+        {/* The files change outside this view — another session writes them, or
+            this one does. Re-reading is the only way to see that. */}
+        <div style={{ marginLeft: 'auto' }}>{refreshBtn()}</div>
       </div>
       {top === 'route' && (
         <>
