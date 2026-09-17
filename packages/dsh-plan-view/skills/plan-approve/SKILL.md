@@ -1,6 +1,6 @@
 ---
 name: plan-approve
-description: Settle the plan documents waiting on you — read every `status: pending` document under `.plan/`, re-verify each item is still genuinely undecided, then record your rulings and advance each document's status.
+description: Settle the plan documents waiting on you — read every pending document under `.plan/`, re-verify each item is still genuinely undecided, then record your rulings and advance each document's status.
 disable-model-invocation: true
 ---
 
