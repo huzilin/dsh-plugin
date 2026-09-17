@@ -10,9 +10,11 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
 ## Process
 
-1. **Collect the pending set.** Find every markdown document under `.plan/` whose frontmatter says `status: pending`. Also check the repo's own in-flight ledger (a plan or roadmap document listing open questions) — an item can be live there without a document of its own.
+1. **Run the drift lint first.** `bash scripts/plan-lint.sh` (in this plugin's package) reports the structural problems that make this pass unreliable: a ticket id with more than one home, an effort holding `tickets/` with no `map.md` (so the plan view silently skips it), and root-level documents missing a status header. Fix or report what it finds before reading items — a document that is not in the set you collected cannot be settled, and that is exactly the drift this skill exists to catch.
 
-2. **Re-verify each item, one at a time.** For every item in every pending document, go and look for its answer. Search the conversation, the git log, the closed and archived documents, and the code itself. Sort each item into exactly one verdict:
+2. **Collect the pending set.** Find every markdown document under `.plan/` whose frontmatter says `status: pending`. Also check the repo's own in-flight ledger (a plan or roadmap document listing open questions) — an item can be live there without a document of its own.
+
+3. **Re-verify each item, one at a time.** For every item in every pending document, go and look for its answer. Search the conversation, the git log, the closed and archived documents, and the code itself. Sort each item into exactly one verdict:
 
    - **decided** — an answer exists somewhere. Record where.
    - **superseded** — a later decision replaced it; the question no longer applies.
@@ -21,9 +23,9 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
    A verdict of *decided*, *superseded*, or *stale* is a **finding**, and findings are the point: each one is a status that should have been turned and was not. Do not ask about these.
 
-3. **Report the findings before the questions.** The human needs to know that three documents were lying before deciding whether to trust the fourth. State plainly which items were already settled and what settled them.
+4. **Report the findings before the questions.** The human needs to know that three documents were lying before deciding whether to trust the fourth. State plainly which items were already settled and what settled them.
 
-4. **Put the live items to the human — in documents, not in chat.**
+5. **Put the live items to the human — in documents, not in chat.**
 
    **The chat message is not where an item gets explained.** A numbered list of items in chat forces the human to decide from the agent's summary, which is exactly the illegibility that `to-approval` exists to remove. The four things belong in a document they can read:
 
@@ -41,15 +43,16 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
    Batching still applies: get all live items into documents in one pass so they can be answered together, in one reply. What changes is *where* they are put, not how many round-trips it takes.
 
-5. **Record each ruling as it lands.** For every item the human rules on, and for every finding from step 2, write the outcome into the document that raised it:
+6. **Record each ruling as it lands.** For every item the human rules on, and for every finding from step 3, write the outcome into the document that raised it:
 
    - Quote the human's words verbatim — never paraphrase a ruling. Their phrasing carries the constraint.
    - Mark the item settled, with the date and what settled it.
-   - Open the ticket or file the follow-up work if the ruling calls for it, and name that ticket in the record.
+   - **When the ruling calls for work, produce the ticket by invoking `to-tickets`** — not by hand-writing a file, and not by noting the follow-up in prose and calling it filed. The ruling is not recorded until the ticket exists; name it in the record and link it beside the quoted ruling. A ticket invented by the settling session is shaped by whatever that session felt like, which is how one repo accumulates several incompatible ticket formats that no view can read.
+   - When no ruling calls for work (a question of fact, a choice among existing options), there is nothing to file.
 
    A ruling written only in chat is lost the moment the session ends.
 
-6. **Advance each document's status.** After its items are all resolved, set the frontmatter:
+7. **Advance each document's status.** After its items are all resolved, set the frontmatter:
 
    - `closed` — every item decided, and each either done or filed as a ticket.
    - `superseded-by:<path>` — a later decision replaced the document's content; name the replacement.
@@ -57,9 +60,9 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
    Then add the stale-marker to any section whose items are gone: what replaced it, when, and what the document is still good for. Never leave a document at `pending` once its items are settled — that is precisely the lie this skill exists to catch.
 
-7. **Archive what is finished, and sweep the paths.** Move `closed` documents to the repo's archive directory with `git mv`, preserving history. Archiving moves files, so anything that referenced them by path is now broken — grep the live documents for each archived filename and repoint the references, then confirm zero remain. Report the count.
+8. **Archive what is finished, and sweep the paths.** Move `closed` documents to the repo's archive directory with `git mv`, preserving history. Archiving moves files, so anything that referenced them by path is now broken — grep the live documents for each archived filename and repoint the references, then confirm zero remain. Report the count.
 
-8. **Open anything the human must read now.** A document that needs a ruling, or that records one, goes to the sidebar. A path alone makes them go fetch it.
+9. **Open anything the human must read now.** A document that needs a ruling, or that records one, goes to the sidebar. A path alone makes them go fetch it.
 
 ## Completion criterion
 

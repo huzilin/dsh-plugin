@@ -58,6 +58,14 @@ The header is what makes an approval document findable and trackable later. Five
 | `active` | Not a decision document — a spec, map, or plan still in use. |
 | `abandoned` | No longer relevant; nothing replaced it. |
 
+**A ruling that calls for work becomes a ticket, right then.** The `closed` row above says "either done or filed as a ticket" — that clause is an action, not a label. When the human's ruling is *"do X"*, the ruling is not recorded until the ticket exists:
+
+1. **Invoke the `to-tickets` skill** with the ruling as its input. Do not hand-write the ticket file, and do not paraphrase the ruling into a bullet in this document and call it filed. Either shortcut produces a ticket shaped by whatever the current session felt like — which is how a repo ends up with four incompatible ticket formats and a view that can read none of them.
+2. **Let `to-tickets` write it**, so it lands in the shape the tracker consumes: its frontmatter fields, its status vocabulary, its `blocked_by` edges.
+3. **Name the ticket in the record** and link it, with the ruling quoted verbatim beside it.
+
+If no ruling calls for work — every item was a question of fact, or a choice among existing options — there is nothing to file and this step is skipped. The rule is only that *when* work is called for, the ticket comes from the skill that owns ticket format rather than being invented here.
+
 **Never leave a document at `pending` when its items are gone.** A document whose decisions were all overtaken, still reading `pending`, tells the next session there is work waiting that does not exist. When a later decision supersedes a document, update it in the same pass — set `superseded-by:<path>` and mark the affected section in the body with three things: what replaced it, when, and what the document is still good for.
 
 The same rule covers the body. A section whose items have all been decided gets a stale-marker at its head pointing at the live document, rather than being silently left to read as current.
