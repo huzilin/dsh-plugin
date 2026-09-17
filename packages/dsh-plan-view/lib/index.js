@@ -262,6 +262,19 @@ function md(text) {
 	flushAll();
 	return out.join("");
 }
+const BG = "#151517";
+const HEADER_BG = "#1b1b1c";
+const CARD = "#232324";
+const CARD_DARK = "#1f1f20";
+const RAISED = "#2c2c2e";
+const TEXT = "#e9ecf2";
+const TEXT_DIM = "#adb2b8";
+const TEXT_FAINT = "#81858c";
+const BORDER = "rgba(255,255,255,.10)";
+const BORDER_LIGHT = "rgba(255,255,255,.06)";
+const ACCENT = "#4176e6";
+const ACCENT_SOFT = "#609bfa";
+const CHIP_BG = "rgba(255,255,255,.07)";
 const MD_CSS = `
 .pvm-p{margin:.5em 0;line-height:1.75}
 .pvm-h{margin:1.1em 0 .5em;font-weight:700;color:${TEXT};line-height:1.4}
@@ -368,19 +381,6 @@ function ageLabel(t) {
 	if (d === 0) return "今天";
 	return `挂了 ${d} 天`;
 }
-const BG = "#151517";
-const HEADER_BG = "#1b1b1c";
-const CARD = "#232324";
-const CARD_DARK = "#1f1f20";
-const RAISED = "#2c2c2e";
-const TEXT = "#e9ecf2";
-const TEXT_DIM = "#adb2b8";
-const TEXT_FAINT = "#81858c";
-const BORDER = "rgba(255,255,255,.10)";
-const BORDER_LIGHT = "rgba(255,255,255,.06)";
-const ACCENT = "#4176e6";
-const ACCENT_SOFT = "#609bfa";
-const CHIP_BG = "rgba(255,255,255,.07)";
 const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
 async function collectTicketFiles(scope, effortDir) {
 	const tree = await fsTree(scope, effortDir);

@@ -238,6 +238,30 @@ function md(text: string): string {
   return out.join('')
 }
 
+// ─── Theme — DSH dark palette ───────────────────────────────────────────────
+//
+// Values mirror `@deepseek-ai/dsh-client-ui-theme`'s dark mapping
+// (design-platform.css: neutral-bluish layers, white-alpha borders, the
+// deepseek/blue accents). Hard-coded rather than read from CSS variables
+// because this view is self-contained inline styles — depending on the host
+// having loaded the theme stylesheet would make it break outside the web shell.
+// Declared before MD_CSS and every other top-level consumer: module
+// evaluation is top-down, so a const used above its declaration is a TDZ error.
+
+const BG = '#151517'          // neutral-bluish-950 — page
+const HEADER_BG = '#1b1b1c'   // 900 — bars, panels
+const CARD = '#232324'        // 875 — cards, layer-1
+const CARD_DARK = '#1f1f20'   // between 900 and 875 — recessed cards
+const RAISED = '#2c2c2e'      // 850 — hover/raised, layer-2
+const TEXT = '#e9ecf2'        // bluish-150 — primary text
+const TEXT_DIM = '#adb2b8'    // bluish-400 — secondary text
+const TEXT_FAINT = '#81858c'  // bluish-600 — tertiary/meta
+const BORDER = 'rgba(255,255,255,.10)'        // border-l2
+const BORDER_LIGHT = 'rgba(255,255,255,.06)'  // border-l1
+const ACCENT = '#4176e6'      // deepseek-500 — brand
+const ACCENT_SOFT = '#609bfa' // blue-400
+const CHIP_BG = 'rgba(255,255,255,.07)'
+
 // Scoped styles for the rendered body. Kept here (not in a stylesheet) so the
 // view stays self-contained; injected once per mount via a <style> tag.
 const MD_CSS = `
@@ -335,29 +359,6 @@ function ageLabel(t: ParsedTicket): string | undefined {
   if (d === 0) return '今天'
   return `挂了 ${d} 天`
 }
-
-// ─── Theme — DSH dark palette ───────────────────────────────────────────────
-//
-// Values mirror `@deepseek-ai/dsh-client-ui-theme`'s dark mapping
-// (design-platform.css: neutral-bluish layers, white-alpha borders, the
-// deepseek/blue accents). Hard-coded rather than read from CSS variables
-// because this view is self-contained inline styles — depending on the host
-// having loaded the theme stylesheet would make it break outside the web shell.
-
-const BG = '#151517'          // neutral-bluish-950 — page
-const HEADER_BG = '#1b1b1c'   // 900 — bars, panels
-const CARD = '#232324'        // 875 — cards, layer-1
-const CARD_DARK = '#1f1f20'   // between 900 and 875 — recessed cards
-const RAISED = '#2c2c2e'      // 850 — hover/raised, layer-2
-const TEXT = '#e9ecf2'        // bluish-150 — primary text
-const TEXT_DIM = '#adb2b8'    // bluish-400 — secondary text
-const TEXT_FAINT = '#81858c'  // bluish-600 — tertiary/meta
-const BORDER = 'rgba(255,255,255,.10)'        // border-l2
-const BORDER_LIGHT = 'rgba(255,255,255,.06)'  // border-l1
-const ACCENT = '#4176e6'      // deepseek-500 — brand
-const ACCENT_SOFT = '#609bfa' // blue-400
-const CHIP_BG = 'rgba(255,255,255,.07)'
-
 
 // ─── Data loading ────────────────────────────────────────────────────────────
 
