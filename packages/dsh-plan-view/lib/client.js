@@ -139,25 +139,172 @@ window.__ModuleLoader__.load({
 			}
 			for (const id of byId.keys()) if (id === ref || id.startsWith(`${ref}-`) || id.split("-")[0] === ref) return id;
 		}
-		function md(text) {
-			return "<p>" + text.replace(/^### (.+)$/gm, "<h4>$1</h4>").replace(/^## (.+)$/gm, "<h3>$1</h3>").replace(/^# (.+)$/gm, "<h2>$1</h2>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/^- (.+)$/gm, "<li>$1</li>").replace(/^---$/gm, "<hr/>").replace(/\n{2,}/g, "</p><p>").replace(/\n/g, "<br/>") + "</p>";
+		function escapeHtml(s) {
+			return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 		}
+		/** Inline spans: code, bold, italic, links. Runs on already-escaped text. */
+		function inline(s) {
+			return s.replace(/`([^`]+)`/g, "<code class=\"pvm-code\">$1</code>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<a class=\"pvm-a\" href=\"$2\" target=\"_blank\" rel=\"noreferrer\">$1</a>");
+		}
+		const splitRow = (line) => line.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+		const isDivider = (line) => /^\|?[\s:|-]+\|[\s:|-]*$/.test(line) && line.includes("-");
+		function md(text) {
+			const lines = text.split("\n");
+			const out = [];
+			let i = 0;
+			let para = [];
+			let list = [];
+			let olist = [];
+			let quote = [];
+			const flushPara = () => {
+				if (para.length) {
+					out.push(`<p class="pvm-p">${para.map(inline).join("<br/>")}</p>`);
+					para = [];
+				}
+			};
+			const flushList = () => {
+				if (list.length) {
+					out.push(`<ul class="pvm-ul">${list.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`);
+					list = [];
+				}
+			};
+			const flushOlist = () => {
+				if (olist.length) {
+					out.push(`<ol class="pvm-ol">${olist.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>`);
+					olist = [];
+				}
+			};
+			const flushQuote = () => {
+				if (quote.length) {
+					out.push(`<blockquote class="pvm-quote">${quote.map(inline).join("<br/>")}</blockquote>`);
+					quote = [];
+				}
+			};
+			const flushAll = () => {
+				flushPara();
+				flushList();
+				flushOlist();
+				flushQuote();
+			};
+			while (i < lines.length) {
+				const line = lines[i] ?? "";
+				if (line.match(/^\s*```(\w*)\s*$/)) {
+					flushAll();
+					const buf = [];
+					i++;
+					while (i < lines.length && !/^\s*```\s*$/.test(lines[i] ?? "")) {
+						buf.push(lines[i] ?? "");
+						i++;
+					}
+					i++;
+					out.push(`<pre class="pvm-pre"><code>${escapeHtml(buf.join("\n"))}</code></pre>`);
+					continue;
+				}
+				if (line.includes("|") && isDivider(lines[i + 1] ?? "")) {
+					flushAll();
+					const head = splitRow(line);
+					i += 2;
+					const body = [];
+					while (i < lines.length && (lines[i] ?? "").includes("|") && !/^\s*$/.test(lines[i] ?? "")) {
+						body.push(splitRow(lines[i] ?? ""));
+						i++;
+					}
+					out.push("<div class=\"pvm-tw\"><table class=\"pvm-table\"><thead><tr>" + head.map((c) => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>" + body.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("") + "</tbody></table></div>");
+					continue;
+				}
+				const h = line.match(/^(#{1,6})\s+(.*)$/);
+				if (h && h[1] && h[2] !== void 0) {
+					flushAll();
+					const lvl = h[1].length;
+					const tag = lvl <= 1 ? "h2" : lvl === 2 ? "h3" : "h4";
+					out.push(`<${tag} class="pvm-h">${inline(h[2])}</${tag}>`);
+					i++;
+					continue;
+				}
+				if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
+					flushAll();
+					out.push("<hr class=\"pvm-hr\"/>");
+					i++;
+					continue;
+				}
+				const q = line.match(/^>\s?(.*)$/);
+				if (q) {
+					flushPara();
+					flushList();
+					flushOlist();
+					quote.push(q[1] ?? "");
+					i++;
+					continue;
+				}
+				const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+				if (ul) {
+					flushPara();
+					flushOlist();
+					flushQuote();
+					list.push(ul[1] ?? "");
+					i++;
+					continue;
+				}
+				const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+				if (ol) {
+					flushPara();
+					flushList();
+					flushQuote();
+					olist.push(ol[1] ?? "");
+					i++;
+					continue;
+				}
+				if (/^\s*$/.test(line)) {
+					flushAll();
+					i++;
+					continue;
+				}
+				flushList();
+				flushOlist();
+				flushQuote();
+				para.push(line);
+				i++;
+			}
+			flushAll();
+			return out.join("");
+		}
+		const MD_CSS = `
+.pvm-p{margin:.5em 0;line-height:1.75}
+.pvm-h{margin:1.1em 0 .5em;font-weight:700;color:${TEXT};line-height:1.4}
+h2.pvm-h{font-size:17px;border-bottom:1px solid ${BORDER_LIGHT};padding-bottom:.3em}
+h3.pvm-h{font-size:15px}
+h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
+.pvm-ul,.pvm-ol{margin:.5em 0;padding-left:1.5em}
+.pvm-ul li,.pvm-ol li{margin:.25em 0;line-height:1.7}
+.pvm-quote{margin:.6em 0;padding:.5em .9em;border-left:3px solid ${ACCENT};background:rgba(255,255,255,.04);border-radius:0 6px 6px 0;color:${TEXT_DIM}}
+.pvm-code{background:rgba(255,255,255,.09);padding:1px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;color:${ACCENT_SOFT}}
+.pvm-pre{margin:.7em 0;padding:.8em 1em;background:#141416;border:1px solid ${BORDER_LIGHT};border-radius:8px;overflow:auto}
+.pvm-pre code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:${TEXT_DIM};white-space:pre}
+.pvm-tw{margin:.7em 0;overflow:auto;border:1px solid ${BORDER_LIGHT};border-radius:8px}
+.pvm-table{border-collapse:collapse;width:100%;font-size:12.5px}
+.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap}
+.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top}
+.pvm-table tr:last-child td{border-bottom:none}
+.pvm-a{color:${ACCENT_SOFT};text-decoration:none}
+.pvm-a:hover{text-decoration:underline}
+.pvm-hr{border:none;border-top:1px solid ${BORDER_LIGHT};margin:1em 0}
+`;
 		const TYPE_THEME = {
 			research: {
 				icon: "🔍",
-				color: "#7c6bff"
+				color: ACCENT
 			},
 			grilling: {
 				icon: "🔥",
-				color: "#ff6b6b"
+				color: "#f2555a"
 			},
 			prototype: {
 				icon: "🛠️",
-				color: "#ffa94d"
+				color: "#f7ad31"
 			},
 			task: {
 				icon: "⚡",
-				color: "#4dabf7"
+				color: ACCENT_SOFT
 			}
 		};
 		const TYPE_FALLBACK = {
@@ -167,10 +314,10 @@ window.__ModuleLoader__.load({
 		const NO_TYPE = "\0no-type";
 		const typeTheme = (t) => TYPE_THEME[t ?? ""] ?? TYPE_FALLBACK;
 		const DOT = {
-			open: "#6b6b8a",
-			claimed: "#f0a500",
-			resolved: "#2ecc71",
-			out_of_scope: "#555577"
+			open: "#81858c",
+			claimed: "#f7ad31",
+			resolved: "#4ed17e",
+			out_of_scope: "#61666b"
 		};
 		const STATUS_LABELS = {
 			open: "Open",
@@ -197,17 +344,17 @@ window.__ModuleLoader__.load({
 			ticket: {
 				label: "工单",
 				icon: "🎫",
-				color: "#4dabf7"
+				color: ACCENT_SOFT
 			},
 			approval: {
 				label: "待拍板",
 				icon: "⏳",
-				color: "#ffa94d"
+				color: "#f7ad31"
 			},
 			note: {
 				label: "说明",
 				icon: "📄",
-				color: "#7a7a9a"
+				color: TEXT_FAINT
 			}
 		};
 		/** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -227,8 +374,19 @@ window.__ModuleLoader__.load({
 			if (d === 0) return "今天";
 			return `挂了 ${d} 天`;
 		}
-		const BG = "#0d0d1a", CARD = "#2d2d52", CARD_DARK = "#1a1a36", TEXT = "#e0e0f0";
-		const BORDER = "#2a2a4e", BORDER_LIGHT = "#26264a", HEADER_BG = "#161628";
+		const BG = "#151517";
+		const HEADER_BG = "#1b1b1c";
+		const CARD = "#232324";
+		const CARD_DARK = "#1f1f20";
+		const RAISED = "#2c2c2e";
+		const TEXT = "#e9ecf2";
+		const TEXT_DIM = "#adb2b8";
+		const TEXT_FAINT = "#81858c";
+		const BORDER = "rgba(255,255,255,.10)";
+		const BORDER_LIGHT = "rgba(255,255,255,.06)";
+		const ACCENT = "#4176e6";
+		const ACCENT_SOFT = "#609bfa";
+		const CHIP_BG = "rgba(255,255,255,.07)";
 		const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
 		async function collectTicketFiles(scope, effortDir) {
 			const tree = await fsTree(scope, effortDir);
@@ -285,7 +443,7 @@ window.__ModuleLoader__.load({
 			(0, react.useEffect)(() => {
 				let alive = true;
 				fsRead(scope, ticket.path ?? `${planDir}/tickets/${ticket.file}`).then((r) => {
-					if (alive && r.kind === "text") setFullBody(r.content);
+					if (alive && r.kind === "text") setFullBody(parseFrontmatter(r.content).body);
 				});
 				return () => {
 					alive = false;
@@ -297,11 +455,18 @@ window.__ModuleLoader__.load({
 				scope
 			]);
 			const body = fullBody ?? ticket.body;
+			(0, react.useEffect)(() => {
+				const onKey = (e) => {
+					if (e.key === "Escape") onClose();
+				};
+				window.addEventListener("keydown", onKey);
+				return () => window.removeEventListener("keydown", onKey);
+			}, [onClose]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					position: "fixed",
 					inset: 0,
-					background: "rgba(5,5,15,.7)",
+					background: "rgba(0,0,0,.6)",
 					display: "flex",
 					alignItems: "center",
 					justifyContent: "center",
@@ -310,18 +475,21 @@ window.__ModuleLoader__.load({
 				onClick: onClose,
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					style: {
-						width: "min(560px, 90vw)",
-						maxHeight: "78vh",
-						overflow: "auto",
+						width: "min(1080px, 94vw)",
+						maxHeight: "88vh",
+						display: "flex",
+						flexDirection: "column",
 						background: HEADER_BG,
 						border: `1px solid ${BORDER}`,
 						borderRadius: 14,
-						padding: 18
+						boxShadow: "0 16px 48px rgba(0,0,0,.55)"
 					},
 					onClick: (e) => e.stopPropagation(),
 					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: MD_CSS }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
+								padding: "16px 20px 0",
 								display: "flex",
 								alignItems: "center",
 								gap: 8
@@ -356,10 +524,12 @@ window.__ModuleLoader__.load({
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
+								padding: "0 20px 12px",
 								display: "flex",
 								gap: 6,
 								flexWrap: "wrap",
-								marginTop: 8
+								marginTop: 8,
+								borderBottom: `1px solid ${BORDER_LIGHT}`
 							},
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
@@ -367,7 +537,7 @@ window.__ModuleLoader__.load({
 										fontSize: 11,
 										padding: "2px 9px",
 										borderRadius: 999,
-										background: "#1e1e3a",
+										background: CHIP_BG,
 										color: "#888",
 										border: `1px solid ${BORDER}`
 									},
@@ -402,7 +572,7 @@ window.__ModuleLoader__.load({
 										fontSize: 11,
 										padding: "2px 9px",
 										borderRadius: 999,
-										background: "#1e1e3a",
+										background: CHIP_BG,
 										color: DOT[displayStatus(ticket)],
 										border: `1px solid ${BORDER}`
 									},
@@ -414,7 +584,7 @@ window.__ModuleLoader__.load({
 										padding: "2px 9px",
 										borderRadius: 999,
 										background: "#f0a50022",
-										color: "#f0a500"
+										color: "#f7ad31"
 									},
 									children: ["👤 ", ticket.claimedBy]
 								}),
@@ -423,7 +593,7 @@ window.__ModuleLoader__.load({
 										fontSize: 11,
 										padding: "2px 9px",
 										borderRadius: 999,
-										background: "#1e1e3a",
+										background: CHIP_BG,
 										color: "#aaa",
 										border: `1px solid ${BORDER}`
 									},
@@ -435,7 +605,7 @@ window.__ModuleLoader__.load({
 										padding: "2px 9px",
 										borderRadius: 999,
 										background: "#ffa94d22",
-										color: "#ffa94d"
+										color: "#f7ad31"
 									},
 									children: ageLabel(ticket)
 								}),
@@ -444,7 +614,7 @@ window.__ModuleLoader__.load({
 										fontSize: 11,
 										padding: "2px 9px",
 										borderRadius: 999,
-										background: "#1e1e3a",
+										background: CHIP_BG,
 										color: "#888",
 										border: `1px solid ${BORDER}`
 									},
@@ -456,7 +626,7 @@ window.__ModuleLoader__.load({
 										padding: "2px 9px",
 										borderRadius: 999,
 										background: "#ff6b6b22",
-										color: "#ff6b6b"
+										color: "#f2555a"
 									},
 									children: ["blocked_by: ", ticket.blockedBy.map((n) => `#${n}`).join(", ")]
 								})
@@ -464,14 +634,11 @@ window.__ModuleLoader__.load({
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
-								marginTop: 14,
-								fontSize: 12.5,
-								lineHeight: 1.75,
-								color: "#c8c8e8",
-								background: "#1e1e3a",
-								border: `1px solid ${BORDER}`,
-								borderRadius: 8,
-								padding: 12
+								flex: 1,
+								overflowY: "auto",
+								padding: "14px 20px 20px",
+								fontSize: 13,
+								color: TEXT_DIM
 							},
 							dangerouslySetInnerHTML: { __html: md(body) }
 						})
@@ -541,7 +708,7 @@ window.__ModuleLoader__.load({
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								fontWeight: 700,
-								color: "#ffa94d",
+								color: "#f7ad31",
 								marginBottom: 4
 							},
 							children: [
@@ -569,7 +736,7 @@ window.__ModuleLoader__.load({
 										style: {
 											fontFamily: "monospace",
 											fontSize: 11,
-											color: "#ffa94d"
+											color: "#f7ad31"
 										},
 										children: shortId(t)
 									}),
@@ -585,7 +752,7 @@ window.__ModuleLoader__.load({
 									ageLabel(t) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										style: {
 											fontSize: 11,
-											color: "#ffa94d",
+											color: "#f7ad31",
 											flexShrink: 0
 										},
 										children: ageLabel(t)
@@ -618,7 +785,7 @@ window.__ModuleLoader__.load({
 								flex: 1,
 								height: 6,
 								borderRadius: 3,
-								background: "#1e1e3a",
+								background: CHIP_BG,
 								border: `1px solid ${BORDER}`,
 								overflow: "hidden"
 							},
@@ -626,13 +793,13 @@ window.__ModuleLoader__.load({
 								height: "100%",
 								width: `${pct}%`,
 								borderRadius: 3,
-								background: "linear-gradient(90deg, #2ecc71, #7c6bff)"
+								background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
 							} })
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							style: {
 								fontSize: 12,
 								fontWeight: 700,
-								color: "#2ecc71",
+								color: "#4ed17e",
 								minWidth: 36,
 								textAlign: "right"
 							},
@@ -653,7 +820,7 @@ window.__ModuleLoader__.load({
 								minWidth: 200,
 								display: "flex",
 								flexDirection: "column",
-								background: "#080814",
+								background: BG,
 								border: `1px solid ${BORDER_LIGHT}`,
 								borderRadius: 10,
 								overflow: "hidden"
@@ -665,7 +832,7 @@ window.__ModuleLoader__.load({
 									alignItems: "center",
 									gap: 7,
 									borderBottom: `1px solid ${BORDER_LIGHT}`,
-									background: "#121224"
+									background: HEADER_BG
 								},
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
@@ -719,7 +886,7 @@ window.__ModuleLoader__.load({
 													fontSize: 10,
 													fontFamily: "monospace",
 													color: "#888",
-													background: "#1e1e3a",
+													background: CHIP_BG,
 													borderRadius: 999,
 													minWidth: 20,
 													height: 20,
@@ -787,7 +954,7 @@ window.__ModuleLoader__.load({
 													padding: "1px 5px",
 													borderRadius: 999,
 													background: "#ffa94d33",
-													color: "#ffa94d"
+													color: "#f7ad31"
 												},
 												children: ageLabel(t) ?? "待拍板"
 											}),
@@ -797,7 +964,7 @@ window.__ModuleLoader__.load({
 													padding: "1px 5px",
 													borderRadius: 999,
 													background: "#f0a50022",
-													color: "#f0a500"
+													color: "#f7ad31"
 												},
 												children: ["👤 ", t.claimedBy]
 											}),
@@ -807,7 +974,7 @@ window.__ModuleLoader__.load({
 													padding: "1px 5px",
 													borderRadius: 999,
 													background: "#ff6b6b22",
-													color: "#ff6b6b"
+													color: "#f2555a"
 												},
 												children: [" ", t.blockedBy.map((n) => `#${n}`).join(",")]
 											})
@@ -945,7 +1112,7 @@ window.__ModuleLoader__.load({
 							style: {
 								width: 200,
 								flexShrink: 0,
-								background: "#121224",
+								background: HEADER_BG,
 								borderRight: `1px solid ${BORDER}`,
 								padding: 12,
 								display: "flex",
@@ -994,7 +1161,7 @@ window.__ModuleLoader__.load({
 										alignItems: "center",
 										gap: 6,
 										fontSize: 12,
-										color: "#c8c8e8",
+										color: TEXT_DIM,
 										cursor: "pointer",
 										padding: "1px 0"
 									},
@@ -1071,7 +1238,7 @@ window.__ModuleLoader__.load({
 									children: allTypes.map((t) => {
 										const theme = t === NO_TYPE ? {
 											icon: "∅",
-											color: "#8a8ab0"
+											color: TEXT_FAINT
 										} : typeTheme(t);
 										const on = typeSet.has(t);
 										const label = t === NO_TYPE ? "（无 type）" : t;
@@ -1100,7 +1267,7 @@ window.__ModuleLoader__.load({
 										alignItems: "center",
 										gap: 6,
 										fontSize: 12,
-										color: "#c8c8e8",
+										color: TEXT_DIM,
 										cursor: "pointer"
 									},
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
@@ -1144,7 +1311,7 @@ window.__ModuleLoader__.load({
 								style: {
 									padding: 40,
 									textAlign: "center",
-									color: "#55557a"
+									color: TEXT_FAINT
 								},
 								children: "No matching tickets"
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("table", {
@@ -1266,9 +1433,9 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`,
+													borderBottom: `1px solid ${BORDER_LIGHT}`,
 													fontFamily: "monospace",
-													color: "#8a8ab0",
+													color: TEXT_FAINT,
 													fontSize: 11
 												},
 												children: shortId(t)
@@ -1276,7 +1443,7 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`,
+													borderBottom: `1px solid ${BORDER_LIGHT}`,
 													fontWeight: 600,
 													color: TEXT,
 													maxWidth: 200,
@@ -1289,7 +1456,7 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`
+													borderBottom: `1px solid ${BORDER_LIGHT}`
 												},
 												children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 													style: {
@@ -1310,7 +1477,7 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`
+													borderBottom: `1px solid ${BORDER_LIGHT}`
 												},
 												children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 													style: {
@@ -1331,7 +1498,7 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`
+													borderBottom: `1px solid ${BORDER_LIGHT}`
 												},
 												children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 													style: {
@@ -1350,16 +1517,16 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`,
-													color: t.claimedBy ? "#f0a500" : "#55557a"
+													borderBottom: `1px solid ${BORDER_LIGHT}`,
+													color: t.claimedBy ? "#f7ad31" : TEXT_FAINT
 												},
 												children: t.claimedBy ?? "—"
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 												style: {
 													padding: "7px 10px",
-													borderBottom: `1px solid #1e1e3a`,
-													color: t.blockedBy.length > 0 ? "#ff6b6b" : "#55557a",
+													borderBottom: `1px solid ${BORDER_LIGHT}`,
+													color: t.blockedBy.length > 0 ? "#f2555a" : TEXT_FAINT,
 													fontFamily: "monospace",
 													fontSize: 11
 												},
@@ -1632,7 +1799,7 @@ window.__ModuleLoader__.load({
 															fontSize: 9,
 															fontFamily: "monospace",
 															color: "#888",
-															background: "#1e1e3a",
+															background: CHIP_BG,
 															borderRadius: 999,
 															minWidth: 18,
 															height: 18,
@@ -1666,7 +1833,7 @@ window.__ModuleLoader__.load({
 											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												style: {
 													fontSize: 9,
-													color: "#8a8ab0",
+													color: TEXT_FAINT,
 													display: "flex",
 													gap: 6
 												},
@@ -1702,7 +1869,7 @@ window.__ModuleLoader__.load({
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
 											width: 4,
 											flexShrink: 0,
-											background: "#383860"
+											background: "rgba(255,255,255,.16)"
 										} }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
 												padding: "7px 8px 7px 8px",
@@ -1724,7 +1891,7 @@ window.__ModuleLoader__.load({
 															fontSize: 9,
 															fontFamily: "monospace",
 															color: "#888",
-															background: "#1e1e3a",
+															background: CHIP_BG,
 															borderRadius: 999,
 															minWidth: 18,
 															height: 18,
@@ -1758,7 +1925,7 @@ window.__ModuleLoader__.load({
 											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												style: {
 													fontSize: 9,
-													color: "#8a8ab0"
+													color: TEXT_FAINT
 												},
 												children: "ruled out"
 											})]
@@ -1835,7 +2002,7 @@ window.__ModuleLoader__.load({
 										const ex = e.to === END ? capX : bPos.cx;
 										const ey = e.to === END ? endY : e.dashed ? bPos.y : bPos.y + NODE_H / 2;
 										const sw = e.dashed ? 1.4 : connected ? 3 : 1.4;
-										const sc = e.dashed ? "#666688" : connected ? TEXT : "#454570";
+										const sc = e.dashed ? "rgba(255,255,255,.35)" : connected ? TEXT : "rgba(255,255,255,.22)";
 										return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 											d: mk(sx, sy, ex, ey),
 											fill: "none",
@@ -2005,7 +2172,7 @@ window.__ModuleLoader__.load({
 								style: {
 									marginLeft: 5,
 									fontSize: 11,
-									color: t.id === "approvals" && t.count > 0 ? "#ffa94d" : "#777"
+									color: t.id === "approvals" && t.count > 0 ? "#f7ad31" : "#777"
 								},
 								children: t.count
 							})]
@@ -2029,8 +2196,8 @@ window.__ModuleLoader__.load({
 									padding: "2px 8px",
 									borderRadius: 999,
 									cursor: "pointer",
-									border: `1px solid ${effortIdx === data.efforts.indexOf(e) ? "#7c6bff" : BORDER}`,
-									color: effortIdx === data.efforts.indexOf(e) ? "#7c6bff" : "#888"
+									border: `1px solid ${effortIdx === data.efforts.indexOf(e) ? ACCENT : BORDER}`,
+									color: effortIdx === data.efforts.indexOf(e) ? ACCENT : "#888"
 								},
 								children: e.dir.split("/").pop()
 							}, e.dir))
@@ -2114,7 +2281,7 @@ window.__ModuleLoader__.load({
 					display: "flex",
 					alignItems: "center",
 					justifyContent: "center",
-					color: "#55557a",
+					color: TEXT_FAINT,
 					padding: 24,
 					textAlign: "center"
 				},
@@ -2124,7 +2291,7 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						style: {
 							fontSize: 12,
-							color: "#44445e"
+							color: TEXT_FAINT
 						},
 						children: "审批文档写 `status: pending` 后会出现在这里。"
 					})
@@ -2139,8 +2306,8 @@ window.__ModuleLoader__.load({
 						padding: "2px 9px",
 						borderRadius: 999,
 						cursor: "pointer",
-						border: `1px solid ${on ? "#ffa94d" : BORDER}`,
-						color: on ? "#ffa94d" : "#888",
+						border: `1px solid ${on ? "#f7ad31" : BORDER}`,
+						color: on ? "#f7ad31" : "#888",
 						background: on ? "#ffa94d1a" : "transparent"
 					},
 					children: [
@@ -2179,7 +2346,7 @@ window.__ModuleLoader__.load({
 							display: "flex",
 							alignItems: "center",
 							justifyContent: "center",
-							color: "#55557a",
+							color: TEXT_FAINT,
 							fontSize: 13
 						},
 						children: filter === "pending" ? "没有等你拍板的文档。" : "该筛选下没有文档。"
@@ -2216,7 +2383,7 @@ window.__ModuleLoader__.load({
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											style: {
 												fontSize: 13,
-												color: settled ? "#555577" : "#ffa94d"
+												color: settled ? TEXT_FAINT : "#f7ad31"
 											},
 											children: settled ? "✓" : "⏳"
 										}),
@@ -2225,7 +2392,7 @@ window.__ModuleLoader__.load({
 												flex: 1,
 												fontSize: 13,
 												fontWeight: 700,
-												color: settled ? "#9a9ac0" : TEXT,
+												color: settled ? TEXT_FAINT : TEXT,
 												lineHeight: 1.4
 											},
 											children: t.title
@@ -2235,8 +2402,8 @@ window.__ModuleLoader__.load({
 												fontSize: 11,
 												padding: "2px 8px",
 												borderRadius: 999,
-												background: hot ? "#7a4a1533" : "#1e1e3a",
-												color: hot ? "#ffa94d" : "#888",
+												background: hot ? "#7a4a1533" : CHIP_BG,
+												color: hot ? "#f7ad31" : "#888",
 												flexShrink: 0
 											},
 											children: ageLabel(t)
@@ -2256,7 +2423,7 @@ window.__ModuleLoader__.load({
 												padding: "1px 6px",
 												borderRadius: 999,
 												background: settled ? "#2ecc7122" : "#ffa94d22",
-												color: settled ? "#2ecc71" : "#ffa94d"
+												color: settled ? "#4ed17e" : "#f7ad31"
 											},
 											children: t.status ?? "pending"
 										}),
@@ -2265,7 +2432,7 @@ window.__ModuleLoader__.load({
 												fontSize: 10,
 												padding: "1px 6px",
 												borderRadius: 999,
-												background: "#1e1e3a",
+												background: CHIP_BG,
 												color: "#888"
 											},
 											children: t.file
@@ -2275,7 +2442,7 @@ window.__ModuleLoader__.load({
 												fontSize: 10,
 												padding: "1px 6px",
 												borderRadius: 999,
-												background: "#1e1e3a",
+												background: CHIP_BG,
 												color: "#888"
 											},
 											children: ["origin: ", t.origin]
@@ -2285,7 +2452,7 @@ window.__ModuleLoader__.load({
 												fontSize: 10,
 												padding: "1px 6px",
 												borderRadius: 999,
-												background: "#1e1e3a",
+												background: CHIP_BG,
 												color: "#888"
 											},
 											children: t.date
