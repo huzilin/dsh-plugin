@@ -55,33 +55,56 @@ Iterate until the user approves the breakdown.
 
 ### 5. Save the tickets
 
-Write the approved tickets to `.plan/<slug>/tickets.md`, all tickets in dependency order (blockers first), each with its "Blocked by" listing the titles it depends on. Use the template below. `<slug>` is a short kebab-case name for the work — if the tickets came from a spec at `.plan/<slug>/spec.md`, use the same directory. Create it if needed; `.plan/` is committed to version control. Tell the user the path.
+Write **one file per ticket**, under `.plan/<slug>/tickets/`, named `<NN>-<slug>.md` (numbered from 01 in dependency order, blockers first). `<slug>` is a short kebab-case name for the work — if the tickets came from a spec at `.plan/<slug>/spec.md`, use the same directory. Create the directories if needed; `.plan/` is committed to version control. Tell the user the paths.
 
-If the work came from an existing spec or plan document, reference it at the top of the file — do NOT modify or delete the source document.
+Each file carries frontmatter the tracker reads, then the ticket's own body:
 
-<tickets-file-template>
+```markdown
+---
+type: task
+blocked_by: []          # ticket ids that gate this one, or [] when none
+status: open            # open | todo | doing | done | closed
+---
 
-# Tickets: <short name of the work>
+# <NN>: <title>
 
-A one-line summary of what these tickets build. Reference the source spec if there is one.
+**What to build:** <the end-to-end behaviour this ticket makes work>
 
-Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
+**Blocked by:** <titles it depends on, or "None — can start immediately">
 
-## <Ticket title>
+**Source spec:** <path to the spec this was cut from, if any>
 
-**What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective — not a layer-by-layer implementation list.
+## Acceptance
 
-**Blocked by:** the titles of the tickets that gate this one, or "None — can start immediately".
+- [ ] <criterion>
+- [ ] <criterion>
+```
 
-- [ ] Acceptance criterion 1
-- [ ] Acceptance criterion 2
+**Why one file per ticket, not one combined file.** A combined `tickets.md` looks tidier in a directory listing, but anything that reads tickets file-by-file counts it as **a single ticket** and silently loses every ticket inside it. That is not hypothetical — it is how a plan view shows "1 ticket" for a file holding nine. One file per ticket is the shape the wayfinder contract uses, so both readers agree.
 
-## <Ticket title>
+**Also create `.plan/<slug>/map.md`** if the directory has none, so the effort is recognised as an effort rather than a loose folder:
 
-...
+```markdown
+# <short name of the work> · 路线图
 
-</tickets-file-template>
+## Destination
+
+<one or two lines: what reaching the end of this work looks like>
+
+## Notes
+
+- **Source spec**: <path>
+- 工单形态：实施工单（`type: task`，frontmatter 存 `status`），非 wayfinder 推演地图。
+
+## Decisions so far
+
+<!-- one line per resolved ticket: gist + link -->
+```
+
+If the work came from an existing spec or plan document, reference it in each ticket's `Source spec:` line and in the map's Notes — do NOT modify or delete the source document.
+
+Keep the ordering in mind when numbering: the frontier is any ticket whose blockers are all done. For a purely linear chain that means 01 runs first.
 
 Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in `tickets.md`, and commit — then clear context before taking the next ticket.
+Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in that ticket's own file, set its `status`, and commit — then clear context before taking the next ticket.
