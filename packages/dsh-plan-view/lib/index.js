@@ -822,7 +822,8 @@ function ViewA({ tickets, planDir, scope, destination }) {
 }
 function ViewC({ tickets, planDir, scope }) {
 	const [query, setQuery] = useState("");
-	const [statusSet, setStatusSet] = useState(() => new Set(STATUS_ORDER));
+	const OUTSTANDING = ["open", "claimed"];
+	const [statusSet, setStatusSet] = useState(() => new Set(OUTSTANDING));
 	const allTypes = useMemo(() => {
 		const named = [...new Set(tickets.map((t) => t.type).filter((x) => !!x))].sort();
 		return tickets.some((t) => !t.type) ? [...named, NO_TYPE] : named;
@@ -920,7 +921,11 @@ function ViewC({ tickets, planDir, scope }) {
 						rows.length,
 						"/",
 						tickets.length,
-						" tickets"
+						" tickets",
+						statusSet.size < STATUS_ORDER.length && /* @__PURE__ */ jsx("span", {
+							style: { color: "#666" },
+							children: "（默认隐藏已完成；勾 Status 里的 Resolved 可看）"
+						})
 					]
 				})]
 			}),
@@ -1111,7 +1116,7 @@ function ViewC({ tickets, planDir, scope }) {
 							},
 							onClick: () => {
 								setQuery("");
-								setStatusSet(new Set(STATUS_ORDER));
+								setStatusSet(new Set(OUTSTANDING));
 								setTypeSet(new Set(allTypes));
 								setKindSet(new Set([
 									"ticket",
@@ -2058,9 +2063,21 @@ function PlanView(props) {
 		]
 	});
 }
+function approvalState(t) {
+	if (statusWord(t) === "pending") return "pending";
+	return "settled";
+}
 function ApprovalsView({ approvals, scope }) {
 	const [focus, setFocus] = useState(null);
-	const sorted = useMemo(() => [...approvals].sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)), [approvals]);
+	const [filter, setFilter] = useState("pending");
+	const counts = useMemo(() => ({
+		pending: approvals.filter((t) => approvalState(t) === "pending").length,
+		settled: approvals.filter((t) => approvalState(t) === "settled").length,
+		all: approvals.length
+	}), [approvals]);
+	const shown = useMemo(() => {
+		return [...filter === "all" ? approvals : approvals.filter((t) => approvalState(t) === filter)].sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1));
+	}, [approvals, filter]);
 	if (approvals.length === 0) return /* @__PURE__ */ jsxs("div", {
 		style: {
 			flex: 1,
@@ -2083,7 +2100,26 @@ function ApprovalsView({ approvals, scope }) {
 			})
 		]
 	});
-	const withAge = sorted.filter((t) => ageDays(t) !== void 0).length;
+	const chip = (id, label) => {
+		const on = filter === id;
+		return /* @__PURE__ */ jsxs("span", {
+			onClick: () => setFilter(id),
+			style: {
+				fontSize: 11,
+				padding: "2px 9px",
+				borderRadius: 999,
+				cursor: "pointer",
+				border: `1px solid ${on ? "#ffa94d" : BORDER}`,
+				color: on ? "#ffa94d" : "#888",
+				background: on ? "#ffa94d1a" : "transparent"
+			},
+			children: [
+				label,
+				" ",
+				counts[id]
+			]
+		}, id);
+	};
 	return /* @__PURE__ */ jsxs("div", {
 		style: {
 			flex: 1,
@@ -2094,18 +2130,30 @@ function ApprovalsView({ approvals, scope }) {
 		children: [
 			/* @__PURE__ */ jsxs("div", {
 				style: {
-					padding: "10px 16px",
+					padding: "8px 14px",
 					borderBottom: `1px solid ${BORDER}`,
-					fontSize: 12,
-					color: "#888"
+					display: "flex",
+					alignItems: "center",
+					gap: 6,
+					flexWrap: "wrap"
 				},
 				children: [
-					approvals.length,
-					" 份待拍板文档",
-					withAge < approvals.length && `（${approvals.length - withAge} 份无 date，不显示天数）`
+					chip("pending", "⏳ 待拍板"),
+					chip("settled", "✓ 已结案"),
+					chip("all", "全部")
 				]
 			}),
-			/* @__PURE__ */ jsx("div", {
+			shown.length === 0 ? /* @__PURE__ */ jsx("div", {
+				style: {
+					flex: 1,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					color: "#55557a",
+					fontSize: 13
+				},
+				children: filter === "pending" ? "没有等你拍板的文档。" : "该筛选下没有文档。"
+			}) : /* @__PURE__ */ jsx("div", {
 				style: {
 					flex: 1,
 					overflowY: "auto",
@@ -2114,17 +2162,19 @@ function ApprovalsView({ approvals, scope }) {
 					flexDirection: "column",
 					gap: 8
 				},
-				children: sorted.map((t) => {
+				children: shown.map((t) => {
 					const age = ageDays(t);
-					const hot = age !== void 0 && age >= 7;
+					const hot = approvalState(t) === "pending" && age !== void 0 && age >= 7;
+					const settled = approvalState(t) === "settled";
 					return /* @__PURE__ */ jsxs("div", {
 						onClick: () => setFocus(t),
 						style: {
 							padding: 12,
 							borderRadius: 10,
-							background: CARD,
+							background: settled ? CARD_DARK : CARD,
 							border: `1px solid ${hot ? "#7a4a15" : BORDER}`,
-							cursor: "pointer"
+							cursor: "pointer",
+							opacity: settled ? .75 : 1
 						},
 						children: [/* @__PURE__ */ jsxs("div", {
 							style: {
@@ -2136,21 +2186,21 @@ function ApprovalsView({ approvals, scope }) {
 								/* @__PURE__ */ jsx("span", {
 									style: {
 										fontSize: 13,
-										color: "#ffa94d"
+										color: settled ? "#555577" : "#ffa94d"
 									},
-									children: "⏳"
+									children: settled ? "✓" : "⏳"
 								}),
 								/* @__PURE__ */ jsx("span", {
 									style: {
 										flex: 1,
 										fontSize: 13,
 										fontWeight: 700,
-										color: TEXT,
+										color: settled ? "#9a9ac0" : TEXT,
 										lineHeight: 1.4
 									},
 									children: t.title
 								}),
-								age !== void 0 && /* @__PURE__ */ jsx("span", {
+								!settled && age !== void 0 && /* @__PURE__ */ jsx("span", {
 									style: {
 										fontSize: 11,
 										padding: "2px 8px",
@@ -2170,6 +2220,16 @@ function ApprovalsView({ approvals, scope }) {
 								marginTop: 7
 							},
 							children: [
+								/* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										padding: "1px 6px",
+										borderRadius: 999,
+										background: settled ? "#2ecc7122" : "#ffa94d22",
+										color: settled ? "#2ecc71" : "#ffa94d"
+									},
+									children: t.status ?? "pending"
+								}),
 								/* @__PURE__ */ jsx("span", {
 									style: {
 										fontSize: 10,

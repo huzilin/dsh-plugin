@@ -432,7 +432,11 @@ function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket
 
 function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
   const [query, setQuery] = useState('')
-  const [statusSet, setStatusSet] = useState<Set<TicketStatus>>(() => new Set(STATUS_ORDER))
+  // Default to work still outstanding. Completed tickets are the bulk of a
+  // mature repo (here 51 of 55), so showing them by default buries the three
+  // that actually need attention. They stay one click away, not hidden.
+  const OUTSTANDING: TicketStatus[] = ['open', 'claimed']
+  const [statusSet, setStatusSet] = useState<Set<TicketStatus>>(() => new Set(OUTSTANDING))
   // Filter over the types actually in the data, not a hardcoded four. A repo
   // writing `type: impl` must not start with every row filtered out.
   // A file with no `type` is a real case (23 such files in novel), not an error.
@@ -481,7 +485,10 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT }}>
       <div style={{ padding: '10px 16px', background: HEADER_BG, borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Table</span>
-        <span style={{ fontSize: 12, color: '#888' }}>{rows.length}/{tickets.length} tickets</span>
+        <span style={{ fontSize: 12, color: '#888' }}>
+          {rows.length}/{tickets.length} tickets
+          {statusSet.size < STATUS_ORDER.length && <span style={{ color: '#666' }}>（默认隐藏已完成；勾 Status 里的 Resolved 可看）</span>}
+        </span>
       </div>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ width: 200, flexShrink: 0, background: '#121224', borderRight: `1px solid ${BORDER}`, padding: 12, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
@@ -522,7 +529,7 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#c8c8e8', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyBlocked} onChange={e => setOnlyBlocked(e.target.checked)} /> Only blocked
           </label>
-          <button style={{ marginTop: 'auto', padding: '6px 0', borderRadius: 6, border: `1px solid ${BORDER}`, background: HEADER_BG, color: '#888', cursor: 'pointer', fontSize: 11 }} onClick={() => { setQuery(''); setStatusSet(new Set(STATUS_ORDER)); setTypeSet(new Set(allTypes)); setKindSet(new Set(['ticket', 'approval', 'note'] as TicketKind[])); setOnlyBlocked(false) }}>Reset</button>
+          <button style={{ marginTop: 'auto', padding: '6px 0', borderRadius: 6, border: `1px solid ${BORDER}`, background: HEADER_BG, color: '#888', cursor: 'pointer', fontSize: 11 }} onClick={() => { setQuery(''); setStatusSet(new Set(OUTSTANDING)); setTypeSet(new Set(allTypes)); setKindSet(new Set(['ticket', 'approval', 'note'] as TicketKind[])); setOnlyBlocked(false) }}>Reset</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
           {rows.length === 0 ? (
@@ -834,12 +841,34 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 // One row per document — a decision document holds several items inside it, but
 // the file is the unit that gets settled, so the file is the unit shown.
 
+// Approval documents have a lifecycle, so the view shows it and lets you filter
+// by it. `pending` is what needs you; the settled ones stay visible so you can
+// confirm a decision landed rather than wondering where the document went.
+
+type ApprovalFilter = 'pending' | 'settled' | 'all'
+
+function approvalState(t: ParsedTicket): ApprovalFilter {
+  const w = statusWord(t)
+  if (w === 'pending') return 'pending'
+  return 'settled'
+}
+
 function ApprovalsView({ approvals, scope }: { approvals: ParsedTicket[]; scope: SessionScope }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
-  const sorted = useMemo(
-    () => [...approvals].sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)),
-    [approvals],
-  )
+  const [filter, setFilter] = useState<ApprovalFilter>('pending')
+
+  const counts = useMemo(() => ({
+    pending: approvals.filter(t => approvalState(t) === 'pending').length,
+    settled: approvals.filter(t => approvalState(t) === 'settled').length,
+    all: approvals.length,
+  }), [approvals])
+
+  const shown = useMemo(() => {
+    const list = filter === 'all' ? approvals : approvals.filter(t => approvalState(t) === filter)
+    // Oldest first within a group: the longest-waiting decision is the one at risk.
+    return [...list].sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1))
+  }, [approvals, filter])
+
   if (approvals.length === 0) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#55557a', padding: 24, textAlign: 'center' }}>
@@ -848,32 +877,51 @@ function ApprovalsView({ approvals, scope }: { approvals: ParsedTicket[]; scope:
       </div>
     )
   }
-  const withAge = sorted.filter(t => ageDays(t) !== undefined).length
+
+  const chip = (id: ApprovalFilter, label: string) => {
+    const on = filter === id
+    return (
+      <span key={id} onClick={() => setFilter(id)} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? '#ffa94d' : BORDER}`, color: on ? '#ffa94d' : '#888', background: on ? '#ffa94d1a' : 'transparent' }}>
+        {label} {counts[id]}
+      </span>
+    )
+  }
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '10px 16px', borderBottom: `1px solid ${BORDER}`, fontSize: 12, color: '#888' }}>
-        {approvals.length} 份待拍板文档{withAge < approvals.length && `（${approvals.length - withAge} 份无 date，不显示天数）`}
+      <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {chip('pending', '⏳ 待拍板')}
+        {chip('settled', '✓ 已结案')}
+        {chip('all', '全部')}
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {sorted.map(t => {
-          const age = ageDays(t)
-          const hot = age !== undefined && age >= 7
-          return (
-            <div key={t.file} onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${hot ? '#7a4a15' : BORDER}`, cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, color: '#ffa94d' }}>⏳</span>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT, lineHeight: 1.4 }}>{t.title}</span>
-                {age !== undefined && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: hot ? '#7a4a1533' : '#1e1e3a', color: hot ? '#ffa94d' : '#888', flexShrink: 0 }}>{ageLabel(t)}</span>}
+      {shown.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#55557a', fontSize: 13 }}>
+          {filter === 'pending' ? '没有等你拍板的文档。' : '该筛选下没有文档。'}
+        </div>
+      ) : (
+        <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {shown.map(t => {
+            const age = ageDays(t)
+            const hot = approvalState(t) === 'pending' && age !== undefined && age >= 7
+            const settled = approvalState(t) === 'settled'
+            return (
+              <div key={t.file} onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: settled ? CARD_DARK : CARD, border: `1px solid ${hot ? '#7a4a15' : BORDER}`, cursor: 'pointer', opacity: settled ? 0.75 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, color: settled ? '#555577' : '#ffa94d' }}>{settled ? '✓' : '⏳'}</span>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: settled ? '#9a9ac0' : TEXT, lineHeight: 1.4 }}>{t.title}</span>
+                  {!settled && age !== undefined && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: hot ? '#7a4a1533' : '#1e1e3a', color: hot ? '#ffa94d' : '#888', flexShrink: 0 }}>{ageLabel(t)}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
+                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: settled ? '#2ecc7122' : '#ffa94d22', color: settled ? '#2ecc71' : '#ffa94d' }}>{t.status ?? 'pending'}</span>
+                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>{t.file}</span>
+                  {t.origin && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>origin: {t.origin}</span>}
+                  {t.date && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>{t.date}</span>}
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>{t.file}</span>
-                {t.origin && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>origin: {t.origin}</span>}
-                {t.date && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>{t.date}</span>}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
       {focus && <DetailModal ticket={focus} planDir="" scope={scope} onClose={() => setFocus(null)} />}
     </div>
   )

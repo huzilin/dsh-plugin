@@ -48,6 +48,7 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
    - Quote the human's words verbatim — never paraphrase a ruling. Their phrasing carries the constraint.
    - Mark the item settled, with the date and what settled it.
    - **When the ruling calls for work, produce the ticket by invoking `to-tickets`** — not by hand-writing a file, and not by noting the follow-up in prose and calling it filed. The ruling is not recorded until the ticket exists; name it in the record and link it beside the quoted ruling. A ticket invented by the settling session is shaped by whatever that session felt like, which is how one repo accumulates several incompatible ticket formats that no view can read.
+   - **Tickets go one file each**, at `.plan/<effort>/tickets/<id>-<slug>.md`, with frontmatter `type` / `blocked_by` / `status`. `to-tickets` defaults to a single combined `tickets.md`; override that — a reader that loads tickets file-by-file counts a combined file as one ticket and silently loses every ticket inside it.
    - When no ruling calls for work (a question of fact, a choice among existing options), there is nothing to file.
 
    A ruling written only in chat is lost the moment the session ends.
