@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
-//#region src/client/api.ts
+//#region ../../../../dsh-plugin/packages/dsh-plan-view/src/client/api.ts
 async function call(method, payload) {
 	const resp = await fetch(`/sidebar/api/${method}`, {
 		method: "POST",
@@ -25,7 +25,7 @@ async function fsRead(scope, path) {
 	return call("fs.read", scopePayload(scope, { path }));
 }
 //#endregion
-//#region src/client/PlanView.tsx
+//#region ../../../../dsh-plugin/packages/dsh-plan-view/src/client/PlanView.tsx
 /**
 * Plan view v2: reads .plan/ wayfinder maps, derives ticket status per
 * the TRACKER-MARKDOWN contract, and renders three views:
@@ -56,26 +56,82 @@ function deriveTicketStatus(file, raw) {
 	const { fm, body } = parseFrontmatter(raw);
 	const hasAnswer = /^## Answer\b/m.test(body) && /^## Answer\b[\s\S]*\n\S/m.test(body);
 	const hasRuledOut = /^## Ruled out\b/m.test(body) && /^## Ruled out\b[\s\S]*\n\S/m.test(body);
+	const titleMatch = raw.match(/^#\s+(.+)$/m);
 	return {
+		id: ticketId(file),
 		file,
-		title: raw.match(/^#\s+(.+)$/m)?.[1]?.replace(/`[^`]*`/g, "")?.trim() ?? file,
+		title: titleMatch?.[1]?.replace(/`[^`]*`/g, "")?.trim() ?? file,
 		type: fm.type,
-		blockedBy: (fm.blocked_by ?? "").replace(/[\[\]]/g, "").split(/[,\s]+/).map(Number).filter(Boolean),
+		blockedBy: parseBlockedBy(fm.blocked_by),
 		resolved: hasAnswer,
 		outOfScope: hasRuledOut,
 		claimedBy: fm.claimed_by,
+		status: fm.status,
+		date: fm.date,
+		origin: fm.origin,
 		body
 	};
+}
+const DONE_STATUS = new Set([
+	"done",
+	"closed",
+	"resolved",
+	"complete",
+	"completed",
+	"shipped"
+]);
+const OUT_STATUS = new Set([
+	"abandoned",
+	"rejected",
+	"wontfix",
+	"won't fix",
+	"cancelled",
+	"canceled",
+	"superseded"
+]);
+const CLAIMED_STATUS = new Set([
+	"doing",
+	"in_progress",
+	"in-progress",
+	"wip",
+	"claimed",
+	"in review",
+	"review"
+]);
+function statusWord(t) {
+	const raw = (t.status ?? "").trim().toLowerCase();
+	if (raw.startsWith("superseded-by")) return "superseded";
+	return raw.split(/[\s(#:—-]/)[0] ?? "";
 }
 function displayStatus(t) {
 	if (t.outOfScope) return "out_of_scope";
 	if (t.resolved) return "resolved";
+	const w = statusWord(t);
+	if (DONE_STATUS.has(w)) return "resolved";
+	if (OUT_STATUS.has(w)) return "out_of_scope";
 	if (t.claimedBy) return "claimed";
+	if (CLAIMED_STATUS.has(w)) return "claimed";
 	return "open";
 }
-function ticketNum(file) {
-	const m = file.match(/^(\d+)/);
-	return m ? Number(m[1]) : 0;
+function ticketId(file) {
+	return file.replace(/\.md$/i, "");
+}
+function shortId(t) {
+	return (t.id.match(/^([A-Za-z]*\d+)/)?.[1] ?? t.id).slice(0, 4).toUpperCase();
+}
+function normalizeRef(raw) {
+	return ticketId(raw.trim().replace(/^["']|["']$/g, "").split("/").pop() ?? "");
+}
+function parseBlockedBy(value) {
+	return (value ?? "").replace(/[\[\]]/g, "").split(",").map(normalizeRef).filter(Boolean);
+}
+function resolveRef(ref, byId) {
+	if (byId.has(ref)) return ref;
+	if (/^\d+$/.test(ref)) {
+		const padded = ref.padStart(2, "0");
+		if (byId.has(padded)) return padded;
+	}
+	for (const id of byId.keys()) if (id === ref || id.startsWith(`${ref}-`) || id.split("-")[0] === ref) return id;
 }
 function md(text) {
 	return "<p>" + text.replace(/^### (.+)$/gm, "<h4>$1</h4>").replace(/^## (.+)$/gm, "<h3>$1</h3>").replace(/^# (.+)$/gm, "<h2>$1</h2>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>").replace(/^- (.+)$/gm, "<li>$1</li>").replace(/^---$/gm, "<hr/>").replace(/\n{2,}/g, "</p><p>").replace(/\n/g, "<br/>") + "</p>";
@@ -98,6 +154,12 @@ const TYPE_THEME = {
 		color: "#4dabf7"
 	}
 };
+const TYPE_FALLBACK = {
+	icon: "•",
+	color: "#888"
+};
+const NO_TYPE = "\0no-type";
+const typeTheme = (t) => TYPE_THEME[t ?? ""] ?? TYPE_FALLBACK;
 const DOT = {
 	open: "#6b6b8a",
 	claimed: "#f0a500",
@@ -116,32 +178,107 @@ const STATUS_ORDER = [
 	"resolved",
 	"out_of_scope"
 ];
+/** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
+function ticketKind(t) {
+	const ty = (t.type ?? "").trim().toLowerCase();
+	if (ty === "approval") return "approval";
+	if (isPending(t)) return "approval";
+	if (ty === "spec" || ty === "design" || /^(map|readme|index)$/i.test(t.id)) return "note";
+	if (!ty && !t.status) return "note";
+	return "ticket";
+}
+const KIND_META = {
+	ticket: {
+		label: "工单",
+		icon: "🎫",
+		color: "#4dabf7"
+	},
+	approval: {
+		label: "待拍板",
+		icon: "⏳",
+		color: "#ffa94d"
+	},
+	note: {
+		label: "说明",
+		icon: "📄",
+		color: "#7a7a9a"
+	}
+};
+/** Frontmatter `status` marks a document as an approval awaiting a ruling. */
+function isPending(t) {
+	return statusWord(t) === "pending";
+}
+/** Whole days since the document's `date`. Undefined when there is no usable date. */
+function ageDays(t) {
+	if (!t.date) return void 0;
+	const then = Date.parse(t.date);
+	if (Number.isNaN(then)) return void 0;
+	return Math.max(0, Math.floor((Date.now() - then) / 864e5));
+}
+function ageLabel(t) {
+	const d = ageDays(t);
+	if (d === void 0) return void 0;
+	if (d === 0) return "今天";
+	return `挂了 ${d} 天`;
+}
 const BG = "#0d0d1a", CARD = "#2d2d52", CARD_DARK = "#1a1a36", TEXT = "#e0e0f0";
 const BORDER = "#2a2a4e", BORDER_LIGHT = "#26264a", HEADER_BG = "#161628";
-async function loadPlan(scope, planDir) {
-	let effortDir = planDir;
-	const rootTree = await fsTree(scope, planDir);
-	if (!rootTree.entries.some((e) => e.name === "map.md" && !e.isDir)) {
-		for (const d of rootTree.entries.filter((e) => e.isDir)) if ((await fsTree(scope, d.path)).entries.some((e) => e.name === "map.md" && !e.isDir)) {
-			effortDir = d.path;
-			break;
-		}
+const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
+async function collectTicketFiles(scope, effortDir) {
+	const tree = await fsTree(scope, effortDir);
+	const inTickets = tree.entries.find((e) => e.isDir && e.name === "tickets");
+	if (inTickets) {
+		const found = mdEntries(await fsTree(scope, inTickets.path));
+		if (found.length > 0) return found;
 	}
-	const [mapRes, treeRes] = await Promise.all([fsRead(scope, `${effortDir}/map.md`), fsTree(scope, `${effortDir}/tickets`)]);
-	const mapRaw = mapRes.kind === "text" ? mapRes.content : "";
-	const mdFiles = treeRes.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
+	const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i;
+	const here = mdEntries(tree).filter((e) => !NON_TICKET.test(e.name));
+	const subs = await Promise.all(tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "tickets" && e.name !== "node_modules").map(async (d) => mdEntries(await fsTree(scope, d.path)).filter((e) => !NON_TICKET.test(e.name))));
+	return [...here, ...subs.flat()];
+}
+function classify(t) {
+	return ticketKind(t);
+}
+async function loadPlan(scope, planDir) {
+	const rootTree = await fsTree(scope, planDir);
+	const hasMapHere = rootTree.entries.some((e) => e.name === "map.md" && !e.isDir);
+	const subDirs = rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules");
+	const effortDirs = (await Promise.all(subDirs.map(async (d) => (await fsTree(scope, d.path)).entries.some((e) => e.name === "map.md" && !e.isDir) ? d.path : null))).filter((p) => p !== null);
+	const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs;
+	const [mapRaws, ...fileGroups] = await Promise.all([
+		Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`))),
+		Promise.resolve(mdEntries(rootTree)),
+		...effortDirs.map((d) => collectTicketFiles(scope, d))
+	]);
+	const efforts = allEfforts.map((dir, i) => ({
+		dir,
+		mapRaw: mapRaws[i]?.kind === "text" ? mapRaws[i].content : ""
+	}));
+	const seen = /* @__PURE__ */ new Set();
+	const mdFiles = [];
+	for (const e of fileGroups.flat()) {
+		if (seen.has(e.path)) continue;
+		seen.add(e.path);
+		mdFiles.push(e);
+	}
 	const raws = await Promise.all(mdFiles.map((e) => fsRead(scope, e.path).then((r) => r.kind === "text" ? r.content : "")));
+	const tickets = mdFiles.map((e, i) => ({
+		...deriveTicketStatus(e.name, raws[i] ?? ""),
+		path: e.path
+	}));
+	const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 	return {
-		mapRaw,
-		tickets: mdFiles.map((e, i) => deriveTicketStatus(e.name, raws[i] ?? "")),
-		effortDir
+		tickets,
+		effortDir: primary?.dir ?? planDir,
+		mapRaw: primary?.mapRaw ?? null,
+		efforts
 	};
 }
 function DetailModal({ ticket, planDir, scope, onClose }) {
 	const [fullBody, setFullBody] = useState(null);
 	useEffect(() => {
 		let alive = true;
-		fsRead(scope, `${planDir}/tickets/${ticket.file}`).then((r) => {
+		fsRead(scope, ticket.path ?? `${planDir}/tickets/${ticket.file}`).then((r) => {
 			if (alive && r.kind === "text") setFullBody(r.content);
 		});
 		return () => {
@@ -149,6 +286,7 @@ function DetailModal({ ticket, planDir, scope, onClose }) {
 		};
 	}, [
 		ticket.file,
+		ticket.path,
 		planDir,
 		scope
 	]);
@@ -185,7 +323,7 @@ function DetailModal({ ticket, planDir, scope, onClose }) {
 					children: [
 						/* @__PURE__ */ jsx("span", {
 							style: { color: DOT[displayStatus(ticket)] },
-							children: TYPE_THEME[ticket.type ?? ""]?.icon ?? "…"
+							children: typeTheme(ticket.type).icon
 						}),
 						/* @__PURE__ */ jsx("span", {
 							style: {
@@ -227,15 +365,29 @@ function DetailModal({ ticket, planDir, scope, onClose }) {
 								color: "#888",
 								border: `1px solid ${BORDER}`
 							},
-							children: ["#", ticketNum(ticket.file)]
+							children: ["#", shortId(ticket)]
+						}),
+						/* @__PURE__ */ jsxs("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: `${KIND_META[ticketKind(ticket)].color}22`,
+								color: KIND_META[ticketKind(ticket)].color
+							},
+							children: [
+								KIND_META[ticketKind(ticket)].icon,
+								" ",
+								KIND_META[ticketKind(ticket)].label
+							]
 						}),
 						ticket.type && /* @__PURE__ */ jsx("span", {
 							style: {
 								fontSize: 11,
 								padding: "2px 9px",
 								borderRadius: 999,
-								background: `${TYPE_THEME[ticket.type]?.color ?? "#888"}22`,
-								color: TYPE_THEME[ticket.type]?.color ?? "#888"
+								background: `${typeTheme(ticket.type).color}22`,
+								color: typeTheme(ticket.type).color
 							},
 							children: ticket.type
 						}),
@@ -259,6 +411,38 @@ function DetailModal({ ticket, planDir, scope, onClose }) {
 								color: "#f0a500"
 							},
 							children: ["👤 ", ticket.claimedBy]
+						}),
+						ticket.status && /* @__PURE__ */ jsxs("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: "#1e1e3a",
+								color: "#aaa",
+								border: `1px solid ${BORDER}`
+							},
+							children: ["status: ", ticket.status]
+						}),
+						ageLabel(ticket) && /* @__PURE__ */ jsx("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: "#ffa94d22",
+								color: "#ffa94d"
+							},
+							children: ageLabel(ticket)
+						}),
+						ticket.origin && /* @__PURE__ */ jsxs("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: "#1e1e3a",
+								color: "#888",
+								border: `1px solid ${BORDER}`
+							},
+							children: ["origin: ", ticket.origin]
 						}),
 						ticket.blockedBy.length > 0 && /* @__PURE__ */ jsxs("span", {
 							style: {
@@ -301,6 +485,7 @@ function ViewA({ tickets, planDir, scope, destination }) {
 		for (const t of tickets) g[displayStatus(t)].push(t);
 		return g;
 	}, [tickets]);
+	const waiting = useMemo(() => tickets.filter(isPending).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)), [tickets]);
 	const active = tickets.filter((t) => !t.outOfScope);
 	const done = tickets.filter((t) => t.resolved).length;
 	const pct = active.length > 0 ? Math.round(done / active.length * 100) : 0;
@@ -336,6 +521,71 @@ function ViewA({ tickets, planDir, scope, destination }) {
 						done,
 						" resolved"
 					]
+				})]
+			}),
+			waiting.length > 0 && /* @__PURE__ */ jsxs("div", {
+				style: {
+					margin: "8px 16px 0",
+					padding: "8px 12px",
+					borderRadius: 8,
+					background: "#3a2410",
+					border: "1px solid #7a4a15",
+					fontSize: 13
+				},
+				children: [/* @__PURE__ */ jsxs("div", {
+					style: {
+						fontWeight: 700,
+						color: "#ffa94d",
+						marginBottom: 4
+					},
+					children: [
+						"⏳ 等你拍板（",
+						waiting.length,
+						"）"
+					]
+				}), /* @__PURE__ */ jsx("div", {
+					style: {
+						display: "flex",
+						flexDirection: "column",
+						gap: 3
+					},
+					children: waiting.map((t) => /* @__PURE__ */ jsxs("div", {
+						onClick: () => setFocus(t),
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							cursor: "pointer",
+							color: "#e8c9a0"
+						},
+						children: [
+							/* @__PURE__ */ jsx("span", {
+								style: {
+									fontFamily: "monospace",
+									fontSize: 11,
+									color: "#ffa94d"
+								},
+								children: shortId(t)
+							}),
+							/* @__PURE__ */ jsx("span", {
+								style: {
+									flex: 1,
+									overflow: "hidden",
+									textOverflow: "ellipsis",
+									whiteSpace: "nowrap"
+								},
+								children: t.title
+							}),
+							ageLabel(t) && /* @__PURE__ */ jsx("span", {
+								style: {
+									fontSize: 11,
+									color: "#ffa94d",
+									flexShrink: 0
+								},
+								children: ageLabel(t)
+							})
+						]
+					}, t.id))
 				})]
 			}),
 			destination && /* @__PURE__ */ jsx("div", {
@@ -465,18 +715,20 @@ function ViewA({ tickets, planDir, scope, destination }) {
 											color: "#888",
 											background: "#1e1e3a",
 											borderRadius: 999,
-											width: 20,
+											minWidth: 20,
 											height: 20,
+											padding: "0 4px",
+											boxSizing: "border-box",
 											display: "flex",
 											alignItems: "center",
 											justifyContent: "center",
 											fontWeight: 700
 										},
-										children: String(ticketNum(t.file)).padStart(2, "0")
+										children: shortId(t)
 									}),
 									/* @__PURE__ */ jsx("span", {
 										style: { fontSize: 12 },
-										children: TYPE_THEME[t.type ?? ""]?.icon ?? "?"
+										children: KIND_META[ticketKind(t)].icon
 									}),
 									/* @__PURE__ */ jsx("span", {
 										style: {
@@ -499,15 +751,39 @@ function ViewA({ tickets, planDir, scope, destination }) {
 									flexWrap: "wrap"
 								},
 								children: [
+									/* @__PURE__ */ jsxs("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 5px",
+											borderRadius: 999,
+											background: `${KIND_META[ticketKind(t)].color}22`,
+											color: KIND_META[ticketKind(t)].color
+										},
+										children: [
+											KIND_META[ticketKind(t)].icon,
+											" ",
+											KIND_META[ticketKind(t)].label
+										]
+									}),
 									t.type && /* @__PURE__ */ jsx("span", {
 										style: {
 											fontSize: 10,
 											padding: "1px 5px",
 											borderRadius: 999,
-											background: `${TYPE_THEME[t.type]?.color ?? "#888"}22`,
-											color: TYPE_THEME[t.type]?.color ?? "#888"
+											background: `${typeTheme(t.type).color}22`,
+											color: typeTheme(t.type).color
 										},
 										children: t.type
+									}),
+									isPending(t) && /* @__PURE__ */ jsx("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 5px",
+											borderRadius: 999,
+											background: "#ffa94d33",
+											color: "#ffa94d"
+										},
+										children: ageLabel(t) ?? "待拍板"
 									}),
 									t.claimedBy && /* @__PURE__ */ jsxs("span", {
 										style: {
@@ -547,7 +823,22 @@ function ViewA({ tickets, planDir, scope, destination }) {
 function ViewC({ tickets, planDir, scope }) {
 	const [query, setQuery] = useState("");
 	const [statusSet, setStatusSet] = useState(() => new Set(STATUS_ORDER));
+	const allTypes = useMemo(() => {
+		const named = [...new Set(tickets.map((t) => t.type).filter((x) => !!x))].sort();
+		return tickets.some((t) => !t.type) ? [...named, NO_TYPE] : named;
+	}, [tickets]);
 	const [typeSet, setTypeSet] = useState(() => new Set(Object.keys(TYPE_THEME)));
+	const [kindSet, setKindSet] = useState(() => new Set([
+		"ticket",
+		"approval",
+		"note"
+	]));
+	const typeInit = useRef(false);
+	useEffect(() => {
+		if (typeInit.current || tickets.length === 0) return;
+		typeInit.current = true;
+		setTypeSet(new Set(allTypes));
+	}, [allTypes, tickets.length]);
 	const [onlyBlocked, setOnlyBlocked] = useState(false);
 	const [sort, setSort] = useState({
 		key: "num",
@@ -558,14 +849,16 @@ function ViewC({ tickets, planDir, scope }) {
 		let out = tickets.filter((t) => {
 			if (onlyBlocked && t.blockedBy.length === 0) return false;
 			if (!statusSet.has(displayStatus(t))) return false;
-			if (!typeSet.has(t.type ?? "")) return false;
+			if (!kindSet.has(ticketKind(t))) return false;
+			if (allTypes.length > 0 && !typeSet.has(t.type ?? NO_TYPE)) return false;
 			if (query && !`${t.title} ${t.body} ${t.claimedBy ?? ""}`.toLowerCase().includes(query.toLowerCase())) return false;
 			return true;
 		});
 		out = [...out].sort((a, b) => {
 			let v = 0;
-			if (sort.key === "num") v = ticketNum(a.file) - ticketNum(b.file);
+			if (sort.key === "num") v = a.id.localeCompare(b.id, void 0, { numeric: true });
 			else if (sort.key === "status") v = STATUS_ORDER.indexOf(displayStatus(a)) - STATUS_ORDER.indexOf(displayStatus(b));
+			else if (sort.key === "kind") v = ticketKind(a).localeCompare(ticketKind(b));
 			else v = (a.type ?? "").localeCompare(b.type ?? "");
 			return v * sort.dir;
 		});
@@ -575,6 +868,7 @@ function ViewC({ tickets, planDir, scope }) {
 		query,
 		statusSet,
 		typeSet,
+		kindSet,
 		onlyBlocked,
 		sort
 	]);
@@ -715,6 +1009,47 @@ function ViewC({ tickets, planDir, scope }) {
 								textTransform: "uppercase",
 								marginBottom: 4
 							},
+							children: "Kind"
+						}), /* @__PURE__ */ jsx("div", {
+							style: {
+								display: "flex",
+								flexWrap: "wrap",
+								gap: 4
+							},
+							children: [
+								"ticket",
+								"approval",
+								"note"
+							].map((k) => {
+								const meta = KIND_META[k];
+								const on = kindSet.has(k);
+								return /* @__PURE__ */ jsxs("span", {
+									style: {
+										fontSize: 10,
+										padding: "2px 7px",
+										borderRadius: 999,
+										cursor: "pointer",
+										border: `1px solid ${meta.color}`,
+										color: on ? "#fff" : meta.color,
+										background: on ? meta.color : "transparent"
+									},
+									onClick: () => setKindSet(toggle(kindSet, k)),
+									children: [
+										meta.icon,
+										" ",
+										meta.label
+									]
+								}, k);
+							})
+						})] }),
+						/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("div", {
+							style: {
+								fontSize: 10,
+								fontWeight: 700,
+								color: "#777",
+								textTransform: "uppercase",
+								marginBottom: 4
+							},
 							children: "Type"
 						}), /* @__PURE__ */ jsx("div", {
 							style: {
@@ -722,23 +1057,28 @@ function ViewC({ tickets, planDir, scope }) {
 								flexWrap: "wrap",
 								gap: 4
 							},
-							children: Object.keys(TYPE_THEME).map((t) => {
+							children: allTypes.map((t) => {
+								const theme = t === NO_TYPE ? {
+									icon: "∅",
+									color: "#8a8ab0"
+								} : typeTheme(t);
 								const on = typeSet.has(t);
+								const label = t === NO_TYPE ? "（无 type）" : t;
 								return /* @__PURE__ */ jsxs("span", {
 									style: {
 										fontSize: 10,
 										padding: "2px 7px",
 										borderRadius: 999,
 										cursor: "pointer",
-										border: `1px solid ${TYPE_THEME[t].color}`,
-										color: TYPE_THEME[t].color,
-										background: on ? TYPE_THEME[t].color : "transparent"
+										border: `1px solid ${theme.color}`,
+										color: on ? "#fff" : theme.color,
+										background: on ? theme.color : "transparent"
 									},
 									onClick: () => setTypeSet(toggle(typeSet, t)),
 									children: [
-										TYPE_THEME[t].icon,
+										theme.icon,
 										" ",
-										t
+										label
 									]
 								}, t);
 							})
@@ -772,7 +1112,12 @@ function ViewC({ tickets, planDir, scope }) {
 							onClick: () => {
 								setQuery("");
 								setStatusSet(new Set(STATUS_ORDER));
-								setTypeSet(new Set(Object.keys(TYPE_THEME)));
+								setTypeSet(new Set(allTypes));
+								setKindSet(new Set([
+									"ticket",
+									"approval",
+									"note"
+								]));
 								setOnlyBlocked(false);
 							},
 							children: "Reset"
@@ -842,6 +1187,21 @@ function ViewC({ tickets, planDir, scope }) {
 									background: HEADER_BG,
 									cursor: "pointer"
 								},
+								onClick: () => sortBy("kind"),
+								children: ["Kind ", arrow("kind")]
+							}),
+							/* @__PURE__ */ jsxs("th", {
+								style: {
+									textAlign: "left",
+									padding: "7px 10px",
+									fontSize: 10,
+									fontWeight: 700,
+									color: "#777",
+									textTransform: "uppercase",
+									borderBottom: `1px solid ${BORDER}`,
+									background: HEADER_BG,
+									cursor: "pointer"
+								},
 								onClick: () => sortBy("type"),
 								children: ["Type ", arrow("type")]
 							}),
@@ -887,10 +1247,7 @@ function ViewC({ tickets, planDir, scope }) {
 								children: "Blocked"
 							})
 						] }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((t) => {
-							const th = TYPE_THEME[t.type ?? ""] ?? {
-								icon: "?",
-								color: "#888"
-							};
+							const th = typeTheme(t.type);
 							return /* @__PURE__ */ jsxs("tr", {
 								style: { cursor: "pointer" },
 								onClick: () => setDetail(t),
@@ -903,7 +1260,7 @@ function ViewC({ tickets, planDir, scope }) {
 											color: "#8a8ab0",
 											fontSize: 11
 										},
-										children: String(ticketNum(t.file)).padStart(2, "0")
+										children: shortId(t)
 									}),
 									/* @__PURE__ */ jsx("td", {
 										style: {
@@ -927,6 +1284,27 @@ function ViewC({ tickets, planDir, scope }) {
 											style: {
 												padding: "1px 6px",
 												borderRadius: 999,
+												background: `${KIND_META[ticketKind(t)].color}1e`,
+												color: KIND_META[ticketKind(t)].color,
+												border: `1px solid ${KIND_META[ticketKind(t)].color}44`,
+												fontSize: 11
+											},
+											children: [
+												KIND_META[ticketKind(t)].icon,
+												" ",
+												KIND_META[ticketKind(t)].label
+											]
+										})
+									}),
+									/* @__PURE__ */ jsx("td", {
+										style: {
+											padding: "7px 10px",
+											borderBottom: `1px solid #1e1e3a`
+										},
+										children: /* @__PURE__ */ jsxs("span", {
+											style: {
+												padding: "1px 6px",
+												borderRadius: 999,
 												background: `${th.color}1e`,
 												color: th.color,
 												border: `1px solid ${th.color}44`,
@@ -935,7 +1313,7 @@ function ViewC({ tickets, planDir, scope }) {
 											children: [
 												th.icon,
 												" ",
-												t.type
+												t.type ?? "（无 type）"
 											]
 										})
 									}),
@@ -994,29 +1372,36 @@ function ViewC({ tickets, planDir, scope }) {
 const NODE_W = 176, STEP_X = 200, NODE_H = 44;
 const RUNG_TOP = 140, RUNG_STEP = 110;
 const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100;
+const START = "\0start";
+const END = "\0end";
 function layoutGraph(tickets) {
-	const byNum = new Map(tickets.map((t) => [ticketNum(t.file), t]));
 	const grid = tickets.filter((t) => !t.outOfScope);
 	const side = tickets.filter((t) => t.outOfScope);
+	const byId = new Map(tickets.map((t) => [t.id, t]));
+	const deps = /* @__PURE__ */ new Map();
+	for (const t of tickets) deps.set(t.id, t.blockedBy.map((r) => resolveRef(r, byId)).filter((x) => x !== void 0));
+	const depsOf = (t) => deps.get(t.id) ?? [];
 	const depth = /* @__PURE__ */ new Map();
 	const visit = (n) => {
 		if (depth.has(n)) return depth.get(n);
-		const t = byNum.get(n);
+		const t = byId.get(n);
 		if (!t) return 0;
-		const d = t.blockedBy.filter((b) => byNum.has(b) && !byNum.get(b).outOfScope).reduce((m, b) => Math.max(m, visit(b)), 0) + 1;
+		const d = depsOf(t).filter((b) => byId.has(b) && !byId.get(b).outOfScope).reduce((m, b) => Math.max(m, visit(b)), 0) + 1;
 		depth.set(n, d);
 		return d;
 	};
-	for (const t of grid) visit(ticketNum(t.file));
-	const maxL = Math.max(1, ...grid.map((t) => depth.get(ticketNum(t.file))));
+	for (const t of grid) visit(t.id);
+	const maxL = Math.max(1, ...grid.map((t) => depth.get(t.id)));
 	const layers = Array.from({ length: maxL }, () => []);
-	for (const t of grid) layers[depth.get(ticketNum(t.file)) - 1].push(t);
-	layers[0].sort((a, b) => ticketNum(a.file) - ticketNum(b.file));
+	for (const t of grid) layers[depth.get(t.id) - 1].push(t);
+	const cmp = (a, b) => a.id.localeCompare(b.id, void 0, { numeric: true });
+	layers[0].sort(cmp);
 	for (let l = 1; l < maxL; l++) {
 		const upIdx = /* @__PURE__ */ new Map();
-		layers[l - 1].forEach((t, i) => upIdx.set(ticketNum(t.file), i));
+		layers[l - 1].forEach((t, i) => upIdx.set(t.id, i));
 		layers[l].sort((a, b) => {
-			return a.blockedBy.filter((p) => upIdx.has(p)).reduce((s, p) => s + upIdx.get(p), 0) / Math.max(1, a.blockedBy.filter((p) => upIdx.has(p)).length) - b.blockedBy.filter((p) => upIdx.has(p)).reduce((s, p) => s + upIdx.get(p), 0) / Math.max(1, b.blockedBy.filter((p) => upIdx.has(p)).length) || ticketNum(a.file) - ticketNum(b.file);
+			const pa = depsOf(a).filter((p) => upIdx.has(p)), pb = depsOf(b).filter((p) => upIdx.has(p));
+			return pa.reduce((s, p) => s + upIdx.get(p), 0) / Math.max(1, pa.length) - pb.reduce((s, p) => s + upIdx.get(p), 0) / Math.max(1, pb.length) || cmp(a, b);
 		});
 	}
 	const maxCount = Math.max(...layers.map((o) => o.length), 1);
@@ -1025,10 +1410,10 @@ function layoutGraph(tickets) {
 	const sideRows = /* @__PURE__ */ new Map();
 	let maxSideRow = 0;
 	for (const t of side) {
-		const p = t.blockedBy.find((b) => byNum.has(b) && !byNum.get(b).outOfScope);
+		const p = depsOf(t).find((b) => byId.has(b) && !byId.get(b).outOfScope);
 		let tier = 0;
 		if (p !== void 0) {
-			const parentTier = layers.findIndex((l) => l.some((tk) => ticketNum(tk.file) === p));
+			const parentTier = layers.findIndex((l) => l.some((tk) => tk.id === p));
 			tier = (parentTier >= 0 ? parentTier : 0) + 1;
 		}
 		const yKey = RUNG_TOP + tier * RUNG_STEP;
@@ -1042,7 +1427,7 @@ function layoutGraph(tickets) {
 		const left = (W_MAIN - (o.length * STEP_X - 24)) / 2;
 		o.forEach((t, i) => {
 			const x = left + i * STEP_X;
-			pos.set(ticketNum(t.file), {
+			pos.set(t.id, {
 				x,
 				cx: x + NODE_W / 2,
 				y: RUNG_TOP + li * RUNG_STEP
@@ -1052,9 +1437,8 @@ function layoutGraph(tickets) {
 	const laneX = W_MAIN + sideGap;
 	const sidePos = /* @__PURE__ */ new Map();
 	for (const [y, row] of sideRows) row.forEach((t, i) => {
-		const n = ticketNum(t.file);
 		const x = laneX + i * STEP_X;
-		sidePos.set(n, {
+		sidePos.set(t.id, {
 			x,
 			cx: x + NODE_W / 2,
 			y
@@ -1063,8 +1447,8 @@ function layoutGraph(tickets) {
 	const childrenOf = /* @__PURE__ */ new Map();
 	const edges = [];
 	for (const t of grid) {
-		const n = ticketNum(t.file);
-		for (const p of t.blockedBy) if (byNum.has(p) && !byNum.get(p).outOfScope) {
+		const n = t.id;
+		for (const p of depsOf(t)) if (byId.has(p) && !byId.get(p).outOfScope) {
 			const key = `e${p}-${n}`;
 			edges.push({
 				from: p,
@@ -1075,19 +1459,19 @@ function layoutGraph(tickets) {
 			childrenOf.get(p).push(n);
 		}
 	}
-	layers[0].map((t) => ticketNum(t.file)).forEach((r, i) => edges.push({
-		from: -1,
+	layers[0].map((t) => t.id).forEach((r, i) => edges.push({
+		from: START,
 		to: r,
 		key: `s${i}`
 	}));
-	grid.filter((t) => (childrenOf.get(ticketNum(t.file)) ?? []).length === 0 && t.resolved).map((t) => ticketNum(t.file)).forEach((l, i) => edges.push({
+	grid.filter((t) => (childrenOf.get(t.id) ?? []).length === 0 && t.resolved).map((t) => t.id).forEach((l, i) => edges.push({
 		from: l,
-		to: -2,
+		to: END,
 		key: `l${i}`
 	}));
 	for (const t of side) {
-		const n = ticketNum(t.file);
-		const p = t.blockedBy.find((b) => byNum.has(b));
+		const n = t.id;
+		const p = depsOf(t).find((b) => byId.has(b));
 		if (p !== void 0) edges.push({
 			from: p,
 			to: n,
@@ -1113,7 +1497,7 @@ function ViewD({ tickets, planDir, scope }) {
 	const [sel, setSel] = useState(null);
 	const [hover, setHover] = useState(null);
 	const { pos, sidePos, edges, W, H, capX, startCapY, endCapY, endY } = useMemo(() => layoutGraph(tickets), [tickets]);
-	const focus = tickets.find((t) => ticketNum(t.file) === sel) ?? null;
+	const focus = tickets.find((t) => t.id === sel) ?? null;
 	const conn = (n) => {
 		const keys = /* @__PURE__ */ new Set();
 		for (const e of edges) if (e.from === n || e.to === n) keys.add(e.key);
@@ -1187,7 +1571,7 @@ function ViewD({ tickets, planDir, scope }) {
 							children: "Start"
 						}),
 						[...pos.entries()].map(([n, p]) => {
-							const t = tickets.find((x) => ticketNum(x.file) === n);
+							const t = tickets.find((x) => x.id === n);
 							return /* @__PURE__ */ jsxs("div", {
 								style: {
 									position: "absolute",
@@ -1239,18 +1623,20 @@ function ViewD({ tickets, planDir, scope }) {
 													color: "#888",
 													background: "#1e1e3a",
 													borderRadius: 999,
-													width: 18,
+													minWidth: 18,
 													height: 18,
+													padding: "0 4px",
+													boxSizing: "border-box",
 													display: "flex",
 													alignItems: "center",
 													justifyContent: "center",
 													fontWeight: 700
 												},
-												children: String(n).padStart(2, "0")
+												children: shortId(t)
 											}),
 											/* @__PURE__ */ jsx("span", {
 												style: { fontSize: 12 },
-												children: TYPE_THEME[t.type ?? ""]?.icon ?? "?"
+												children: KIND_META[ticketKind(t)].icon
 											}),
 											/* @__PURE__ */ jsx("span", {
 												style: {
@@ -1279,7 +1665,7 @@ function ViewD({ tickets, planDir, scope }) {
 							}, n);
 						}),
 						[...sidePos.entries()].map(([n, p]) => {
-							const t = tickets.find((x) => ticketNum(x.file) === n);
+							const t = tickets.find((x) => x.id === n);
 							return /* @__PURE__ */ jsxs("div", {
 								style: {
 									position: "absolute",
@@ -1329,14 +1715,16 @@ function ViewD({ tickets, planDir, scope }) {
 													color: "#888",
 													background: "#1e1e3a",
 													borderRadius: 999,
-													width: 18,
+													minWidth: 18,
 													height: 18,
+													padding: "0 4px",
+													boxSizing: "border-box",
 													display: "flex",
 													alignItems: "center",
 													justifyContent: "center",
 													fontWeight: 700
 												},
-												children: String(n).padStart(2, "0")
+												children: shortId(t)
 											}),
 											/* @__PURE__ */ jsx("span", {
 												style: { fontSize: 12 },
@@ -1421,20 +1809,20 @@ function ViewD({ tickets, planDir, scope }) {
 									fill: TEXT
 								})
 							})] }), edges.map((e) => {
-								const aPos = e.from === -1 ? {
+								const aPos = e.from === START ? {
 									cx: capX,
 									y: startCapY
 								} : pos.get(e.from);
-								const bPos = e.to === -2 ? {
+								const bPos = e.to === END ? {
 									cx: capX,
 									y: endY
 								} : pos.get(e.to) ?? sidePos.get(e.to);
 								if (!aPos || !bPos) return null;
 								const active = hover ?? sel;
 								const connected = active === null || conn(active).has(e.key);
-								const sx = aPos.cx, sy = e.from === -1 ? startCapY + CAP_H : aPos.y + NODE_H;
-								const ex = e.to === -2 ? capX : bPos.cx;
-								const ey = e.to === -2 ? endY : e.dashed ? bPos.y : bPos.y + NODE_H / 2;
+								const sx = aPos.cx, sy = e.from === START ? startCapY + CAP_H : aPos.y + NODE_H;
+								const ex = e.to === END ? capX : bPos.cx;
+								const ey = e.to === END ? endY : e.dashed ? bPos.y : bPos.y + NODE_H / 2;
 								const sw = e.dashed ? 1.4 : connected ? 3 : 1.4;
 								const sc = e.dashed ? "#666688" : connected ? TEXT : "#454570";
 								return /* @__PURE__ */ jsx("path", {
@@ -1463,11 +1851,11 @@ function ViewD({ tickets, planDir, scope }) {
 }
 function PlanView(props) {
 	const { scope } = props;
-	const [mapRaw, setMapRaw] = useState(null);
-	const [tickets, setTickets] = useState([]);
-	const [effortDir, setEffortDir] = useState("");
+	const [data, setData] = useState(null);
 	const [error, setError] = useState(null);
 	const [loading, setLoading] = useState(true);
+	const [top, setTop] = useState("route");
+	const [effortIdx, setEffortIdx] = useState(0);
 	const [variant, setVariant] = useState("A");
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -1480,9 +1868,7 @@ function PlanView(props) {
 				setLoading(false);
 				return;
 			}
-			setMapRaw(r.mapRaw);
-			setTickets(r.tickets);
-			setEffortDir(r.effortDir);
+			setData(r);
 		} catch {
 			setError("failed");
 		} finally {
@@ -1492,10 +1878,14 @@ function PlanView(props) {
 	useEffect(() => {
 		load();
 	}, [load]);
+	const all = data?.tickets ?? [];
+	const routeTickets = useMemo(() => all.filter((t) => classify(t) === "ticket"), [all]);
+	const approvals = useMemo(() => all.filter((t) => classify(t) === "approval"), [all]);
 	const destination = useMemo(() => {
+		const mapRaw = data?.efforts[effortIdx]?.mapRaw;
 		if (!mapRaw) return null;
 		return mapRaw.match(/## Destination\s*\n([\s\S]*?)(?=\n## |\n$)/)?.[1]?.trim().split("\n")[0]?.trim() ?? null;
-	}, [mapRaw]);
+	}, [data?.efforts, effortIdx]);
 	if (loading) return /* @__PURE__ */ jsx("div", {
 		style: {
 			flex: 1,
@@ -1507,7 +1897,7 @@ function PlanView(props) {
 		},
 		children: "Loading…"
 	});
-	if (error) return /* @__PURE__ */ jsx("div", {
+	if (error || !data) return /* @__PURE__ */ jsx("div", {
 		style: {
 			flex: 1,
 			display: "flex",
@@ -1518,16 +1908,44 @@ function PlanView(props) {
 		},
 		children: "No .plan found in current directory."
 	});
-	const toggleBtn = (active) => ({
+	const planDir = data.effortDir;
+	const tabBtn = (active) => ({
+		padding: "6px 12px",
+		border: "none",
+		borderRadius: 6,
+		cursor: "pointer",
+		background: active ? CARD : "transparent",
+		color: active ? TEXT : "#888",
+		fontSize: 12,
+		fontWeight: active ? 700 : 400
+	});
+	const subBtn = (active) => ({
 		flex: 1,
-		padding: "6px 0",
+		padding: "5px 0",
 		border: "none",
 		borderRadius: 6,
 		cursor: "pointer",
 		background: active ? HEADER_BG : "transparent",
 		color: active ? TEXT : "#888",
-		fontSize: 12
+		fontSize: 11
 	});
+	const tabs = [
+		{
+			id: "route",
+			label: "🗺️ 路线",
+			count: routeTickets.length
+		},
+		{
+			id: "tickets",
+			label: "🎫 工单",
+			count: routeTickets.length
+		},
+		{
+			id: "approvals",
+			label: "⏳ 待拍板",
+			count: approvals.length
+		}
+	];
 	return /* @__PURE__ */ jsxs("div", {
 		style: {
 			flex: 1,
@@ -1539,56 +1957,265 @@ function PlanView(props) {
 			fontSize: 14
 		},
 		children: [
-			/* @__PURE__ */ jsxs("div", {
+			/* @__PURE__ */ jsx("div", {
 				style: {
 					display: "flex",
-					gap: 2,
-					padding: "4px 8px",
+					gap: 4,
+					padding: "6px 8px",
 					borderBottom: `1px solid ${BORDER}`,
 					background: HEADER_BG
 				},
-				children: [
-					/* @__PURE__ */ jsx("button", {
-						type: "button",
-						style: toggleBtn(variant === "A"),
-						onClick: () => setVariant("A"),
-						children: "📋 Kanban"
-					}),
-					/* @__PURE__ */ jsx("button", {
-						type: "button",
-						style: toggleBtn(variant === "D"),
-						onClick: () => setVariant("D"),
-						children: "📊 Relation"
-					}),
-					/* @__PURE__ */ jsx("button", {
-						type: "button",
-						style: toggleBtn(variant === "C"),
-						onClick: () => setVariant("C"),
-						children: " Table"
-					})
-				]
+				children: tabs.map((t) => /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					style: tabBtn(top === t.id),
+					onClick: () => setTop(t.id),
+					children: [t.label, /* @__PURE__ */ jsx("span", {
+						style: {
+							marginLeft: 5,
+							fontSize: 11,
+							color: t.id === "approvals" && t.count > 0 ? "#ffa94d" : "#777"
+						},
+						children: t.count
+					})]
+				}, t.id))
 			}),
-			variant === "A" && /* @__PURE__ */ jsx(ViewA, {
-				tickets,
-				planDir: effortDir,
-				scope,
-				destination
-			}),
-			variant === "D" && /* @__PURE__ */ jsx(ViewD, {
-				tickets,
-				planDir: effortDir,
+			top === "route" && /* @__PURE__ */ jsxs(Fragment, { children: [
+				data.efforts.length > 1 && /* @__PURE__ */ jsx("div", {
+					style: {
+						display: "flex",
+						gap: 6,
+						padding: "6px 10px 0",
+						flexWrap: "wrap"
+					},
+					children: data.efforts.map((e) => /* @__PURE__ */ jsx("span", {
+						onClick: () => setEffortIdx(data.efforts.indexOf(e)),
+						style: {
+							fontSize: 11,
+							padding: "2px 8px",
+							borderRadius: 999,
+							cursor: "pointer",
+							border: `1px solid ${effortIdx === data.efforts.indexOf(e) ? "#7c6bff" : BORDER}`,
+							color: effortIdx === data.efforts.indexOf(e) ? "#7c6bff" : "#888"
+						},
+						children: e.dir.split("/").pop()
+					}, e.dir))
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						display: "flex",
+						gap: 2,
+						padding: "4px 8px",
+						borderBottom: `1px solid ${BORDER}`,
+						background: BG
+					},
+					children: [
+						/* @__PURE__ */ jsx("button", {
+							type: "button",
+							style: subBtn(variant === "A"),
+							onClick: () => setVariant("A"),
+							children: "📋 Kanban"
+						}),
+						/* @__PURE__ */ jsx("button", {
+							type: "button",
+							style: subBtn(variant === "D"),
+							onClick: () => setVariant("D"),
+							children: "📊 Relation"
+						}),
+						/* @__PURE__ */ jsx("button", {
+							type: "button",
+							style: subBtn(variant === "C"),
+							onClick: () => setVariant("C"),
+							children: "Table"
+						})
+					]
+				}),
+				variant === "A" && /* @__PURE__ */ jsx(ViewA, {
+					tickets: routeTickets,
+					planDir,
+					scope,
+					destination
+				}),
+				variant === "D" && /* @__PURE__ */ jsx(ViewD, {
+					tickets: routeTickets,
+					planDir,
+					scope
+				}),
+				variant === "C" && /* @__PURE__ */ jsx(ViewC, {
+					tickets: routeTickets,
+					planDir,
+					scope
+				})
+			] }),
+			top === "tickets" && /* @__PURE__ */ jsx(ViewC, {
+				tickets: routeTickets,
+				planDir,
 				scope
 			}),
-			variant === "C" && /* @__PURE__ */ jsx(ViewC, {
-				tickets,
-				planDir: effortDir,
+			top === "approvals" && /* @__PURE__ */ jsx(ApprovalsView, {
+				approvals,
 				scope
 			})
 		]
 	});
 }
+function ApprovalsView({ approvals, scope }) {
+	const [focus, setFocus] = useState(null);
+	const sorted = useMemo(() => [...approvals].sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)), [approvals]);
+	if (approvals.length === 0) return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			color: "#55557a",
+			padding: 24,
+			textAlign: "center"
+		},
+		children: [
+			"没有待你拍板的文档。",
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx("span", {
+				style: {
+					fontSize: 12,
+					color: "#44445e"
+				},
+				children: "审批文档写 `status: pending` 后会出现在这里。"
+			})
+		]
+	});
+	const withAge = sorted.filter((t) => ageDays(t) !== void 0).length;
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			flexDirection: "column",
+			overflow: "hidden"
+		},
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				style: {
+					padding: "10px 16px",
+					borderBottom: `1px solid ${BORDER}`,
+					fontSize: 12,
+					color: "#888"
+				},
+				children: [
+					approvals.length,
+					" 份待拍板文档",
+					withAge < approvals.length && `（${approvals.length - withAge} 份无 date，不显示天数）`
+				]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				style: {
+					flex: 1,
+					overflowY: "auto",
+					padding: 12,
+					display: "flex",
+					flexDirection: "column",
+					gap: 8
+				},
+				children: sorted.map((t) => {
+					const age = ageDays(t);
+					const hot = age !== void 0 && age >= 7;
+					return /* @__PURE__ */ jsxs("div", {
+						onClick: () => setFocus(t),
+						style: {
+							padding: 12,
+							borderRadius: 10,
+							background: CARD,
+							border: `1px solid ${hot ? "#7a4a15" : BORDER}`,
+							cursor: "pointer"
+						},
+						children: [/* @__PURE__ */ jsxs("div", {
+							style: {
+								display: "flex",
+								alignItems: "center",
+								gap: 8
+							},
+							children: [
+								/* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 13,
+										color: "#ffa94d"
+									},
+									children: "⏳"
+								}),
+								/* @__PURE__ */ jsx("span", {
+									style: {
+										flex: 1,
+										fontSize: 13,
+										fontWeight: 700,
+										color: TEXT,
+										lineHeight: 1.4
+									},
+									children: t.title
+								}),
+								age !== void 0 && /* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 11,
+										padding: "2px 8px",
+										borderRadius: 999,
+										background: hot ? "#7a4a1533" : "#1e1e3a",
+										color: hot ? "#ffa94d" : "#888",
+										flexShrink: 0
+									},
+									children: ageLabel(t)
+								})
+							]
+						}), /* @__PURE__ */ jsxs("div", {
+							style: {
+								display: "flex",
+								gap: 6,
+								flexWrap: "wrap",
+								marginTop: 7
+							},
+							children: [
+								/* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										padding: "1px 6px",
+										borderRadius: 999,
+										background: "#1e1e3a",
+										color: "#888"
+									},
+									children: t.file
+								}),
+								t.origin && /* @__PURE__ */ jsxs("span", {
+									style: {
+										fontSize: 10,
+										padding: "1px 6px",
+										borderRadius: 999,
+										background: "#1e1e3a",
+										color: "#888"
+									},
+									children: ["origin: ", t.origin]
+								}),
+								t.date && /* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										padding: "1px 6px",
+										borderRadius: 999,
+										background: "#1e1e3a",
+										color: "#888"
+									},
+									children: t.date
+								})
+							]
+						})]
+					}, t.file);
+				})
+			}),
+			focus && /* @__PURE__ */ jsx(DetailModal, {
+				ticket: focus,
+				planDir: "",
+				scope,
+				onClose: () => setFocus(null)
+			})
+		]
+	});
+}
 //#endregion
-//#region src/client/index.tsx
+//#region ../../../../dsh-plugin/packages/dsh-plan-view/src/client/index.tsx
 const inject = ["betterSidebar", "slots"];
 function apply(ctx) {
 	ctx.effect(() => ctx.betterSidebar.registerTab({

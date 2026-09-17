@@ -3,3 +3,5 @@ dist/
 *.log
 .tmp/
 .pnpm-store/lib/index.js
+# Local scratch: holds a copy of another repo's .plan for plugin testing.
+.plan-view-test/

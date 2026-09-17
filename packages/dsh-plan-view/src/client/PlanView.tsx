@@ -8,7 +8,7 @@
  * All three share a unified dark theme and markdown-rendered detail panels.
  * Self-contained: uses its own api module, inline styles, zero CSS deps.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fsTree, fsRead, type SessionScope, type FsEntry } from './api'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -16,8 +16,12 @@ import { fsTree, fsRead, type SessionScope, type FsEntry } from './api'
 type TicketStatus = 'resolved' | 'out_of_scope' | 'claimed' | 'open'
 
 interface ParsedTicket {
-  file: string; title: string; type: string | undefined
-  blockedBy: number[]; resolved: boolean; outOfScope: boolean; claimedBy: string | undefined
+  id: string; file: string; title: string; type: string | undefined
+  blockedBy: string[]; resolved: boolean; outOfScope: boolean; claimedBy: string | undefined
+  status: string | undefined  // frontmatter `status` — the portable state field
+  date: string | undefined    // frontmatter `date` — used for "how long has this been pending"
+  origin: string | undefined  // frontmatter `origin` — why an approval doc exists
+  path?: string               // resolved fs path, since tickets are not always under tickets/
   body: string  // full markdown body for detail panels
 }
 
@@ -42,19 +46,87 @@ function deriveTicketStatus(file: string, raw: string): ParsedTicket {
   const hasRuledOut = /^## Ruled out\b/m.test(body) && /^## Ruled out\b[\s\S]*\n\S/m.test(body)
   const titleMatch = raw.match(/^#\s+(.+)$/m)
   return {
+    id: ticketId(file),
     file, title: titleMatch?.[1]?.replace(/`[^`]*`/g, '')?.trim() ?? file,
     type: fm.type,
-    blockedBy: (fm.blocked_by ?? '').replace(/[\[\]]/g, '').split(/[,\s]+/).map(Number).filter(Boolean),
-    resolved: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by, body,
+    blockedBy: parseBlockedBy(fm.blocked_by),
+    resolved: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
+    status: fm.status, date: fm.date, origin: fm.origin, body,
   }
 }
 
-function displayStatus(t: ParsedTicket): TicketStatus {
-  if (t.outOfScope) return 'out_of_scope'; if (t.resolved) return 'resolved'
-  if (t.claimedBy) return 'claimed'; return 'open'
+// Status vocabulary shared by both conventions in the wild: wayfinder's
+// body-section markers (`## Answer` / `## Ruled out`) and a plain frontmatter
+// `status` field, which is what non-wayfinder repos write. Both are honoured;
+// the section markers win when present, since they carry more detail.
+const DONE_STATUS = new Set(['done', 'closed', 'resolved', 'complete', 'completed', 'shipped'])
+const OUT_STATUS = new Set(['abandoned', 'rejected', 'wontfix', "won't fix", 'cancelled', 'canceled', 'superseded'])
+const CLAIMED_STATUS = new Set(['doing', 'in_progress', 'in-progress', 'wip', 'claimed', 'in review', 'review'])
+
+// A status string may arrive as `done`, or with a trailing note
+// (`done # 2026-09-12 交付`), or `superseded-by:<path>`. Compare on the head word.
+function statusWord(t: ParsedTicket): string {
+  const raw = (t.status ?? '').trim().toLowerCase()
+  if (raw.startsWith('superseded-by')) return 'superseded'
+  return raw.split(/[\s(#:—-]/)[0] ?? ''
 }
 
-function ticketNum(file: string): number { const m = file.match(/^(\d+)/); return m ? Number(m[1]) : 0 }
+function displayStatus(t: ParsedTicket): TicketStatus {
+  if (t.outOfScope) return 'out_of_scope'
+  if (t.resolved) return 'resolved'
+  const w = statusWord(t)
+  if (DONE_STATUS.has(w)) return 'resolved'
+  if (OUT_STATUS.has(w)) return 'out_of_scope'
+  if (t.claimedBy) return 'claimed'
+  if (CLAIMED_STATUS.has(w)) return 'claimed'
+  return 'open'
+}
+
+// ─── Ticket identity ─────────────────────────────────────────────────────────
+//
+// A ticket's id is its filename without the extension: `W1-写作台IA重构`,
+// `R12-定稿管线终校与关联域合并`, `01`. Wayfinder repos happen to use bare
+// numbers as filenames, so their ids stay numeric and old behaviour is kept;
+// repos that use names get distinct ids instead of all collapsing to one node.
+
+function ticketId(file: string): string { return file.replace(/\.md$/i, '') }
+
+// The short form shown in the circular badge: the leading run of letters+digits
+// (`01`, `W1`, `SET1`, `R12`), falling back to the start of a name-only file.
+// Wayfinder's bare numbers keep their old look.
+function shortId(t: ParsedTicket): string {
+  const m = t.id.match(/^([A-Za-z]*\d+)/)
+  // ponytail: 4 chars is a badge, not a title — wider ids truncate, never wrap.
+  return (m?.[1] ?? t.id).slice(0, 4).toUpperCase()
+}
+
+// `blocked_by` is written several ways across repos: `[02]`, `["W3-大纲版本化"]`,
+// `["R2"]`, even `["../state-machine/改造工单/R12-….md"]`. Normalise each entry to
+// the same space as ticketId so the dependency graph can actually resolve them.
+function normalizeRef(raw: string): string {
+  const s = raw.trim().replace(/^["']|["']$/g, '').split('/').pop() ?? ''
+  return ticketId(s)
+}
+
+function parseBlockedBy(value: string | undefined): string[] {
+  return (value ?? '').replace(/[\[\]]/g, '').split(',').map(normalizeRef).filter(Boolean)
+}
+
+// Resolve a normalised ref against the ids actually present. Bare numbers must
+// match zero-padded filenames (`2` → `02`); a name must match its file with or
+// without the `.md` suffix, and a title fragment matches its leading id.
+function resolveRef(ref: string, byId: Map<string, ParsedTicket>): string | undefined {
+  if (byId.has(ref)) return ref
+  if (/^\d+$/.test(ref)) {
+    const padded = ref.padStart(2, '0')
+    if (byId.has(padded)) return padded
+  }
+  for (const id of byId.keys()) {
+    // `W3` should find `W3-大纲版本化`; `R12` should find `R12-定稿管线…`.
+    if (id === ref || id.startsWith(`${ref}-`) || id.split('-')[0] === ref) return id
+  }
+  return undefined
+}
 
 // ─── Markdown renderer (lightweight, zero deps) ──────────────────────────────
 
@@ -78,9 +150,73 @@ const TYPE_THEME: Record<string, { icon: string; color: string }> = {
   research: { icon: '🔍', color: '#7c6bff' }, grilling: { icon: '🔥', color: '#ff6b6b' },
   prototype: { icon: '🛠️', color: '#ffa94d' }, task: { icon: '⚡', color: '#4dabf7' },
 }
+// Types a repo actually writes that are not in the table above. Kept separate so
+// an unknown type shows a neutral bullet rather than a bare "?" — a question
+// mark reads as "something is broken", which it never is.
+const TYPE_FALLBACK = { icon: '•', color: '#888' }
+// Sentinel for "this file declares no type" — a real bucket, never a hidden one.
+const NO_TYPE = '\u0000no-type'
+const typeTheme = (t: string | undefined) => TYPE_THEME[t ?? ''] ?? TYPE_FALLBACK
 const DOT: Record<string, string> = { open: '#6b6b8a', claimed: '#f0a500', resolved: '#2ecc71', out_of_scope: '#555577' }
 const STATUS_LABELS: Record<TicketStatus, string> = { open: 'Open', claimed: 'Claimed', resolved: 'Resolved', out_of_scope: 'Out of scope' }
 const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'resolved', 'out_of_scope']
+
+// ─── "Waiting on you" ────────────────────────────────────────────────────────
+//
+// The reason this view exists: work does not only sit in tickets. An approval
+// document holds decisions that are blocked on the human, and those are the
+// ones that get forgotten — nobody re-reads a document to discover it is still
+// waiting. So a `status: pending` document is surfaced as its own kind of item,
+// carrying how long it has been waiting.
+
+// ─── Kinds: a ticket asks for work, an approval asks for a ruling ────────────
+//
+// The two are different objects sharing a directory. A ticket is work to be
+// executed; an approval is a decision blocked on the human, and carries a
+// lifecycle (pending → closed) that a ticket does not. The view labels them so
+// a reader knows which one they are looking at without opening it.
+
+type TicketKind = 'ticket' | 'approval' | 'note'
+
+/** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
+function ticketKind(t: ParsedTicket): TicketKind {
+  const ty = (t.type ?? '').trim().toLowerCase()
+  if (ty === 'approval') return 'approval'
+  if (isPending(t)) return 'approval'
+  // map/spec/index documents describe the effort rather than asking for work.
+  if (ty === 'spec' || ty === 'design' || /^(map|readme|index)$/i.test(t.id)) return 'note'
+  // A document declaring neither a type nor a status is not claiming to be a
+  // ticket — it is a note (a research record, a ledger, a handoff). Counting it
+  // as a ticket invented work that did not exist, so it is classified neutral.
+  // Both fields are read because either one is a claim of intent; a real ticket
+  // states at least one.
+  if (!ty && !t.status) return 'note'
+  return 'ticket'
+}
+
+const KIND_META: Record<TicketKind, { label: string; icon: string; color: string }> = {
+  ticket: { label: '工单', icon: '🎫', color: '#4dabf7' },
+  approval: { label: '待拍板', icon: '⏳', color: '#ffa94d' },
+  note: { label: '说明', icon: '📄', color: '#7a7a9a' },
+}
+
+/** Frontmatter `status` marks a document as an approval awaiting a ruling. */
+function isPending(t: ParsedTicket): boolean { return statusWord(t) === 'pending' }
+
+/** Whole days since the document's `date`. Undefined when there is no usable date. */
+function ageDays(t: ParsedTicket): number | undefined {
+  if (!t.date) return undefined
+  const then = Date.parse(t.date)
+  if (Number.isNaN(then)) return undefined
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000))
+}
+
+function ageLabel(t: ParsedTicket): string | undefined {
+  const d = ageDays(t)
+  if (d === undefined) return undefined
+  if (d === 0) return '今天'
+  return `挂了 ${d} 天`
+}
 
 // ─── Theme (softer deep purple alternative) ────────────────────────────────
 
@@ -89,23 +225,89 @@ const BORDER = '#2a2a4e', BORDER_LIGHT = '#26264a', HEADER_BG = '#161628'
 
 // ─── Data loading ────────────────────────────────────────────────────────────
 
-async function loadPlan(scope: SessionScope, planDir: string): Promise<{ mapRaw: string; tickets: ParsedTicket[]; effortDir: string } | null> {
-  let effortDir = planDir
-  const rootTree = await fsTree(scope, planDir)
-  if (!rootTree.entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir)) {
-    for (const d of rootTree.entries.filter((e: FsEntry) => e.isDir)) {
-      const sub = await fsTree(scope, d.path)
-      if (sub.entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir)) { effortDir = d.path; break }
-    }
+const mdEntries = (tree: { entries: FsEntry[] }) => tree.entries.filter((e: FsEntry) => e.name.endsWith('.md') && !e.isDir)
+
+// Ticket files live in different shapes across repos:
+//   wayfinder : <effort>/tickets/*.md      (its own directory, the original contract)
+//   novel     : <effort>/*.md              (beside map.md)
+//               <effort>/impl-fe/*.md      (one level down, grouped by workstream)
+// Read all that exist rather than assuming one, so a repo only has to match
+// *a* convention instead of this view's.
+async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<FsEntry[]> {
+  const tree = await fsTree(scope, effortDir)
+  const inTickets = tree.entries.find((e: FsEntry) => e.isDir && e.name === 'tickets')
+  if (inTickets) {
+    const sub = await fsTree(scope, inTickets.path)
+    const found = mdEntries(sub)
+    if (found.length > 0) return found
   }
-  const [mapRes, treeRes] = await Promise.all([
-    fsRead(scope, `${effortDir}/map.md`), fsTree(scope, `${effortDir}/tickets`),
+  // Skip map/spec/readme companions: they describe the effort, they are not tickets.
+  const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
+  const here = mdEntries(tree).filter((e: FsEntry) => !NON_TICKET.test(e.name))
+  const subs = await Promise.all(
+    tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'tickets' && e.name !== 'node_modules')
+      .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path)).filter((e: FsEntry) => !NON_TICKET.test(e.name))),
+  )
+  return [...here, ...subs.flat()]
+}
+
+// ─── Three views, one collection pass ────────────────────────────────────────
+//
+// The tab shows three different things that happen to share a directory:
+//   路线 (route)     — the wayfinder map: an effort's destination and its DAG
+//   工单 (tickets)   — work waiting to be done
+//   待拍板 (approvals) — decisions waiting on the human
+// They are collected together, then split by kind, so each view is one filter
+// over the same data rather than three loaders that can disagree.
+
+interface PlanData {
+  tickets: ParsedTicket[]      // every markdown file found, with its kind resolved
+  effortDir: string
+  mapRaw: string | null
+  efforts: { dir: string; mapRaw: string }[]  // every effort that has a map
+}
+
+function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
+
+async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData | null> {
+  const rootTree = await fsTree(scope, planDir)
+  const hasMapHere = rootTree.entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir)
+  // A `.plan/` may hold several efforts side by side, each with its own map.md
+  // (novel has two: the workbench and the backend effort). Read every one of
+  // them — picking the first would silently hide the others.
+  const subDirs = rootTree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules')
+  const subMaps = await Promise.all(subDirs.map(async (d: FsEntry) => (
+    (await fsTree(scope, d.path)).entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir) ? d.path : null
+  )))
+  const effortDirs = subMaps.filter((p): p is string => p !== null)
+  const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs
+
+  // Sources of markdown, all merged:
+  //   1. the directory's own top level  — ALWAYS read. Approval documents live
+  //      here (to-approval saves to `.plan/<slug>-<date>.md`), and a directory
+  //      without its own map.md still holds them. Whether the top level is
+  //      itself an effort is a separate question and must not gate this.
+  //   2. each effort with a map.md       — that effort's tickets.
+  const [mapRaws, ...fileGroups] = await Promise.all([
+    Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`))),
+    Promise.resolve(mdEntries(rootTree)),
+    ...effortDirs.map((d: string) => collectTicketFiles(scope, d)),
   ])
-  const mapRaw = mapRes.kind === 'text' ? mapRes.content : ''
-  const mdFiles = treeRes.entries.filter((e: FsEntry) => e.name.endsWith('.md') && !e.isDir)
+  const efforts = allEfforts.map((dir: string, i: number) => ({
+    dir, mapRaw: mapRaws[i]?.kind === 'text' ? mapRaws[i].content : '',
+  }))
+  const seen = new Set<string>()
+  const mdFiles: FsEntry[] = []
+  for (const e of fileGroups.flat()) {
+    if (seen.has(e.path)) continue
+    seen.add(e.path)
+    mdFiles.push(e)
+  }
   const raws = await Promise.all(mdFiles.map((e: FsEntry) => fsRead(scope, e.path).then(r => r.kind === 'text' ? r.content : '')))
-  const tickets = mdFiles.map((e: FsEntry, i: number) => deriveTicketStatus(e.name, raws[i] ?? ''))
-  return { mapRaw, tickets, effortDir }
+  const tickets = mdFiles.map((e: FsEntry, i: number) => ({ ...deriveTicketStatus(e.name, raws[i] ?? ''), path: e.path }))
+  // The route view's banner shows the first effort that actually has a map body.
+  const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
+  return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
 // ─── Shared detail modal ─────────────────────────────────────────────────────
@@ -114,25 +316,32 @@ function DetailModal({ ticket, planDir, scope, onClose }: { ticket: ParsedTicket
   const [fullBody, setFullBody] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
-    fsRead(scope, `${planDir}/tickets/${ticket.file}`).then(r => {
+    // `path` is known when the file was discovered; fall back to the wayfinder
+    // layout for callers that only carry a file name.
+    const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`
+    fsRead(scope, target).then(r => {
       if (alive && r.kind === 'text') setFullBody(r.content)
     })
     return () => { alive = false }
-  }, [ticket.file, planDir, scope])
+  }, [ticket.file, ticket.path, planDir, scope])
   const body = fullBody ?? ticket.body
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,5,15,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
       <div style={{ width: 'min(560px, 90vw)', maxHeight: '78vh', overflow: 'auto', background: HEADER_BG, border: `1px solid ${BORDER}`, borderRadius: 14, padding: 18 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: DOT[displayStatus(ticket)] }}>{TYPE_THEME[ticket.type ?? '']?.icon ?? '…'}</span>
+          <span style={{ color: DOT[displayStatus(ticket)] }}>{typeTheme(ticket.type).icon}</span>
           <span style={{ fontSize: 16, fontWeight: 700, color: TEXT, lineHeight: 1.4, flex: 1 }}>{ticket.title}</span>
           <button style={{ background: 'transparent', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }} onClick={onClose}>✕</button>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-          <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#1e1e3a', color: '#888', border: `1px solid ${BORDER}` }}>#{ticketNum(ticket.file)}</span>
-          {ticket.type && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${TYPE_THEME[ticket.type]?.color ?? '#888'}22`, color: TYPE_THEME[ticket.type]?.color ?? '#888' }}>{ticket.type}</span>}
+          <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#1e1e3a', color: '#888', border: `1px solid ${BORDER}` }}>#{shortId(ticket)}</span>
+          <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${KIND_META[ticketKind(ticket)].color}22`, color: KIND_META[ticketKind(ticket)].color }}>{KIND_META[ticketKind(ticket)].icon} {KIND_META[ticketKind(ticket)].label}</span>
+          {ticket.type && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${typeTheme(ticket.type).color}22`, color: typeTheme(ticket.type).color }}>{ticket.type}</span>}
           <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#1e1e3a', color: DOT[displayStatus(ticket)], border: `1px solid ${BORDER}` }}>{STATUS_LABELS[displayStatus(ticket)]}</span>
           {ticket.claimedBy && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#f0a50022', color: '#f0a500' }}>👤 {ticket.claimedBy}</span>}
+          {ticket.status && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#1e1e3a', color: '#aaa', border: `1px solid ${BORDER}` }}>status: {ticket.status}</span>}
+          {ageLabel(ticket) && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ffa94d22', color: '#ffa94d' }}>{ageLabel(ticket)}</span>}
+          {ticket.origin && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#1e1e3a', color: '#888', border: `1px solid ${BORDER}` }}>origin: {ticket.origin}</span>}
           {ticket.blockedBy.length > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ff6b6b22', color: '#ff6b6b' }}>blocked_by: {ticket.blockedBy.map(n => `#${n}`).join(', ')}</span>}
         </div>
         <div style={{ marginTop: 14, fontSize: 12.5, lineHeight: 1.75, color: '#c8c8e8', background: '#1e1e3a', border: `1px solid ${BORDER}`, borderRadius: 8, padding: 12 }} dangerouslySetInnerHTML={{ __html: md(body) }} />
@@ -150,6 +359,11 @@ function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket
     for (const t of tickets) g[displayStatus(t)].push(t)
     return g
   }, [tickets])
+  // Decisions blocked on the human, oldest first — the ones that get forgotten.
+  const waiting = useMemo(
+    () => tickets.filter(isPending).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)),
+    [tickets],
+  )
   const active = tickets.filter(t => !t.outOfScope)
   const done = tickets.filter(t => t.resolved).length
   const pct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
@@ -159,6 +373,20 @@ function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket
         <span style={{ fontSize: 14, fontWeight: 700 }}>Kanban</span>
         <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · {done} resolved</span>
       </div>
+      {waiting.length > 0 && (
+        <div style={{ margin: '8px 16px 0', padding: '8px 12px', borderRadius: 8, background: '#3a2410', border: '1px solid #7a4a15', fontSize: 13 }}>
+          <div style={{ fontWeight: 700, color: '#ffa94d', marginBottom: 4 }}>⏳ 等你拍板（{waiting.length}）</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {waiting.map(t => (
+              <div key={t.id} onClick={() => setFocus(t)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#e8c9a0' }}>
+                <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#ffa94d' }}>{shortId(t)}</span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                {ageLabel(t) && <span style={{ fontSize: 11, color: '#ffa94d', flexShrink: 0 }}>{ageLabel(t)}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {destination && <div style={{ margin: '8px 16px 0', padding: '8px 12px', borderRadius: 8, background: HEADER_BG, border: `1px solid ${BORDER}`, color: '#aaa', fontSize: 13 }}>{destination}</div>}
       <div style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#1e1e3a', border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
@@ -178,12 +406,14 @@ function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket
               {groups[s].map(t => (
                 <div key={t.file} style={{ padding: 8, borderRadius: 8, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer' }} onClick={() => setFocus(t)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#888', background: '#1e1e3a', borderRadius: 999, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{String(ticketNum(t.file)).padStart(2, '0')}</span>
-                    <span style={{ fontSize: 12 }}>{TYPE_THEME[t.type ?? '']?.icon ?? '?'}</span>
+                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#888', background: '#1e1e3a', borderRadius: 999, minWidth: 20, height: 20, padding: '0 4px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{shortId(t)}</span>
+                    <span style={{ fontSize: 12 }}>{KIND_META[ticketKind(t)].icon}</span>
                     <span style={{ flex: 1, fontSize: 12, fontWeight: 600, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                    {t.type && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${TYPE_THEME[t.type]?.color ?? '#888'}22`, color: TYPE_THEME[t.type]?.color ?? '#888' }}>{t.type}</span>}
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${KIND_META[ticketKind(t)].color}22`, color: KIND_META[ticketKind(t)].color }}>{KIND_META[ticketKind(t)].icon} {KIND_META[ticketKind(t)].label}</span>
+                    {t.type && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${typeTheme(t.type).color}22`, color: typeTheme(t.type).color }}>{t.type}</span>}
+                    {isPending(t) && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#ffa94d33', color: '#ffa94d' }}>{ageLabel(t) ?? '待拍板'}</span>}
                     {t.claimedBy && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#f0a50022', color: '#f0a500' }}>👤 {t.claimedBy}</span>}
                     {t.blockedBy.length > 0 && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#ff6b6b22', color: '#ff6b6b' }}> {t.blockedBy.map(n => `#${n}`).join(',')}</span>}
                   </div>
@@ -203,7 +433,25 @@ function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket
 function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
   const [query, setQuery] = useState('')
   const [statusSet, setStatusSet] = useState<Set<TicketStatus>>(() => new Set(STATUS_ORDER))
+  // Filter over the types actually in the data, not a hardcoded four. A repo
+  // writing `type: impl` must not start with every row filtered out.
+  // A file with no `type` is a real case (23 such files in novel), not an error.
+  // Bucket it under NO_TYPE so it is visible and filterable — leaving it out of
+  // the set silently hid every such file from this view.
+  const allTypes = useMemo(() => {
+    const named = [...new Set(tickets.map(t => t.type).filter((x): x is string => !!x))].sort()
+    return tickets.some(t => !t.type) ? [...named, NO_TYPE] : named
+  }, [tickets])
   const [typeSet, setTypeSet] = useState<Set<string>>(() => new Set(Object.keys(TYPE_THEME)))
+  const [kindSet, setKindSet] = useState<Set<TicketKind>>(() => new Set(['ticket', 'approval', 'note'] as TicketKind[]))
+  // First render has no tickets yet; the effect below widens the filter to the
+  // discovered types so nothing is hidden by default.
+  const typeInit = useRef(false)
+  useEffect(() => {
+    if (typeInit.current || tickets.length === 0) return
+    typeInit.current = true
+    setTypeSet(new Set(allTypes))
+  }, [allTypes, tickets.length])
   const [onlyBlocked, setOnlyBlocked] = useState(false)
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 }>({ key: 'num', dir: 1 })
   const [detail, setDetail] = useState<ParsedTicket | null>(null)
@@ -211,19 +459,21 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
     let out = tickets.filter(t => {
       if (onlyBlocked && t.blockedBy.length === 0) return false
       if (!statusSet.has(displayStatus(t))) return false
-      if (!typeSet.has(t.type ?? '')) return false
+      if (!kindSet.has(ticketKind(t))) return false
+      if (allTypes.length > 0 && !typeSet.has(t.type ?? NO_TYPE)) return false
       if (query && !`${t.title} ${t.body} ${t.claimedBy ?? ''}`.toLowerCase().includes(query.toLowerCase())) return false
       return true
     })
     out = [...out].sort((a, b) => {
       let v = 0
-      if (sort.key === 'num') v = ticketNum(a.file) - ticketNum(b.file)
+      if (sort.key === 'num') v = a.id.localeCompare(b.id, undefined, { numeric: true })
       else if (sort.key === 'status') v = STATUS_ORDER.indexOf(displayStatus(a)) - STATUS_ORDER.indexOf(displayStatus(b))
+      else if (sort.key === 'kind') v = ticketKind(a).localeCompare(ticketKind(b))
       else v = (a.type ?? '').localeCompare(b.type ?? '')
       return v * sort.dir
     })
     return out
-  }, [tickets, query, statusSet, typeSet, onlyBlocked, sort])
+  }, [tickets, query, statusSet, typeSet, kindSet, onlyBlocked, sort])
   const toggle = <T,>(set: Set<T>, v: T): Set<T> => { const nx = new Set(set); if (nx.has(v)) nx.delete(v); else nx.add(v); return nx }
   const sortBy = (key: string) => setSort(s => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
   const arrow = (key: string) => (sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : '')
@@ -249,18 +499,30 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
             ))}
           </div>
           <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', marginBottom: 4 }}>Kind</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {(['ticket', 'approval', 'note'] as TicketKind[]).map(k => {
+                const meta = KIND_META[k]
+                const on = kindSet.has(k)
+                return <span key={k} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${meta.color}`, color: on ? '#fff' : meta.color, background: on ? meta.color : 'transparent' }} onClick={() => setKindSet(toggle(kindSet, k))}>{meta.icon} {meta.label}</span>
+              })}
+            </div>
+          </div>
+          <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', marginBottom: 4 }}>Type</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {Object.keys(TYPE_THEME).map(t => {
+              {allTypes.map(t => {
+                const theme = t === NO_TYPE ? { icon: '∅', color: '#8a8ab0' } : typeTheme(t)
                 const on = typeSet.has(t)
-                return <span key={t} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${TYPE_THEME[t].color}`, color: TYPE_THEME[t].color, background: on ? TYPE_THEME[t].color : 'transparent' }} onClick={() => setTypeSet(toggle(typeSet, t))}>{TYPE_THEME[t].icon} {t}</span>
+                const label = t === NO_TYPE ? '（无 type）' : t
+                return <span key={t} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${theme.color}`, color: on ? '#fff' : theme.color, background: on ? theme.color : 'transparent' }} onClick={() => setTypeSet(toggle(typeSet, t))}>{theme.icon} {label}</span>
               })}
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#c8c8e8', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyBlocked} onChange={e => setOnlyBlocked(e.target.checked)} /> Only blocked
           </label>
-          <button style={{ marginTop: 'auto', padding: '6px 0', borderRadius: 6, border: `1px solid ${BORDER}`, background: HEADER_BG, color: '#888', cursor: 'pointer', fontSize: 11 }} onClick={() => { setQuery(''); setStatusSet(new Set(STATUS_ORDER)); setTypeSet(new Set(Object.keys(TYPE_THEME))); setOnlyBlocked(false) }}>Reset</button>
+          <button style={{ marginTop: 'auto', padding: '6px 0', borderRadius: 6, border: `1px solid ${BORDER}`, background: HEADER_BG, color: '#888', cursor: 'pointer', fontSize: 11 }} onClick={() => { setQuery(''); setStatusSet(new Set(STATUS_ORDER)); setTypeSet(new Set(allTypes)); setKindSet(new Set(['ticket', 'approval', 'note'] as TicketKind[])); setOnlyBlocked(false) }}>Reset</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
           {rows.length === 0 ? (
@@ -271,6 +533,7 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
                 <tr>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, cursor: 'pointer' }} onClick={() => sortBy('num')}># {arrow('num')}</th>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>Title</th>
+                  <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, cursor: 'pointer' }} onClick={() => sortBy('kind')}>Kind {arrow('kind')}</th>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, cursor: 'pointer' }} onClick={() => sortBy('type')}>Type {arrow('type')}</th>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, cursor: 'pointer' }} onClick={() => sortBy('status')}>Status {arrow('status')}</th>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>Owner</th>
@@ -279,12 +542,13 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
               </thead>
               <tbody>
                 {rows.map(t => {
-                  const th = TYPE_THEME[t.type ?? ''] ?? { icon: '?', color: '#888' }
+                  const th = typeTheme(t.type)
                   return (
                     <tr key={t.file} style={{ cursor: 'pointer' }} onClick={() => setDetail(t)}>
-                      <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a`, fontFamily: 'monospace', color: '#8a8ab0', fontSize: 11 }}>{String(ticketNum(t.file)).padStart(2, '0')}</td>
+                      <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a`, fontFamily: 'monospace', color: '#8a8ab0', fontSize: 11 }}>{shortId(t)}</td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a`, fontWeight: 600, color: TEXT, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</td>
-                      <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a` }}><span style={{ padding: '1px 6px', borderRadius: 999, background: `${th.color}1e`, color: th.color, border: `1px solid ${th.color}44`, fontSize: 11 }}>{th.icon} {t.type}</span></td>
+                      <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a` }}><span style={{ padding: '1px 6px', borderRadius: 999, background: `${KIND_META[ticketKind(t)].color}1e`, color: KIND_META[ticketKind(t)].color, border: `1px solid ${KIND_META[ticketKind(t)].color}44`, fontSize: 11 }}>{KIND_META[ticketKind(t)].icon} {KIND_META[ticketKind(t)].label}</span></td>
+                      <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a` }}><span style={{ padding: '1px 6px', borderRadius: 999, background: `${th.color}1e`, color: th.color, border: `1px solid ${th.color}44`, fontSize: 11 }}>{th.icon} {t.type ?? '（无 type）'}</span></td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a` }}><span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: DOT[displayStatus(t)] }} />{STATUS_LABELS[displayStatus(t)]}</span></td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a`, color: t.claimedBy ? '#f0a500' : '#55557a' }}>{t.claimedBy ?? '—'}</td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid #1e1e3a`, color: t.blockedBy.length > 0 ? '#ff6b6b' : '#55557a', fontFamily: 'monospace', fontSize: 11 }}>{t.blockedBy.length > 0 ? t.blockedBy.map(n => `#${n}`).join(' ') : '—'}</td>
@@ -308,31 +572,44 @@ const RUNG_TOP = 140, RUNG_STEP = 110
 const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100
 
 interface Pos { x: number; cx: number; y: number }
-interface GraphEdge { from: number; to: number; dashed?: boolean; key: string }
+// `from`/`to` are ticket ids, plus two sentinels for the START / END caps.
+const START = '\u0000start'
+const END = '\u0000end'
+type NodeRef = string | typeof START | typeof END
+interface GraphEdge { from: NodeRef; to: NodeRef; dashed?: boolean; key: string }
 
 function layoutGraph(tickets: ParsedTicket[]) {
-  const byNum = new Map(tickets.map(t => [ticketNum(t.file), t]))
   const grid = tickets.filter(t => !t.outOfScope)
   const side = tickets.filter(t => t.outOfScope)
-  const depth = new Map<number, number>()
-  const visit = (n: number): number => {
+  const byId = new Map(tickets.map(t => [t.id, t]))
+  // Resolve each ticket's refs once, into real ids; unresolved refs are dropped
+  // (they may point outside this directory, which the graph cannot draw).
+  const deps = new Map<string, string[]>()
+  for (const t of tickets) {
+    deps.set(t.id, t.blockedBy.map(r => resolveRef(r, byId)).filter((x): x is string => x !== undefined))
+  }
+  const depsOf = (t: ParsedTicket) => deps.get(t.id) ?? []
+  const depth = new Map<string, number>()
+  const visit = (n: string): number => {
     if (depth.has(n)) return depth.get(n)!
-    const t = byNum.get(n); if (!t) return 0
-    const d = t.blockedBy.filter(b => byNum.has(b) && !byNum.get(b)!.outOfScope).reduce((m, b) => Math.max(m, visit(b)), 0) + 1
+    const t = byId.get(n); if (!t) return 0
+    const d = depsOf(t).filter(b => byId.has(b) && !byId.get(b)!.outOfScope).reduce((m, b) => Math.max(m, visit(b)), 0) + 1
     depth.set(n, d); return d
   }
-  for (const t of grid) visit(ticketNum(t.file))
-  const maxL = Math.max(1, ...grid.map(t => depth.get(ticketNum(t.file))!))
+  for (const t of grid) visit(t.id)
+  const maxL = Math.max(1, ...grid.map(t => depth.get(t.id)!))
   const layers: ParsedTicket[][] = Array.from({ length: maxL }, () => [])
-  for (const t of grid) layers[depth.get(ticketNum(t.file))! - 1].push(t)
-  layers[0].sort((a, b) => ticketNum(a.file) - ticketNum(b.file))
+  for (const t of grid) layers[depth.get(t.id)! - 1].push(t)
+  const cmp = (a: ParsedTicket, b: ParsedTicket) => a.id.localeCompare(b.id, undefined, { numeric: true })
+  layers[0].sort(cmp)
   for (let l = 1; l < maxL; l++) {
-    const upIdx = new Map<number, number>()
-    layers[l - 1].forEach((t, i) => upIdx.set(ticketNum(t.file), i))
+    const upIdx = new Map<string, number>()
+    layers[l - 1].forEach((t, i) => upIdx.set(t.id, i))
     layers[l].sort((a, b) => {
-      const ba = a.blockedBy.filter(p => upIdx.has(p)).reduce((s, p) => s + upIdx.get(p)!, 0) / Math.max(1, a.blockedBy.filter(p => upIdx.has(p)).length)
-      const bb = b.blockedBy.filter(p => upIdx.has(p)).reduce((s, p) => s + upIdx.get(p)!, 0) / Math.max(1, b.blockedBy.filter(p => upIdx.has(p)).length)
-      return ba - bb || ticketNum(a.file) - ticketNum(b.file)
+      const pa = depsOf(a).filter(p => upIdx.has(p)), pb = depsOf(b).filter(p => upIdx.has(p))
+      const ba = pa.reduce((s, p) => s + upIdx.get(p)!, 0) / Math.max(1, pa.length)
+      const bb = pb.reduce((s, p) => s + upIdx.get(p)!, 0) / Math.max(1, pb.length)
+      return ba - bb || cmp(a, b)
     })
   }
   const maxCount = Math.max(...layers.map(o => o.length), 1)
@@ -345,10 +622,10 @@ function layoutGraph(tickets: ParsedTicket[]) {
   const sideRows = new Map<number, ParsedTicket[]>()
   let maxSideRow = 0
   for (const t of side) {
-    const p = t.blockedBy.find(b => byNum.has(b) && !byNum.get(b)!.outOfScope)
+    const p = depsOf(t).find(b => byId.has(b) && !byId.get(b)!.outOfScope)
     let tier = 0
     if (p !== undefined) {
-      const parentTier = layers.findIndex(l => l.some(tk => ticketNum(tk.file) === p))
+      const parentTier = layers.findIndex(l => l.some(tk => tk.id === p))
       tier = (parentTier >= 0 ? parentTier : 0) + 1
     }
     const yKey = RUNG_TOP + tier * RUNG_STEP
@@ -357,31 +634,31 @@ function layoutGraph(tickets: ParsedTicket[]) {
     maxSideRow = Math.max(maxSideRow, sideRows.get(yKey)!.length)
   }
   const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN
-  const pos = new Map<number, Pos>()
+  const pos = new Map<string, Pos>()
   layers.forEach((o, li) => {
     const lw = o.length * STEP_X - 24; const left = (W_MAIN - lw) / 2
-    o.forEach((t, i) => { const x = left + i * STEP_X; pos.set(ticketNum(t.file), { x, cx: x + NODE_W / 2, y: RUNG_TOP + li * RUNG_STEP }) })
+    o.forEach((t, i) => { const x = left + i * STEP_X; pos.set(t.id, { x, cx: x + NODE_W / 2, y: RUNG_TOP + li * RUNG_STEP }) })
   })
   const laneX = W_MAIN + sideGap
-  const sidePos = new Map<number, Pos>()
+  const sidePos = new Map<string, Pos>()
   for (const [y, row] of sideRows) {
-    row.forEach((t, i) => { const n = ticketNum(t.file); const x = laneX + i * STEP_X; sidePos.set(n, { x, cx: x + NODE_W / 2, y }) })
+    row.forEach((t, i) => { const x = laneX + i * STEP_X; sidePos.set(t.id, { x, cx: x + NODE_W / 2, y }) })
   }
-  const childrenOf = new Map<number, number[]>()
+  const childrenOf = new Map<string, string[]>()
   const edges: GraphEdge[] = []
   for (const t of grid) {
-    const n = ticketNum(t.file)
-    for (const p of t.blockedBy) if (byNum.has(p) && !byNum.get(p)!.outOfScope) {
+    const n = t.id
+    for (const p of depsOf(t)) if (byId.has(p) && !byId.get(p)!.outOfScope) {
       const key = `e${p}-${n}`; edges.push({ from: p, to: n, key })
       if (!childrenOf.has(p)) childrenOf.set(p, []); childrenOf.get(p)!.push(n)
     }
   }
-  const roots = layers[0].map(t => ticketNum(t.file))
-  roots.forEach((r, i) => edges.push({ from: -1, to: r, key: `s${i}` }))
-  const leaves = grid.filter(t => (childrenOf.get(ticketNum(t.file)) ?? []).length === 0 && t.resolved).map(t => ticketNum(t.file))
-  leaves.forEach((l, i) => edges.push({ from: l, to: -2, key: `l${i}` }))
+  const roots = layers[0].map(t => t.id)
+  roots.forEach((r, i) => edges.push({ from: START, to: r, key: `s${i}` }))
+  const leaves = grid.filter(t => (childrenOf.get(t.id) ?? []).length === 0 && t.resolved).map(t => t.id)
+  leaves.forEach((l, i) => edges.push({ from: l, to: END, key: `l${i}` }))
   for (const t of side) {
-    const n = ticketNum(t.file); const p = t.blockedBy.find(b => byNum.has(b))
+    const n = t.id; const p = depsOf(t).find(b => byId.has(b))
     if (p !== undefined) edges.push({ from: p, to: n, dashed: true, key: `d${p}-${n}` })
   }
   const endY = RUNG_TOP + (maxL - 1) * RUNG_STEP + END_GAP
@@ -391,12 +668,12 @@ function layoutGraph(tickets: ParsedTicket[]) {
 }
 
 function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
-  const [sel, setSel] = useState<number | null>(null)
-  const [hover, setHover] = useState<number | null>(null)
+  const [sel, setSel] = useState<string | null>(null)
+  const [hover, setHover] = useState<string | null>(null)
   const L = useMemo(() => layoutGraph(tickets), [tickets])
   const { pos, sidePos, edges, W, H, capX, startCapY, endCapY, endY } = L
-  const focus = tickets.find(t => ticketNum(t.file) === sel) ?? null
-  const conn = (n: number) => {
+  const focus = tickets.find(t => t.id === sel) ?? null
+  const conn = (n: string) => {
     const keys = new Set<string>()
     for (const e of edges) { if (e.from === n || e.to === n) keys.add(e.key) }
     return keys
@@ -412,14 +689,14 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
         <div style={{ position: 'relative', width: W, height: H, margin: '0 auto' }}>
           <div style={{ position: 'absolute', left: capX - CAP_W / 2, top: startCapY, display: 'flex', alignItems: 'center', justifyContent: 'center', width: CAP_W, height: CAP_H, borderRadius: 999, background: CARD, border: `2px solid ${BORDER}`, fontSize: 12, fontWeight: 800, color: TEXT, boxShadow: '0 2px 10px rgba(0,0,0,.4)' }}>Start</div>
           {[...pos.entries()].map(([n, p]) => {
-            const t = tickets.find(x => ticketNum(x.file) === n)!
+            const t = tickets.find(x => x.id === n)!
             return (
               <div key={n} style={{ position: 'absolute', display: 'flex', background: CARD, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', zIndex: 3, boxShadow: sel === n || hover === n ? '0 4px 20px rgba(0,0,0,.5), 0 0 0 2px #fff3' : '0 3px 12px rgba(0,0,0,.3)', border: `1px solid ${BORDER}`, width: NODE_W, height: NODE_H, left: p.x, top: p.y }} onClick={e => { e.stopPropagation(); setSel(n) }} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
                 <span style={{ width: 4, flexShrink: 0, borderTopLeftRadius: 10, borderBottomLeftRadius: 10, background: DOT[displayStatus(t)] }} />
                 <div style={{ padding: '7px 8px 7px 8px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#888', background: '#1e1e3a', borderRadius: 999, width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{String(n).padStart(2, '0')}</span>
-                    <span style={{ fontSize: 12 }}>{TYPE_THEME[t.type ?? '']?.icon ?? '?'}</span>
+                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#888', background: '#1e1e3a', borderRadius: 999, minWidth: 18, height: 18, padding: '0 4px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{shortId(t)}</span>
+                    <span style={{ fontSize: 12 }}>{KIND_META[ticketKind(t)].icon}</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</span>
                   </div>
                   <div style={{ fontSize: 9, color: '#8a8ab0', display: 'flex', gap: 6 }}>{STATUS_LABELS[displayStatus(t)]}{t.claimedBy && <> 👤 {t.claimedBy}</>}</div>
@@ -428,13 +705,13 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
             )
           })}
           {[...sidePos.entries()].map(([n, p]) => {
-            const t = tickets.find(x => ticketNum(x.file) === n)!
+            const t = tickets.find(x => x.id === n)!
             return (
               <div key={n} style={{ position: 'absolute', display: 'flex', background: CARD_DARK, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', zIndex: 3, boxShadow: '0 2px 8px rgba(0,0,0,.3)', border: '2px dashed #383860', width: NODE_W, height: NODE_H, left: p.x, top: p.y }} onClick={e => { e.stopPropagation(); setSel(n) }} onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}>
                 <span style={{ width: 4, flexShrink: 0, background: '#383860' }} />
                 <div style={{ padding: '7px 8px 7px 8px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#888', background: '#1e1e3a', borderRadius: 999, width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{String(n).padStart(2, '0')}</span>
+                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#888', background: '#1e1e3a', borderRadius: 999, minWidth: 18, height: 18, padding: '0 4px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{shortId(t)}</span>
                     <span style={{ fontSize: 12 }}>⛔</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</span>
                   </div>
@@ -450,14 +727,14 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
               <marker id="da2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill={TEXT} /></marker>
             </defs>
             {edges.map(e => {
-              const aPos = e.from === -1 ? { cx: capX, y: startCapY } : pos.get(e.from)
-              const bPos = e.to === -2 ? { cx: capX, y: endY } : (pos.get(e.to) ?? sidePos.get(e.to))
+              const aPos = e.from === START ? { cx: capX, y: startCapY } : pos.get(e.from)
+              const bPos = e.to === END ? { cx: capX, y: endY } : (pos.get(e.to) ?? sidePos.get(e.to))
               if (!aPos || !bPos) return null
               const active = hover ?? sel
               const connected = active === null || conn(active).has(e.key)
-              const sx = aPos.cx, sy = e.from === -1 ? startCapY + CAP_H : aPos.y + NODE_H
-              const ex = e.to === -2 ? capX : bPos.cx
-              const ey = e.to === -2 ? endY : (e.dashed ? bPos.y : bPos.y + NODE_H / 2)
+              const sx = aPos.cx, sy = e.from === START ? startCapY + CAP_H : aPos.y + NODE_H
+              const ex = e.to === END ? capX : bPos.cx
+              const ey = e.to === END ? endY : (e.dashed ? bPos.y : bPos.y + NODE_H / 2)
               const sw = e.dashed ? 1.4 : connected ? 3 : 1.4
               const sc = e.dashed ? '#666688' : connected ? TEXT : '#454570'
               return <path key={e.key} d={mk(sx, sy, ex, ey)} fill="none" stroke={sc} strokeWidth={sw} strokeDasharray={e.dashed ? '5 4' : undefined} opacity={active !== null && !connected ? 0.45 : 1} markerEnd={connected && !e.dashed ? 'url(#da2)' : e.dashed ? undefined : 'url(#da)'} style={{ transition: 'stroke-width .18s, opacity .18s' }} />
@@ -472,13 +749,16 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
+type TopView = 'route' | 'tickets' | 'approvals'
+
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { scope } = props as { scope: SessionScope; tab: any; visible: boolean }
-  const [mapRaw, setMapRaw] = useState<string | null>(null)
-  const [tickets, setTickets] = useState<ParsedTicket[]>([])
-  const [effortDir, setEffortDir] = useState('')
+  const [data, setData] = useState<PlanData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [top, setTop] = useState<TopView>('route')
+  const [effortIdx, setEffortIdx] = useState(0)
+  // The route view keeps its three renderings of the same map.
   const [variant, setVariant] = useState<'A' | 'C' | 'D'>('A')
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -486,24 +766,115 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     try {
       const r = await loadPlan(scope, dir)
       if (!r) { setError('empty'); setLoading(false); return }
-      setMapRaw(r.mapRaw); setTickets(r.tickets); setEffortDir(r.effortDir)
+      setData(r)
     } catch { setError('failed') } finally { setLoading(false) }
   }, [scope.sessionId, scope.cwd])
   useEffect(() => { void load() }, [load])
-  const destination = useMemo(() => { if (!mapRaw) return null; const m = mapRaw.match(/## Destination\s*\n([\s\S]*?)(?=\n## |\n$)/); return m?.[1]?.trim().split('\n')[0]?.trim() ?? null }, [mapRaw])
+
+  const all = data?.tickets ?? []
+  const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
+  const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
+  const destination = useMemo(() => {
+    const mapRaw = data?.efforts[effortIdx]?.mapRaw
+    if (!mapRaw) return null
+    const m = mapRaw.match(/## Destination\s*\n([\s\S]*?)(?=\n## |\n$)/)
+    return m?.[1]?.trim().split('\n')[0]?.trim() ?? null
+  }, [data?.efforts, effortIdx])
+
   if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: BG, color: '#888' }}>Loading…</div>
-  if (error) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: BG, color: '#888' }}>No .plan found in current directory.</div>
-  const toggleBtn = (active: boolean): React.CSSProperties => ({ flex: 1, padding: '6px 0', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 12 })
+  if (error || !data) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: BG, color: '#888' }}>No .plan found in current directory.</div>
+
+  const planDir = data.effortDir
+  const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
+  const subBtn = (active: boolean): React.CSSProperties => ({ flex: 1, padding: '5px 0', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11 })
+
+  const tabs: { id: TopView; label: string; count: number }[] = [
+    { id: 'route', label: '🗺️ 路线', count: routeTickets.length },
+    { id: 'tickets', label: '🎫 工单', count: routeTickets.length },
+    { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
+  ]
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14 }}>
-      <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>
-        <button type="button" style={toggleBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
-        <button type="button" style={toggleBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
-        <button type="button" style={toggleBtn(variant === 'C')} onClick={() => setVariant('C')}> Table</button>
+      <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>
+        {tabs.map(t => (
+          <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
+            {t.label}
+            <span style={{ marginLeft: 5, fontSize: 11, color: t.id === 'approvals' && t.count > 0 ? '#ffa94d' : '#777' }}>{t.count}</span>
+          </button>
+        ))}
       </div>
-      {variant === 'A' && <ViewA tickets={tickets} planDir={effortDir} scope={scope} destination={destination} />}
-      {variant === 'D' && <ViewD tickets={tickets} planDir={effortDir} scope={scope} />}
-      {variant === 'C' && <ViewC tickets={tickets} planDir={effortDir} scope={scope} />}
+      {top === 'route' && (
+        <>
+          {data.efforts.length > 1 && (
+            <div style={{ display: 'flex', gap: 6, padding: '6px 10px 0', flexWrap: 'wrap' }}>
+              {data.efforts.map(e => (
+                <span key={e.dir} onClick={() => setEffortIdx(data.efforts.indexOf(e))} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${effortIdx === data.efforts.indexOf(e) ? '#7c6bff' : BORDER}`, color: effortIdx === data.efforts.indexOf(e) ? '#7c6bff' : '#888' }}>{e.dir.split('/').pop()}</span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
+            <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
+            <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
+            <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
+          </div>
+          {variant === 'A' && <ViewA tickets={routeTickets} planDir={planDir} scope={scope} destination={destination} />}
+          {variant === 'D' && <ViewD tickets={routeTickets} planDir={planDir} scope={scope} />}
+          {variant === 'C' && <ViewC tickets={routeTickets} planDir={planDir} scope={scope} />}
+        </>
+      )}
+      {top === 'tickets' && <ViewC tickets={routeTickets} planDir={planDir} scope={scope} />}
+      {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} />}
+    </div>
+  )
+}
+
+// ─── Approvals view ──────────────────────────────────────────────────────────
+//
+// One row per document — a decision document holds several items inside it, but
+// the file is the unit that gets settled, so the file is the unit shown.
+
+function ApprovalsView({ approvals, scope }: { approvals: ParsedTicket[]; scope: SessionScope }) {
+  const [focus, setFocus] = useState<ParsedTicket | null>(null)
+  const sorted = useMemo(
+    () => [...approvals].sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)),
+    [approvals],
+  )
+  if (approvals.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#55557a', padding: 24, textAlign: 'center' }}>
+        没有待你拍板的文档。<br />
+        <span style={{ fontSize: 12, color: '#44445e' }}>审批文档写 `status: pending` 后会出现在这里。</span>
+      </div>
+    )
+  }
+  const withAge = sorted.filter(t => ageDays(t) !== undefined).length
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '10px 16px', borderBottom: `1px solid ${BORDER}`, fontSize: 12, color: '#888' }}>
+        {approvals.length} 份待拍板文档{withAge < approvals.length && `（${approvals.length - withAge} 份无 date，不显示天数）`}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {sorted.map(t => {
+          const age = ageDays(t)
+          const hot = age !== undefined && age >= 7
+          return (
+            <div key={t.file} onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${hot ? '#7a4a15' : BORDER}`, cursor: 'pointer' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: '#ffa94d' }}>⏳</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT, lineHeight: 1.4 }}>{t.title}</span>
+                {age !== undefined && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: hot ? '#7a4a1533' : '#1e1e3a', color: hot ? '#ffa94d' : '#888', flexShrink: 0 }}>{ageLabel(t)}</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>{t.file}</span>
+                {t.origin && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>origin: {t.origin}</span>}
+                {t.date && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: '#1e1e3a', color: '#888' }}>{t.date}</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {focus && <DetailModal ticket={focus} planDir="" scope={scope} onClose={() => setFocus(null)} />}
     </div>
   )
 }
