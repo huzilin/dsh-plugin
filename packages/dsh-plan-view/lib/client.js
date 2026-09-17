@@ -388,6 +388,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return `挂了 ${d} 天`;
 		}
 		const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
+		const ROOT_GROUP = "\0root";
 		async function collectTicketFiles(scope, effortDir) {
 			const tree = await fsTree(scope, effortDir);
 			const inTickets = tree.entries.find((e) => e.isDir && e.name === "tickets");
@@ -411,24 +412,31 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs;
 			const [mapRaws, ...fileGroups] = await Promise.all([
 				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`))),
-				Promise.resolve(mdEntries(rootTree)),
-				...effortDirs.map((d) => collectTicketFiles(scope, d))
+				Promise.resolve(mdEntries(rootTree).map((f) => ({
+					file: f,
+					from: ROOT_GROUP
+				}))),
+				...effortDirs.map(async (d) => (await collectTicketFiles(scope, d)).map((f) => ({
+					file: f,
+					from: d
+				})))
 			]);
 			const efforts = allEfforts.map((dir, i) => ({
 				dir,
 				mapRaw: mapRaws[i]?.kind === "text" ? mapRaws[i].content : ""
 			}));
 			const seen = /* @__PURE__ */ new Set();
-			const mdFiles = [];
+			const picked = [];
 			for (const e of fileGroups.flat()) {
-				if (seen.has(e.path)) continue;
-				seen.add(e.path);
-				mdFiles.push(e);
+				if (seen.has(e.file.path)) continue;
+				seen.add(e.file.path);
+				picked.push(e);
 			}
-			const raws = await Promise.all(mdFiles.map((e) => fsRead(scope, e.path).then((r) => r.kind === "text" ? r.content : "")));
-			const tickets = mdFiles.map((e, i) => ({
-				...deriveTicketStatus(e.name, raws[i] ?? ""),
-				path: e.path
+			const raws = await Promise.all(picked.map((e) => fsRead(scope, e.file.path).then((r) => r.kind === "text" ? r.content : "")));
+			const tickets = picked.map((e, i) => ({
+				...deriveTicketStatus(e.file.name, raws[i] ?? ""),
+				path: e.file.path,
+				effort: e.from
 			}));
 			const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 			return {
@@ -2059,11 +2067,21 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const all = data?.tickets ?? [];
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
+			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
+			const mapTickets = (0, react.useMemo)(() => effortIdx < 0 ? routeTickets : routeTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
+				routeTickets,
+				effortIdx,
+				selectedDir
+			]);
 			const destination = (0, react.useMemo)(() => {
-				const mapRaw = data?.efforts[effortIdx]?.mapRaw;
+				const mapRaw = effortIdx >= 0 ? data?.efforts[effortIdx]?.mapRaw : data?.mapRaw;
 				if (!mapRaw) return null;
 				return mapRaw.match(/## Destination\s*\n([\s\S]*?)(?=\n## |\n$)/)?.[1]?.trim().split("\n")[0]?.trim() ?? null;
-			}, [data?.efforts, effortIdx]);
+			}, [
+				data?.efforts,
+				data?.mapRaw,
+				effortIdx
+			]);
 			const refreshBtn = (label = "⟳ 刷新") => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
 				onClick: () => void load(),
@@ -2182,25 +2200,58 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						})]
 					}),
 					top === "route" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						data.efforts.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						data.efforts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "flex",
 								gap: 6,
-								padding: "6px 10px 0",
-								flexWrap: "wrap"
+								padding: "8px 10px 6px",
+								flexWrap: "wrap",
+								borderBottom: `1px solid ${BORDER_LIGHT}`
 							},
-							children: data.efforts.map((e) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								onClick: () => setEffortIdx(data.efforts.indexOf(e)),
-								style: {
-									fontSize: 11,
-									padding: "2px 8px",
-									borderRadius: 999,
-									cursor: "pointer",
-									border: `1px solid ${effortIdx === data.efforts.indexOf(e) ? ACCENT : BORDER}`,
-									color: effortIdx === data.efforts.indexOf(e) ? ACCENT : "#888"
-								},
-								children: e.dir.split("/").pop()
-							}, e.dir))
+							children: [data.efforts.length > 1 && (() => {
+								const on = effortIdx < 0;
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									onClick: () => setEffortIdx(-1),
+									style: {
+										fontSize: 11,
+										padding: "3px 9px",
+										borderRadius: 999,
+										cursor: "pointer",
+										border: `1px solid ${on ? ACCENT : BORDER}`,
+										color: on ? ACCENT : TEXT_FAINT,
+										background: on ? `${ACCENT}22` : "transparent"
+									},
+									children: ["全部地图 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: { opacity: .7 },
+										children: routeTickets.length
+									})]
+								});
+							})(), data.efforts.map((e, i) => {
+								const on = effortIdx === i;
+								const n = routeTickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP).length;
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									onClick: () => setEffortIdx(i),
+									title: e.dir,
+									style: {
+										fontSize: 11,
+										padding: "3px 9px",
+										borderRadius: 999,
+										cursor: "pointer",
+										border: `1px solid ${on ? ACCENT : BORDER}`,
+										color: on ? ACCENT : TEXT_FAINT,
+										background: on ? `${ACCENT}22` : "transparent"
+									},
+									children: [
+										"🗺️ ",
+										e.dir.split("/").pop(),
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: { opacity: .7 },
+											children: n
+										})
+									]
+								}, e.dir);
+							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
@@ -2232,18 +2283,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							]
 						}),
 						variant === "A" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewA, {
-							tickets: routeTickets,
+							tickets: mapTickets,
 							planDir,
 							scope,
 							destination
 						}),
 						variant === "D" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewD, {
-							tickets: routeTickets,
+							tickets: mapTickets,
 							planDir,
 							scope
 						}),
 						variant === "C" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
-							tickets: routeTickets,
+							tickets: mapTickets,
 							planDir,
 							scope
 						})
