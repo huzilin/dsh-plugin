@@ -393,16 +393,26 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const tree = await fsTree(scope, effortDir);
 			const inTickets = tree.entries.find((e) => e.isDir && e.name === "tickets");
 			const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i;
+			const subDirs = tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules");
 			const groups = await Promise.all([
-				inTickets ? fsTree(scope, inTickets.path).then((t) => mdEntries(t)) : Promise.resolve([]),
-				Promise.resolve(mdEntries(tree)),
-				...tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "tickets" && e.name !== "node_modules").map(async (d) => mdEntries(await fsTree(scope, d.path)))
+				inTickets ? fsTree(scope, inTickets.path).then((t) => mdEntries(t).map((f) => ({
+					file: f,
+					group: "tickets"
+				}))) : Promise.resolve([]),
+				Promise.resolve(mdEntries(tree).map((f) => ({
+					file: f,
+					group: ROOT_GROUP
+				}))),
+				...subDirs.filter((d) => d.name !== "tickets").map(async (d) => mdEntries(await fsTree(scope, d.path)).map((f) => ({
+					file: f,
+					group: d.name
+				})))
 			]);
 			const seen = /* @__PURE__ */ new Set();
 			const all = [];
 			for (const e of groups.flat()) {
-				if (NON_TICKET.test(e.name) || seen.has(e.path)) continue;
-				seen.add(e.path);
+				if (NON_TICKET.test(e.file.name) || seen.has(e.file.path)) continue;
+				seen.add(e.file.path);
 				all.push(e);
 			}
 			return all;
@@ -420,12 +430,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`))),
 				Promise.resolve(mdEntries(rootTree).map((f) => ({
 					file: f,
-					from: ROOT_GROUP
+					from: ROOT_GROUP,
+					group: ROOT_GROUP
 				}))),
-				...effortDirs.map(async (d) => (await collectTicketFiles(scope, d)).map((f) => ({
-					file: f,
-					from: d
-				})))
+				...effortDirs.map(async (d) => await collectTicketFiles(scope, d).then((gs) => gs.map((g) => ({
+					file: g.file,
+					from: d,
+					group: g.group
+				}))))
 			]);
 			const efforts = allEfforts.map((dir, i) => ({
 				dir,
@@ -442,7 +454,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const tickets = picked.map((e, i) => ({
 				...deriveTicketStatus(e.file.name, raws[i] ?? ""),
 				path: e.file.path,
-				effort: e.from
+				effort: e.from,
+				group: e.group
 			}));
 			const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 			return {
@@ -2073,9 +2086,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const all = data?.tickets ?? [];
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
+			const isImplGroup = (t) => t.group === "impl" || t.group === "impl-fe";
+			const implTickets = (0, react.useMemo)(() => routeTickets.filter(isImplGroup), [routeTickets]);
+			const mapOwnTickets = (0, react.useMemo)(() => routeTickets.filter((t) => !isImplGroup(t)), [routeTickets]);
 			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
-			const mapTickets = (0, react.useMemo)(() => effortIdx < 0 ? routeTickets : routeTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
-				routeTickets,
+			const mapTickets = (0, react.useMemo)(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
+				mapOwnTickets,
 				effortIdx,
 				selectedDir
 			]);
@@ -2155,12 +2171,17 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				{
 					id: "route",
 					label: "🗺️ 路线",
-					count: routeTickets.length
+					count: mapOwnTickets.length
 				},
 				{
 					id: "tickets",
 					label: "🎫 工单",
-					count: routeTickets.length
+					count: mapOwnTickets.length
+				},
+				{
+					id: "impl",
+					label: "🛠️ 实施",
+					count: implTickets.length
 				},
 				{
 					id: "approvals",
@@ -2229,12 +2250,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									},
 									children: ["全部地图 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										style: { opacity: .7 },
-										children: routeTickets.length
+										children: mapOwnTickets.length
 									})]
 								});
 							})(), data.efforts.map((e, i) => {
 								const on = effortIdx === i;
-								const n = routeTickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP).length;
+								const n = mapOwnTickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP).length;
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									onClick: () => setEffortIdx(i),
 									title: e.dir,
@@ -2306,7 +2327,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						})
 					] }),
 					top === "tickets" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
-						tickets: routeTickets,
+						tickets: mapOwnTickets,
+						planDir,
+						scope
+					}),
+					top === "impl" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
+						tickets: implTickets,
 						planDir,
 						scope
 					}),

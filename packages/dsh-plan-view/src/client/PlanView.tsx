@@ -23,6 +23,7 @@ interface ParsedTicket {
   origin: string | undefined  // frontmatter `origin` — why an approval doc exists
   path?: string               // resolved fs path, since tickets are not always under tickets/
   effort?: string             // which effort dir this came from; ROOT_GROUP for .plan's own top level
+  group?: string              // subdirectory within the effort: 'tickets' | 'impl' | 'impl-fe' | …
   body: string  // full markdown body for detail panels
 }
 
@@ -374,7 +375,7 @@ const ROOT_GROUP = '\u0000root'
 //               <effort>/impl-fe/*.md      (one level down, grouped by workstream)
 // Read all that exist rather than assuming one, so a repo only has to match
 // *a* convention instead of this view's.
-async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<FsEntry[]> {
+async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<{ file: FsEntry; group: string }[]> {
   const tree = await fsTree(scope, effortDir)
   const inTickets = tree.entries.find((e: FsEntry) => e.isDir && e.name === 'tickets')
   // Read every ticket source this effort has, rather than stopping at the first
@@ -382,20 +383,24 @@ async function collectTicketFiles(scope: SessionScope, effortDir: string): Promi
   // workstream directories beside it (`impl/`, `impl-fe/`); returning early on
   // `tickets/` would silently hide every ticket in the others.
   //
+  // Each file keeps the name of the subdirectory it came from, so a view can
+  // separate e.g. design tickets from implementation ones.
+  //
   // Skip map/spec/readme companions: they describe the effort, they are not tickets.
   const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
+  const subDirs = tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules')
   const groups = await Promise.all([
-    inTickets ? fsTree(scope, inTickets.path).then(t => mdEntries(t)) : Promise.resolve([] as FsEntry[]),
-    Promise.resolve(mdEntries(tree)),
-    ...tree.entries
-      .filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'tickets' && e.name !== 'node_modules')
-      .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path))),
+    inTickets ? fsTree(scope, inTickets.path).then(t => mdEntries(t).map(f => ({ file: f, group: 'tickets' }))) : Promise.resolve([]),
+    Promise.resolve(mdEntries(tree).map(f => ({ file: f, group: ROOT_GROUP }))),
+    ...subDirs
+      .filter((d: FsEntry) => d.name !== 'tickets')
+      .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path)).map(f => ({ file: f, group: d.name }))),
   ])
   const seen = new Set<string>()
-  const all: FsEntry[] = []
+  const all: { file: FsEntry; group: string }[] = []
   for (const e of groups.flat()) {
-    if (NON_TICKET.test(e.name) || seen.has(e.path)) continue
-    seen.add(e.path)
+    if (NON_TICKET.test(e.file.name) || seen.has(e.file.path)) continue
+    seen.add(e.file.path)
     all.push(e)
   }
   return all
@@ -444,8 +449,8 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   // one undifferentiated pile and a map's own work cannot be isolated.
   const [mapRaws, ...fileGroups] = await Promise.all([
     Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`))),
-    Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP }))),
-    ...effortDirs.map(async (d: string) => (await collectTicketFiles(scope, d)).map(f => ({ file: f, from: d }))),
+    Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
+    ...effortDirs.map(async (d: string) => await collectTicketFiles(scope, d).then(gs => gs.map(g => ({ file: g.file, from: d, group: g.group })))),
   ])
   const efforts = allEfforts.map((dir: string, i: number) => ({
     dir, mapRaw: mapRaws[i]?.kind === 'text' ? mapRaws[i].content : '',
@@ -458,7 +463,7 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
     picked.push(e)
   }
   const raws = await Promise.all(picked.map(e => fsRead(scope, e.file.path).then(r => r.kind === 'text' ? r.content : '')))
-  const tickets = picked.map((e, i) => ({ ...deriveTicketStatus(e.file.name, raws[i] ?? ''), path: e.file.path, effort: e.from }))
+  const tickets = picked.map((e, i) => ({ ...deriveTicketStatus(e.file.name, raws[i] ?? ''), path: e.file.path, effort: e.from, group: e.group }))
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
   return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
@@ -919,7 +924,7 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'route' | 'tickets' | 'approvals'
+type TopView = 'route' | 'tickets' | 'impl' | 'approvals'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { scope } = props as { scope: SessionScope; tab: any; visible: boolean }
@@ -944,14 +949,19 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const all = data?.tickets ?? []
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
+  // Implementation workstreams (`impl/`, `impl-fe/`) are their own board: they are
+  // execution tickets against a spec, not the design tickets a map tracks.
+  const isImplGroup = (t: ParsedTicket) => t.group === 'impl' || t.group === 'impl-fe'
+  const implTickets = useMemo(() => routeTickets.filter(isImplGroup), [routeTickets])
+  const mapOwnTickets = useMemo(() => routeTickets.filter(t => !isImplGroup(t)), [routeTickets])
 
   // Route view: one map at a time, showing only that map's tickets. `effortIdx`
   // of -1 means "all maps". Files read from .plan's own top level stay visible
   // under any map, since a ticket loose there belongs to the plan, not a map.
   const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : undefined
   const mapTickets = useMemo(
-    () => (effortIdx < 0 ? routeTickets : routeTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
-    [routeTickets, effortIdx, selectedDir],
+    () => (effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
+    [mapOwnTickets, effortIdx, selectedDir],
   )
 
   const destination = useMemo(() => {
@@ -993,8 +1003,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const subBtn = (active: boolean): React.CSSProperties => ({ flex: 1, padding: '5px 0', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11 })
 
   const tabs: { id: TopView; label: string; count: number }[] = [
-    { id: 'route', label: '🗺️ 路线', count: routeTickets.length },
-    { id: 'tickets', label: '🎫 工单', count: routeTickets.length },
+    { id: 'route', label: '🗺️ 路线', count: mapOwnTickets.length },
+    { id: 'tickets', label: '🎫 工单', count: mapOwnTickets.length },
+    { id: 'impl', label: '🛠️ 实施', count: implTickets.length },
     { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
   ]
 
@@ -1019,13 +1030,13 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
                 const on = effortIdx < 0
                 return (
                   <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
-                    全部地图 <span style={{ opacity: .7 }}>{routeTickets.length}</span>
+                    全部地图 <span style={{ opacity: .7 }}>{mapOwnTickets.length}</span>
                   </span>
                 )
               })()}
               {data.efforts.map((e, i) => {
                 const on = effortIdx === i
-                const n = routeTickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP).length
+                const n = mapOwnTickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP).length
                 return (
                   <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
                     🗺️ {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{n}</span>
@@ -1044,7 +1055,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} />}
         </>
       )}
-      {top === 'tickets' && <ViewC tickets={routeTickets} planDir={planDir} scope={scope} />}
+      {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} />}
+      {top === 'impl' && <ViewC tickets={implTickets} planDir={planDir} scope={scope} />}
       {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} />}
     </div>
   )
