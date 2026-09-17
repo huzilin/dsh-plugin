@@ -13,8 +13,8 @@ fi
 
 mkdir -p "$SKILLS_DST"
 
-# Copy main skills (wayfinder-maps, grill-me, research, prototype, domain-modeling)
-for skill in wayfinder-maps grill-me research prototype domain-modeling; do
+# Copy main skills (wayfinder-maps, grill-me, research, prototype, domain-modeling, to-approval)
+for skill in wayfinder-maps grill-me research prototype domain-modeling to-approval; do
   if [ -d "$SKILLS_SRC/$skill" ]; then
     case "$skill" in
       grill-me)       skill_id="grilling" ;;
@@ -22,6 +22,7 @@ for skill in wayfinder-maps grill-me research prototype domain-modeling; do
       prototype)      skill_id="prototype" ;;
       domain-modeling) skill_id="domain-modeling" ;;
       wayfinder-maps) skill_id="wayfinder" ;;
+      to-approval)    skill_id="mp-to-approval" ;;
     esac
     rm -rf "$SKILLS_DST/$skill_id"
     cp -R "$SKILLS_SRC/$skill" "$SKILLS_DST/$skill_id"
