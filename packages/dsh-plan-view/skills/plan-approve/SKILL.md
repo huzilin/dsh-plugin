@@ -23,14 +23,23 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
 3. **Report the findings before the questions.** The human needs to know that three documents were lying before deciding whether to trust the fourth. State plainly which items were already settled and what settled them.
 
-4. **Put the live items to the human, in one batch.** Each one carries four things — an item missing any of them is not ready to ask:
+4. **Put the live items to the human — in documents, not in chat.**
+
+   **The chat message is not where an item gets explained.** A numbered list of items in chat forces the human to decide from the agent's summary, which is exactly the illegibility that `to-approval` exists to remove. The four things belong in a document they can read:
 
    - **What it is** — plain language, no bare ticket ids.
-   - **Where it came from** — the context, and which document holds it.
+   - **Where it came from** — the context, and which document raised it.
    - **What it affects** — what changes depending on the answer.
    - **The options, with tradeoffs** — each with its cost, one marked as the recommendation with the reason.
 
-   Put all live items in one message so they can be answered together, in one reply, as a list of rulings. Batching is the whole point: nine separate round-trips is what this skill exists to prevent.
+   An item missing any of the four is not ready to ask. So:
+
+   - **An item already has a document** (the pending document that raised it) → make sure all four are in *that* document, then open it. Do not restate it in chat.
+   - **An item has no document** (it surfaced from code, a ledger, or a passing finding) → **hand it to `to-approval`** and let that skill write the document. Then open it. Do not expand it inline here.
+
+   **Then the chat message says only three things**: which documents now hold live items, one line each on what they are about, and a closing note that the rulings can come back in any form. No option tables, no item-by-item detail — the documents carry that.
+
+   Batching still applies: get all live items into documents in one pass so they can be answered together, in one reply. What changes is *where* they are put, not how many round-trips it takes.
 
 5. **Record each ruling as it lands.** For every item the human rules on, and for every finding from step 2, write the outcome into the document that raised it:
 
@@ -54,7 +63,7 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
 ## Completion criterion
 
-Every `pending` document under `.plan/` is either settled and status-advanced, or reported with its specific live items still open and why each remains open. Zero documents left at `pending` with no live item behind them.
+Every `pending` document under `.plan/` is either settled and status-advanced, or **has its live items written up in a document the human can read** (not left as a chat list). Zero documents left at `pending` with no live item behind them, and zero live items that exist only in the chat message.
 
 ## Why the verification pass is not optional
 
@@ -64,4 +73,4 @@ Verifying on every run is what keeps the marker worth reading. The findings are 
 
 ## What this is not
 
-Not a document generator — that is `to-approval`, which creates one new document from a decision that has not been written down yet. This skill works the set that already exists: settles it, advances it, and archives it. If an item turns out to be genuinely new and unwritten, hand off to `to-approval` for that item rather than expanding it here.
+Not a document generator — that is `to-approval`, which writes the document for a decision that has not been written down yet. This skill works the set that already exists: settles it, advances it, and archives it — **and calls on `to-approval` for any live item that has no document of its own**. The division is clean: `to-approval` writes documents, this skill settles them, and neither one explains decisions in chat.
