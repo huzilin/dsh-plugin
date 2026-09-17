@@ -392,14 +392,20 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		async function collectTicketFiles(scope, effortDir) {
 			const tree = await fsTree(scope, effortDir);
 			const inTickets = tree.entries.find((e) => e.isDir && e.name === "tickets");
-			if (inTickets) {
-				const found = mdEntries(await fsTree(scope, inTickets.path));
-				if (found.length > 0) return found;
-			}
 			const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i;
-			const here = mdEntries(tree).filter((e) => !NON_TICKET.test(e.name));
-			const subs = await Promise.all(tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "tickets" && e.name !== "node_modules").map(async (d) => mdEntries(await fsTree(scope, d.path)).filter((e) => !NON_TICKET.test(e.name))));
-			return [...here, ...subs.flat()];
+			const groups = await Promise.all([
+				inTickets ? fsTree(scope, inTickets.path).then((t) => mdEntries(t)) : Promise.resolve([]),
+				Promise.resolve(mdEntries(tree)),
+				...tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "tickets" && e.name !== "node_modules").map(async (d) => mdEntries(await fsTree(scope, d.path)))
+			]);
+			const seen = /* @__PURE__ */ new Set();
+			const all = [];
+			for (const e of groups.flat()) {
+				if (NON_TICKET.test(e.name) || seen.has(e.path)) continue;
+				seen.add(e.path);
+				all.push(e);
+			}
+			return all;
 		}
 		function classify(t) {
 			return ticketKind(t);

@@ -377,19 +377,28 @@ const ROOT_GROUP = '\u0000root'
 async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<FsEntry[]> {
   const tree = await fsTree(scope, effortDir)
   const inTickets = tree.entries.find((e: FsEntry) => e.isDir && e.name === 'tickets')
-  if (inTickets) {
-    const sub = await fsTree(scope, inTickets.path)
-    const found = mdEntries(sub)
-    if (found.length > 0) return found
-  }
+  // Read every ticket source this effort has, rather than stopping at the first
+  // one found. An effort commonly holds both the wayfinder-native `tickets/` and
+  // workstream directories beside it (`impl/`, `impl-fe/`); returning early on
+  // `tickets/` would silently hide every ticket in the others.
+  //
   // Skip map/spec/readme companions: they describe the effort, they are not tickets.
   const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
-  const here = mdEntries(tree).filter((e: FsEntry) => !NON_TICKET.test(e.name))
-  const subs = await Promise.all(
-    tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'tickets' && e.name !== 'node_modules')
-      .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path)).filter((e: FsEntry) => !NON_TICKET.test(e.name))),
-  )
-  return [...here, ...subs.flat()]
+  const groups = await Promise.all([
+    inTickets ? fsTree(scope, inTickets.path).then(t => mdEntries(t)) : Promise.resolve([] as FsEntry[]),
+    Promise.resolve(mdEntries(tree)),
+    ...tree.entries
+      .filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'tickets' && e.name !== 'node_modules')
+      .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path))),
+  ])
+  const seen = new Set<string>()
+  const all: FsEntry[] = []
+  for (const e of groups.flat()) {
+    if (NON_TICKET.test(e.name) || seen.has(e.path)) continue
+    seen.add(e.path)
+    all.push(e)
+  }
+  return all
 }
 
 // ─── Three views, one collection pass ────────────────────────────────────────
