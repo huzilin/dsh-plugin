@@ -4,7 +4,7 @@ description: Settle the plan documents waiting on you — read every pending doc
 disable-model-invocation: true
 ---
 
-**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（to-tickets / 归档）、交接契约与文档形态约定，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层，先读那份再读本文件的 how）。
+**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（to-tickets；整轮归档归 plan-archive）、交接契约与文档形态约定，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层，先读那份再读本文件的 how）。
 
 You have decisions waiting. They are scattered across the `.plan/` documents that carry `status: pending`, some written days ago, some overtaken by later work, some still live. Reading them one at a time to find out which is which is the work this skill removes.
 
@@ -64,7 +64,7 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
    Then add the stale-marker to any section whose items are gone: what replaced it, when, and what the document is still good for. Never leave a document at `pending` once its items are settled — that is precisely the lie this skill exists to catch.
 
-8. **Archive what is finished, and sweep the paths.** Move `closed` documents to the repo's archive directory with `git mv`, preserving history. Archiving moves files, so anything that referenced them by path is now broken — grep the live documents for each archived filename and repoint the references, then confirm zero remain. Report the count.
+8. **Leave settled documents in place — file movement belongs to the round archive.** Do not `git mv` closed documents out of `.plan/` here. Every document is a member of the round that raised it (the grill / wayfinder / find-bug → impl chain), and moving one file alone breaks that round's directory integrity. When the round completes, `plan-archive` moves the whole round into `.archive/rounds/<round-id>/` in one piece. This step advances statuses (step 7) and moves nothing — so no path sweep is needed here either.
 
 9. **Open anything the human must read now.** A document that needs a ruling, or that records one, goes to the sidebar. A path alone makes them go fetch it.
 
@@ -80,4 +80,4 @@ Verifying on every run is what keeps the marker worth reading. The findings are 
 
 ## What this is not
 
-Not a document generator — that is `to-approval`, which writes the document for a decision that has not been written down yet. This skill works the set that already exists: settles it, advances it, and archives it — **and calls on `to-approval` for any live item that has no document of its own**. The division is clean: `to-approval` writes documents, this skill settles them, and neither one explains decisions in chat.
+Not a document generator — that is `to-approval`, which writes the document for a decision that has not been written down yet. This skill works the set that already exists: settles it and advances its status — **and calls on `to-approval` for any live item that has no document of its own**. The division is clean: `to-approval` writes documents, this skill settles them, and neither one explains decisions in chat. Files move once, at the round archive, by `plan-archive`.
