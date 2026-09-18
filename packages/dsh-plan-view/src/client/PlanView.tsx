@@ -1003,8 +1003,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'route', label: '🗺️ 路线', count: mapOwnTickets.length },
     { id: 'tickets', label: '🎫 工单', count: mapOwnTickets.length },
-    { id: 'guide', label: '📖 说明', count: 0 },
     { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
+    { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
   return (
@@ -1073,9 +1073,8 @@ type ApprovalFilter = 'pending' | 'settled' | 'all'
 
 // ─── Guide view ──────────────────────────────────────────────────────────────
 //
-// The tab that explains the machinery. It exists because the other three tabs
-// show state without saying where it comes from or what maintains it — and the
-// honest answer includes a step that nothing currently performs.
+// The tab that explains the machinery. The other tabs show state; this one says
+// where that state comes from and which step maintains it.
 
 function GuideView({ scope }: { scope: SessionScope }) {
   const H = ({ children }: { children: React.ReactNode }) => (
@@ -1087,74 +1086,84 @@ function GuideView({ scope }: { scope: SessionScope }) {
   const Code = ({ children }: { children: React.ReactNode }) => (
     <code style={{ background: 'rgba(255,255,255,.08)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: ACCENT_SOFT }}>{children}</code>
   )
-  const Box = ({ title, who, tone, children }: { title: string; who: string; tone: 'ok' | 'gap' | 'read'; children?: React.ReactNode }) => {
-    const c = tone === 'gap' ? '#f2555a' : tone === 'ok' ? '#4ed17e' : '#609bfa'
+  const Box = ({ title, who, tone, children }: { title: string; who: string; tone: 'ok' | 'decide' | 'read'; children?: React.ReactNode }) => {
+    const c = tone === 'decide' ? '#f7ad31' : tone === 'ok' ? '#4ed17e' : '#609bfa'
     return (
-      <div style={{ flex: '1 1 150px', minWidth: 150, padding: '10px 12px', borderRadius: 8, background: CARD, border: `1px solid ${c}55`, borderTop: `3px solid ${c}` }}>
+      <div style={{ flex: '1 1 140px', minWidth: 140, padding: '9px 11px', borderRadius: 8, background: CARD, border: `1px solid ${c}55`, borderTop: `3px solid ${c}` }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: c }}>{title}</div>
-        <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 3, fontFamily: 'ui-monospace,Menlo,monospace' }}>{who}</div>
+        <div style={{ fontSize: 10.5, color: TEXT_FAINT, marginTop: 3, fontFamily: 'ui-monospace,Menlo,monospace', wordBreak: 'break-all' }}>{who}</div>
         {children && <div style={{ fontSize: 11, color: TEXT_DIM, marginTop: 5, lineHeight: 1.6 }}>{children}</div>}
       </div>
     )
   }
-  const Arrow = () => <div style={{ alignSelf: 'center', color: TEXT_FAINT, fontSize: 16, padding: '0 2px' }}>→</div>
+  const Arrow = () => <div style={{ alignSelf: 'center', color: TEXT_FAINT, fontSize: 15, padding: '0 1px' }}>→</div>
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '4px 18px 28px' }}>
-      <div style={{ maxWidth: 860 }}>
+      <div style={{ maxWidth: 880 }}>
 
         <H>这个页面是什么</H>
         <P>
           「路线 / 工单 / 待拍板」三页显示的都是在 <Code>.plan/</Code> 下的 markdown。
-          本页说明这些文件怎么产生、谁维护、以及<strong style={{ color: TEXT }}>哪一环目前是断的</strong>。
+          本页说明这些文件怎么产生、谁维护、怎么流转。
         </P>
 
         <H>一次工作的完整流转</H>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0' }}>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0' }}>
           <Box title="① 定需求" who="to-spec" tone="ok">
             产出 <Code>spec.md</Code>：要做什么、边界在哪
           </Box>
           <Arrow />
           <Box title="② 拆票" who="to-tickets" tone="ok">
-            每张票切穿各层、独立可验证；<br />写明谁阻塞谁（frontier）
+            每票切穿各层、独立可验证；<br />写明谁阻塞谁（frontier）
           </Box>
           <Arrow />
           <Box title="③ 执行" who="implement-spec / implement" tone="ok">
             按票图派 subagent，<br />并行实现、逐个合并
           </Box>
           <Arrow />
-          <Box title="④ 回写" who="（当前无）" tone="gap">
+          <Box title="④ 回写" who="plan-sync（执行时同步）" tone="ok">
             勾验收项、置 <Code>status</Code>、补落地注
           </Box>
           <Arrow />
           <Box title="⑤ 展示" who="本插件" tone="read">
-            读 frontmatter 渲染三个页签
+            读 frontmatter 渲染三页
           </Box>
         </div>
-
-        <H>断点：④ 没有承担者</H>
-        <P>
-          前三环都有 skill 负责，第五环由本插件读。但<strong style={{ color: '#f2555a' }}>第 ④ 环没有任何 skill 负责</strong>：
-        </P>
-        <ul style={{ fontSize: 12.5, lineHeight: 1.9, color: TEXT_DIM, margin: '6px 0', paddingLeft: 20 }}>
-          <li><Code>to-tickets</Code> 只写了一句「实现时去勾掉并改 status」——它自己不执行，也不产出执行者</li>
-          <li><Code>implement</Code> 与 <Code>implement-spec</Code> <strong style={{ color: TEXT }}>全文零处提及</strong> <Code>status</Code> / 勾选 / 关闭——干完活不回写</li>
-        </ul>
-        <P>
-          <strong style={{ color: TEXT }}>后果（真实发生过）</strong>：票已并入主干，票本却停在 <Code>open</Code>；
-          或反过来——工作做完、<Code>status</Code> 已翻，但验收项一个没勾。
-          两种情况本插件都会如实显示，不会替你猜。
+        <P style={{ marginTop: 2 }}>
+          <strong style={{ color: TEXT }}>回写发生在两处</strong>：执行类 skill（<Code>implement-spec</Code> / <Code>implement</Code>）
+          在每张票合并落地时<strong style={{ color: TEXT }}>当场</strong>翻状态；
+          <Code>plan-sync</Code> 用于事后对账——把「看起来已完成、票面还没翻」的条目找回来补齐。
+          两者是同一件事的两种时机，不是两条流程。
         </P>
 
-        <H>怎么 sync</H>
+        <H>待拍板在这条链上的位置</H>
         <P>
-          <Code>plan-sync</Code> 就是补第 ④ 环的工具：它读 <Code>.plan/</Code> 下的票，
-          对照 git 提交与合并记录，列出「<strong style={{ color: TEXT }}>看起来已完成、但票面还没翻</strong>」的条目，
-          经你确认后回写 <Code>status</Code>、勾验收项、补一行落地注。
+          上面那条链是「<strong style={{ color: TEXT }}>已经决定要做</strong>之后怎么落地」。
+          而「<strong style={{ color: TEXT }}>要不要做、怎么做</strong>」本身也要先定——那就是待拍板：
         </P>
-        <div style={{ fontSize: 12, lineHeight: 1.9, color: TEXT_DIM, background: RAISED, border: `1px solid ${BORDER_LIGHT}`, borderRadius: 8, padding: '10px 14px', margin: '8px 0', fontFamily: 'ui-monospace,Menlo,monospace' }}>
-          /plan-sync &nbsp;&nbsp;<span style={{ color: TEXT_FAINT }}># 人工调用；先报告差异，不擅自改票</span>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0' }}>
+          <Box title="讨论 / 拷问" who="grilling" tone="decide">
+            一次问一个决策，<br />问题先落成文档
+          </Box>
+          <Arrow />
+          <Box title="待拍板文档" who="to-approval" tone="decide">
+            <Code>status: pending</Code><br />「待拍板」页列出
+          </Box>
+          <Arrow />
+          <Box title="你拍板" who="plan-approve" tone="decide">
+            逐项核定、录结论、<br />推进文档状态
+          </Box>
+          <Arrow />
+          <Box title="结论是工单" who="to-tickets" tone="ok">
+            当场生成标准票，<br />接回上面的 ②
+          </Box>
         </div>
+        <P>
+          两条链在「<strong style={{ color: TEXT }}>结论 = 要做某件事</strong>」处汇合：
+          拍板结论若要求干活，<strong style={{ color: TEXT }}>同一轮就该落成票</strong>，
+          而不是把结论留在文档里等人再拆一次。
+        </P>
 
         <H>票的形态约定</H>
         <P>
@@ -1176,19 +1185,21 @@ function GuideView({ scope }: { scope: SessionScope }) {
         <H>几个常见疑问</H>
         <div style={{ fontSize: 12.5, lineHeight: 1.85, color: TEXT_DIM }}>
           <div style={{ margin: '10px 0' }}>
-            <strong style={{ color: TEXT }}>为什么有的票在「路线」里、有的不在？</strong><br />
-            「路线」只显示 effort 自己的票（<Code>tickets/</Code>）。历史遗留的 <Code>impl/</Code>、<Code>impl-fe/</Code> 目录里的票
-            也会出现在「工单」页——但那些目录正在逐步废弃，不再新增。
-          </div>
-          <div style={{ margin: '10px 0' }}>
-            <strong style={{ color: TEXT }}>「待拍板」页和票什么关系？</strong><br />
-            不同东西。待拍板是<strong style={{ color: TEXT }}>等你做决定</strong>的文档（<Code>status: pending</Code>）；
-            票是<strong style={{ color: TEXT }}>等被做</strong>的活。拍板结论若要干活，应当场落成票。
+            <strong style={{ color: TEXT }}>票和待拍板有什么区别？</strong><br />
+            票是<strong style={{ color: TEXT }}>等被做</strong>的活（<Code>status: open/done</Code>）；
+            待拍板是<strong style={{ color: TEXT }}>等你做决定</strong>的文档（<Code>status: pending</Code>）。
+            拍板结论若要干活，就该当场生成票——两者不是同一个东西，但会接力。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
-            跑 <Code>plan-lint</Code> 查结构性漂移（同票双档、缺 map.md、缺状态头）；跑 <Code>plan-sync</Code> 对账票面与实际进度。
-            两者都只报告，改动前会先给你看。
+            先跑 <Code>plan-lint</Code> 查结构性漂移（同票双档、缺 map.md、缺状态头）；
+            再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
+            两者都不擅自改。
+          </div>
+          <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
+            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「工单」页，不再单独成页；
+            收尾时会清理并入 <Code>tickets/</Code>。
           </div>
         </div>
 
