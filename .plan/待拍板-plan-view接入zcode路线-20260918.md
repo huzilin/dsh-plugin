@@ -1,7 +1,7 @@
 ---
 type: approval
 date: 2026-09-18
-status: pending
+status: abandoned
 origin: readability-rescue
 ---
 
@@ -107,3 +107,12 @@ origin: readability-rescue
 - 丙（技能单源双宿主）与乙不冲突，可作为搭头同批做。
 
 **当前推荐（更新）**：乙升级版（+可选丙）。**是否立项，待拍板**——裁定后按 plan-protocol 当场落票。
+
+---
+
+## 执行记录（2026-09-18 暂时废弃，plan-approve 结算）
+
+**用户裁定原话（照抄）**：「两外两个暂时废弃」（与《待拍板-清理novel误写文档-20260918.md》一并处置）
+
+- **status: pending → abandoned**：一句话提议（「dsh-plan-view 可以接入 zcode」）展开的候选路线，用户决定暂时搁置，不选任何路线。无取代者，故落 abandoned 而非 superseded。
+- **复活方式**：想法重启时把 status 改回 pending；本文的现状核实（§二：插件接口通道 / ZCode 扩展面清单）届时仍可复用，免重查。
