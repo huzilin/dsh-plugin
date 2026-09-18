@@ -2080,9 +2080,7 @@ function PlanView(props) {
 	const all = data?.tickets ?? [];
 	const routeTickets = useMemo(() => all.filter((t) => classify(t) === "ticket"), [all]);
 	const approvals = useMemo(() => all.filter((t) => classify(t) === "approval"), [all]);
-	const isImplGroup = (t) => t.group === "impl" || t.group === "impl-fe";
-	const implTickets = useMemo(() => routeTickets.filter(isImplGroup), [routeTickets]);
-	const mapOwnTickets = useMemo(() => routeTickets.filter((t) => !isImplGroup(t)), [routeTickets]);
+	const mapOwnTickets = routeTickets;
 	const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
 	const mapTickets = useMemo(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
 		mapOwnTickets,
@@ -2173,9 +2171,9 @@ function PlanView(props) {
 			count: mapOwnTickets.length
 		},
 		{
-			id: "impl",
-			label: "🛠️ 实施",
-			count: implTickets.length
+			id: "guide",
+			label: "📖 说明",
+			count: 0
 		},
 		{
 			id: "approvals",
@@ -2325,16 +2323,385 @@ function PlanView(props) {
 				planDir,
 				scope
 			}),
-			top === "impl" && /* @__PURE__ */ jsx(ViewC, {
-				tickets: implTickets,
-				planDir,
-				scope
-			}),
+			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
 			top === "approvals" && /* @__PURE__ */ jsx(ApprovalsView, {
 				approvals,
 				scope
 			})
 		]
+	});
+}
+function GuideView({ scope }) {
+	const H = ({ children }) => /* @__PURE__ */ jsx("div", {
+		style: {
+			fontSize: 14,
+			fontWeight: 700,
+			color: TEXT,
+			margin: "20px 0 8px"
+		},
+		children
+	});
+	const P = ({ children }) => /* @__PURE__ */ jsx("div", {
+		style: {
+			fontSize: 12.5,
+			lineHeight: 1.8,
+			color: TEXT_DIM,
+			margin: "6px 0"
+		},
+		children
+	});
+	const Code = ({ children }) => /* @__PURE__ */ jsx("code", {
+		style: {
+			background: "rgba(255,255,255,.08)",
+			padding: "1px 5px",
+			borderRadius: 4,
+			fontFamily: "ui-monospace,Menlo,monospace",
+			fontSize: 11.5,
+			color: ACCENT_SOFT
+		},
+		children
+	});
+	const Box = ({ title, who, tone, children }) => {
+		const c = tone === "gap" ? "#f2555a" : tone === "ok" ? "#4ed17e" : "#609bfa";
+		return /* @__PURE__ */ jsxs("div", {
+			style: {
+				flex: "1 1 150px",
+				minWidth: 150,
+				padding: "10px 12px",
+				borderRadius: 8,
+				background: CARD,
+				border: `1px solid ${c}55`,
+				borderTop: `3px solid ${c}`
+			},
+			children: [
+				/* @__PURE__ */ jsx("div", {
+					style: {
+						fontSize: 12,
+						fontWeight: 700,
+						color: c
+					},
+					children: title
+				}),
+				/* @__PURE__ */ jsx("div", {
+					style: {
+						fontSize: 11,
+						color: TEXT_FAINT,
+						marginTop: 3,
+						fontFamily: "ui-monospace,Menlo,monospace"
+					},
+					children: who
+				}),
+				children && /* @__PURE__ */ jsx("div", {
+					style: {
+						fontSize: 11,
+						color: TEXT_DIM,
+						marginTop: 5,
+						lineHeight: 1.6
+					},
+					children
+				})
+			]
+		});
+	};
+	const Arrow = () => /* @__PURE__ */ jsx("div", {
+		style: {
+			alignSelf: "center",
+			color: TEXT_FAINT,
+			fontSize: 16,
+			padding: "0 2px"
+		},
+		children: "→"
+	});
+	return /* @__PURE__ */ jsx("div", {
+		style: {
+			flex: 1,
+			overflowY: "auto",
+			padding: "4px 18px 28px"
+		},
+		children: /* @__PURE__ */ jsxs("div", {
+			style: { maxWidth: 860 },
+			children: [
+				/* @__PURE__ */ jsx(H, { children: "这个页面是什么" }),
+				/* @__PURE__ */ jsxs(P, { children: [
+					"「路线 / 工单 / 待拍板」三页显示的都是在 ",
+					/* @__PURE__ */ jsx(Code, { children: ".plan/" }),
+					" 下的 markdown。 本页说明这些文件怎么产生、谁维护、以及",
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "哪一环目前是断的"
+					}),
+					"。"
+				] }),
+				/* @__PURE__ */ jsx(H, { children: "一次工作的完整流转" }),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						display: "flex",
+						gap: 6,
+						flexWrap: "wrap",
+						margin: "10px 0"
+					},
+					children: [
+						/* @__PURE__ */ jsxs(Box, {
+							title: "① 定需求",
+							who: "to-spec",
+							tone: "ok",
+							children: [
+								"产出 ",
+								/* @__PURE__ */ jsx(Code, { children: "spec.md" }),
+								"：要做什么、边界在哪"
+							]
+						}),
+						/* @__PURE__ */ jsx(Arrow, {}),
+						/* @__PURE__ */ jsxs(Box, {
+							title: "② 拆票",
+							who: "to-tickets",
+							tone: "ok",
+							children: [
+								"每张票切穿各层、独立可验证；",
+								/* @__PURE__ */ jsx("br", {}),
+								"写明谁阻塞谁（frontier）"
+							]
+						}),
+						/* @__PURE__ */ jsx(Arrow, {}),
+						/* @__PURE__ */ jsxs(Box, {
+							title: "③ 执行",
+							who: "implement-spec / implement",
+							tone: "ok",
+							children: [
+								"按票图派 subagent，",
+								/* @__PURE__ */ jsx("br", {}),
+								"并行实现、逐个合并"
+							]
+						}),
+						/* @__PURE__ */ jsx(Arrow, {}),
+						/* @__PURE__ */ jsxs(Box, {
+							title: "④ 回写",
+							who: "（当前无）",
+							tone: "gap",
+							children: [
+								"勾验收项、置 ",
+								/* @__PURE__ */ jsx(Code, { children: "status" }),
+								"、补落地注"
+							]
+						}),
+						/* @__PURE__ */ jsx(Arrow, {}),
+						/* @__PURE__ */ jsx(Box, {
+							title: "⑤ 展示",
+							who: "本插件",
+							tone: "read",
+							children: "读 frontmatter 渲染三个页签"
+						})
+					]
+				}),
+				/* @__PURE__ */ jsx(H, { children: "断点：④ 没有承担者" }),
+				/* @__PURE__ */ jsxs(P, { children: [
+					"前三环都有 skill 负责，第五环由本插件读。但",
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: "#f2555a" },
+						children: "第 ④ 环没有任何 skill 负责"
+					}),
+					"："
+				] }),
+				/* @__PURE__ */ jsxs("ul", {
+					style: {
+						fontSize: 12.5,
+						lineHeight: 1.9,
+						color: TEXT_DIM,
+						margin: "6px 0",
+						paddingLeft: 20
+					},
+					children: [/* @__PURE__ */ jsxs("li", { children: [/* @__PURE__ */ jsx(Code, { children: "to-tickets" }), " 只写了一句「实现时去勾掉并改 status」——它自己不执行，也不产出执行者"] }), /* @__PURE__ */ jsxs("li", { children: [
+						/* @__PURE__ */ jsx(Code, { children: "implement" }),
+						" 与 ",
+						/* @__PURE__ */ jsx(Code, { children: "implement-spec" }),
+						" ",
+						/* @__PURE__ */ jsx("strong", {
+							style: { color: TEXT },
+							children: "全文零处提及"
+						}),
+						" ",
+						/* @__PURE__ */ jsx(Code, { children: "status" }),
+						" / 勾选 / 关闭——干完活不回写"
+					] })]
+				}),
+				/* @__PURE__ */ jsxs(P, { children: [
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "后果（真实发生过）"
+					}),
+					"：票已并入主干，票本却停在 ",
+					/* @__PURE__ */ jsx(Code, { children: "open" }),
+					"； 或反过来——工作做完、",
+					/* @__PURE__ */ jsx(Code, { children: "status" }),
+					" 已翻，但验收项一个没勾。 两种情况本插件都会如实显示，不会替你猜。"
+				] }),
+				/* @__PURE__ */ jsx(H, { children: "怎么 sync" }),
+				/* @__PURE__ */ jsxs(P, { children: [
+					/* @__PURE__ */ jsx(Code, { children: "plan-sync" }),
+					" 就是补第 ④ 环的工具：它读 ",
+					/* @__PURE__ */ jsx(Code, { children: ".plan/" }),
+					" 下的票， 对照 git 提交与合并记录，列出「",
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "看起来已完成、但票面还没翻"
+					}),
+					"」的条目， 经你确认后回写 ",
+					/* @__PURE__ */ jsx(Code, { children: "status" }),
+					"、勾验收项、补一行落地注。"
+				] }),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						fontSize: 12,
+						lineHeight: 1.9,
+						color: TEXT_DIM,
+						background: RAISED,
+						border: `1px solid ${BORDER_LIGHT}`,
+						borderRadius: 8,
+						padding: "10px 14px",
+						margin: "8px 0",
+						fontFamily: "ui-monospace,Menlo,monospace"
+					},
+					children: ["/plan-sync \xA0\xA0", /* @__PURE__ */ jsx("span", {
+						style: { color: TEXT_FAINT },
+						children: "# 人工调用；先报告差异，不擅自改票"
+					})]
+				}),
+				/* @__PURE__ */ jsx(H, { children: "票的形态约定" }),
+				/* @__PURE__ */ jsxs(P, { children: [
+					"一个 effort 目录下，票按",
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "一票一文件"
+					}),
+					"放："
+				] }),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						fontSize: 12,
+						lineHeight: 1.9,
+						color: TEXT_DIM,
+						background: "#141416",
+						border: `1px solid ${BORDER_LIGHT}`,
+						borderRadius: 8,
+						padding: "10px 14px",
+						margin: "8px 0",
+						fontFamily: "ui-monospace,Menlo,monospace"
+					},
+					children: [
+						".plan/<effort>/",
+						/* @__PURE__ */ jsx("br", {}),
+						"\xA0\xA0map.md \xA0",
+						/* @__PURE__ */ jsx("span", {
+							style: { color: TEXT_FAINT },
+							children: "← effort 标志：没有它，整个目录不被加载"
+						}),
+						/* @__PURE__ */ jsx("br", {}),
+						"\xA0\xA0tickets/",
+						/* @__PURE__ */ jsx("br", {}),
+						"\xA0\xA0\xA0\xA001-<slug>.md \xA0",
+						/* @__PURE__ */ jsx("span", {
+							style: { color: TEXT_FAINT },
+							children: "← frontmatter: type / blocked_by / status"
+						}),
+						/* @__PURE__ */ jsx("br", {}),
+						"\xA0\xA0\xA0\xA002-<slug>.md"
+					]
+				}),
+				/* @__PURE__ */ jsxs(P, { children: [
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "为什么必须一票一文件"
+					}),
+					"：把多张票写进同一个文件（如 ",
+					/* @__PURE__ */ jsx(Code, { children: "tickets.md" }),
+					"）， 按文件读取的一方会把它当成",
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "一张票"
+					}),
+					"，里面的票全部丢失—— 本插件就是按文件读的。合并文件看起来整齐，代价是内容不可见。"
+				] }),
+				/* @__PURE__ */ jsx(H, { children: "几个常见疑问" }),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						fontSize: 12.5,
+						lineHeight: 1.85,
+						color: TEXT_DIM
+					},
+					children: [
+						/* @__PURE__ */ jsxs("div", {
+							style: { margin: "10px 0" },
+							children: [
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "为什么有的票在「路线」里、有的不在？"
+								}),
+								/* @__PURE__ */ jsx("br", {}),
+								"「路线」只显示 effort 自己的票（",
+								/* @__PURE__ */ jsx(Code, { children: "tickets/" }),
+								"）。历史遗留的 ",
+								/* @__PURE__ */ jsx(Code, { children: "impl/" }),
+								"、",
+								/* @__PURE__ */ jsx(Code, { children: "impl-fe/" }),
+								" 目录里的票 也会出现在「工单」页——但那些目录正在逐步废弃，不再新增。"
+							]
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							style: { margin: "10px 0" },
+							children: [
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "「待拍板」页和票什么关系？"
+								}),
+								/* @__PURE__ */ jsx("br", {}),
+								"不同东西。待拍板是",
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "等你做决定"
+								}),
+								"的文档（",
+								/* @__PURE__ */ jsx(Code, { children: "status: pending" }),
+								"）； 票是",
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "等被做"
+								}),
+								"的活。拍板结论若要干活，应当场落成票。"
+							]
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							style: { margin: "10px 0" },
+							children: [
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "看到状态不对怎么办？"
+								}),
+								/* @__PURE__ */ jsx("br", {}),
+								"跑 ",
+								/* @__PURE__ */ jsx(Code, { children: "plan-lint" }),
+								" 查结构性漂移（同票双档、缺 map.md、缺状态头）；跑 ",
+								/* @__PURE__ */ jsx(Code, { children: "plan-sync" }),
+								" 对账票面与实际进度。 两者都只报告，改动前会先给你看。"
+							]
+						})
+					]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						marginTop: 22,
+						paddingTop: 12,
+						borderTop: `1px solid ${BORDER_LIGHT}`,
+						fontSize: 11,
+						color: TEXT_FAINT
+					},
+					children: [
+						"本页内容随约定演进；若与 ",
+						/* @__PURE__ */ jsx(Code, { children: "skills/" }),
+						" 下的 skill 正文冲突，以 skill 为准。"
+					]
+				})
+			]
+		})
 	});
 }
 function approvalState(t) {

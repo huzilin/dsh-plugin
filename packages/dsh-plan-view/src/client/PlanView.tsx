@@ -924,7 +924,7 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'route' | 'tickets' | 'impl' | 'approvals'
+type TopView = 'route' | 'tickets' | 'guide' | 'approvals'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { scope } = props as { scope: SessionScope; tab: any; visible: boolean }
@@ -949,11 +949,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const all = data?.tickets ?? []
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
-  // Implementation workstreams (`impl/`, `impl-fe/`) are their own board: they are
-  // execution tickets against a spec, not the design tickets a map tracks.
-  const isImplGroup = (t: ParsedTicket) => t.group === 'impl' || t.group === 'impl-fe'
-  const implTickets = useMemo(() => routeTickets.filter(isImplGroup), [routeTickets])
-  const mapOwnTickets = useMemo(() => routeTickets.filter(t => !isImplGroup(t)), [routeTickets])
+  // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
+  // their own board — their tickets show in the normal ticket view until removed.
+  const mapOwnTickets = routeTickets
 
   // Route view: one map at a time, showing only that map's tickets. `effortIdx`
   // of -1 means "all maps". Files read from .plan's own top level stay visible
@@ -1005,7 +1003,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'route', label: '🗺️ 路线', count: mapOwnTickets.length },
     { id: 'tickets', label: '🎫 工单', count: mapOwnTickets.length },
-    { id: 'impl', label: '🛠️ 实施', count: implTickets.length },
+    { id: 'guide', label: '📖 说明', count: 0 },
     { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
   ]
 
@@ -1056,7 +1054,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
         </>
       )}
       {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} />}
-      {top === 'impl' && <ViewC tickets={implTickets} planDir={planDir} scope={scope} />}
+      {top === 'guide' && <GuideView scope={scope} />}
       {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} />}
     </div>
   )
@@ -1072,6 +1070,135 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 // confirm a decision landed rather than wondering where the document went.
 
 type ApprovalFilter = 'pending' | 'settled' | 'all'
+
+// ─── Guide view ──────────────────────────────────────────────────────────────
+//
+// The tab that explains the machinery. It exists because the other three tabs
+// show state without saying where it comes from or what maintains it — and the
+// honest answer includes a step that nothing currently performs.
+
+function GuideView({ scope }: { scope: SessionScope }) {
+  const H = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, margin: '20px 0 8px' }}>{children}</div>
+  )
+  const P = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 12.5, lineHeight: 1.8, color: TEXT_DIM, margin: '6px 0' }}>{children}</div>
+  )
+  const Code = ({ children }: { children: React.ReactNode }) => (
+    <code style={{ background: 'rgba(255,255,255,.08)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: ACCENT_SOFT }}>{children}</code>
+  )
+  const Box = ({ title, who, tone, children }: { title: string; who: string; tone: 'ok' | 'gap' | 'read'; children?: React.ReactNode }) => {
+    const c = tone === 'gap' ? '#f2555a' : tone === 'ok' ? '#4ed17e' : '#609bfa'
+    return (
+      <div style={{ flex: '1 1 150px', minWidth: 150, padding: '10px 12px', borderRadius: 8, background: CARD, border: `1px solid ${c}55`, borderTop: `3px solid ${c}` }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: c }}>{title}</div>
+        <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 3, fontFamily: 'ui-monospace,Menlo,monospace' }}>{who}</div>
+        {children && <div style={{ fontSize: 11, color: TEXT_DIM, marginTop: 5, lineHeight: 1.6 }}>{children}</div>}
+      </div>
+    )
+  }
+  const Arrow = () => <div style={{ alignSelf: 'center', color: TEXT_FAINT, fontSize: 16, padding: '0 2px' }}>→</div>
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '4px 18px 28px' }}>
+      <div style={{ maxWidth: 860 }}>
+
+        <H>这个页面是什么</H>
+        <P>
+          「路线 / 工单 / 待拍板」三页显示的都是在 <Code>.plan/</Code> 下的 markdown。
+          本页说明这些文件怎么产生、谁维护、以及<strong style={{ color: TEXT }}>哪一环目前是断的</strong>。
+        </P>
+
+        <H>一次工作的完整流转</H>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '10px 0' }}>
+          <Box title="① 定需求" who="to-spec" tone="ok">
+            产出 <Code>spec.md</Code>：要做什么、边界在哪
+          </Box>
+          <Arrow />
+          <Box title="② 拆票" who="to-tickets" tone="ok">
+            每张票切穿各层、独立可验证；<br />写明谁阻塞谁（frontier）
+          </Box>
+          <Arrow />
+          <Box title="③ 执行" who="implement-spec / implement" tone="ok">
+            按票图派 subagent，<br />并行实现、逐个合并
+          </Box>
+          <Arrow />
+          <Box title="④ 回写" who="（当前无）" tone="gap">
+            勾验收项、置 <Code>status</Code>、补落地注
+          </Box>
+          <Arrow />
+          <Box title="⑤ 展示" who="本插件" tone="read">
+            读 frontmatter 渲染三个页签
+          </Box>
+        </div>
+
+        <H>断点：④ 没有承担者</H>
+        <P>
+          前三环都有 skill 负责，第五环由本插件读。但<strong style={{ color: '#f2555a' }}>第 ④ 环没有任何 skill 负责</strong>：
+        </P>
+        <ul style={{ fontSize: 12.5, lineHeight: 1.9, color: TEXT_DIM, margin: '6px 0', paddingLeft: 20 }}>
+          <li><Code>to-tickets</Code> 只写了一句「实现时去勾掉并改 status」——它自己不执行，也不产出执行者</li>
+          <li><Code>implement</Code> 与 <Code>implement-spec</Code> <strong style={{ color: TEXT }}>全文零处提及</strong> <Code>status</Code> / 勾选 / 关闭——干完活不回写</li>
+        </ul>
+        <P>
+          <strong style={{ color: TEXT }}>后果（真实发生过）</strong>：票已并入主干，票本却停在 <Code>open</Code>；
+          或反过来——工作做完、<Code>status</Code> 已翻，但验收项一个没勾。
+          两种情况本插件都会如实显示，不会替你猜。
+        </P>
+
+        <H>怎么 sync</H>
+        <P>
+          <Code>plan-sync</Code> 就是补第 ④ 环的工具：它读 <Code>.plan/</Code> 下的票，
+          对照 git 提交与合并记录，列出「<strong style={{ color: TEXT }}>看起来已完成、但票面还没翻</strong>」的条目，
+          经你确认后回写 <Code>status</Code>、勾验收项、补一行落地注。
+        </P>
+        <div style={{ fontSize: 12, lineHeight: 1.9, color: TEXT_DIM, background: RAISED, border: `1px solid ${BORDER_LIGHT}`, borderRadius: 8, padding: '10px 14px', margin: '8px 0', fontFamily: 'ui-monospace,Menlo,monospace' }}>
+          /plan-sync &nbsp;&nbsp;<span style={{ color: TEXT_FAINT }}># 人工调用；先报告差异，不擅自改票</span>
+        </div>
+
+        <H>票的形态约定</H>
+        <P>
+          一个 effort 目录下，票按<strong style={{ color: TEXT }}>一票一文件</strong>放：
+        </P>
+        <div style={{ fontSize: 12, lineHeight: 1.9, color: TEXT_DIM, background: '#141416', border: `1px solid ${BORDER_LIGHT}`, borderRadius: 8, padding: '10px 14px', margin: '8px 0', fontFamily: 'ui-monospace,Menlo,monospace' }}>
+          .plan/&lt;effort&gt;/<br />
+          &nbsp;&nbsp;map.md &nbsp;<span style={{ color: TEXT_FAINT }}>← effort 标志：没有它，整个目录不被加载</span><br />
+          &nbsp;&nbsp;tickets/<br />
+          &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md
+        </div>
+        <P>
+          <strong style={{ color: TEXT }}>为什么必须一票一文件</strong>：把多张票写进同一个文件（如 <Code>tickets.md</Code>），
+          按文件读取的一方会把它当成<strong style={{ color: TEXT }}>一张票</strong>，里面的票全部丢失——
+          本插件就是按文件读的。合并文件看起来整齐，代价是内容不可见。
+        </P>
+
+        <H>几个常见疑问</H>
+        <div style={{ fontSize: 12.5, lineHeight: 1.85, color: TEXT_DIM }}>
+          <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>为什么有的票在「路线」里、有的不在？</strong><br />
+            「路线」只显示 effort 自己的票（<Code>tickets/</Code>）。历史遗留的 <Code>impl/</Code>、<Code>impl-fe/</Code> 目录里的票
+            也会出现在「工单」页——但那些目录正在逐步废弃，不再新增。
+          </div>
+          <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>「待拍板」页和票什么关系？</strong><br />
+            不同东西。待拍板是<strong style={{ color: TEXT }}>等你做决定</strong>的文档（<Code>status: pending</Code>）；
+            票是<strong style={{ color: TEXT }}>等被做</strong>的活。拍板结论若要干活，应当场落成票。
+          </div>
+          <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
+            跑 <Code>plan-lint</Code> 查结构性漂移（同票双档、缺 map.md、缺状态头）；跑 <Code>plan-sync</Code> 对账票面与实际进度。
+            两者都只报告，改动前会先给你看。
+          </div>
+        </div>
+
+        <div style={{ marginTop: 22, paddingTop: 12, borderTop: `1px solid ${BORDER_LIGHT}`, fontSize: 11, color: TEXT_FAINT }}>
+          本页内容随约定演进；若与 <Code>skills/</Code> 下的 skill 正文冲突，以 skill 为准。
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function approvalState(t: ParsedTicket): ApprovalFilter {
   const w = statusWord(t)
