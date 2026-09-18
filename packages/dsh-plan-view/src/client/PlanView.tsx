@@ -386,6 +386,53 @@ function ageLabel(t: ParsedTicket): string | undefined {
   return `挂了 ${d} 天`
 }
 
+// ─── Archive rounds（历史轮次）───────────────────────────────────────────────
+//
+// plan-archive 把走完的一轮整目录 `git mv` 进 `.archive/rounds/<round-id>/`，
+// 轮目录就是该轮当时 `.plan/` 的快照（map + tickets + 待拍板，结构原样）。
+// 所以「看历史轮」不需要新解析器：把现有的加载逻辑指到轮目录即可。
+// 轮次清单按目录名（round-id 以日期开头是归档格式约定）；主题从
+// `.archive/README.md` 的「轮次索引」表读，读不到就只显示目录名。
+
+interface RoundInfo { id: string; topic?: string }
+
+function parseRoundsIndex(raw: string): Map<string, RoundInfo> {
+  const out = new Map<string, RoundInfo>()
+  let inSection = false  // 正处于「轮次索引」节
+  let inTable = false    // 节内表格已开始
+  for (const line of raw.split('\n')) {
+    if (/^#{1,6}\s/.test(line)) { inSection = /^#{1,6}\s+轮次索引/.test(line); inTable = false; continue }
+    if (!line.trimStart().startsWith('|')) {
+      // 表随非 `|` 行结束；只认节内第一张表，后续其他表（如示例）不再收
+      if (inTable) { inSection = false; inTable = false }
+      continue
+    }
+    if (!inSection) continue
+    inTable = true
+    const cells = line.split('|').map(c => c.trim())
+    const id = (cells[1] ?? '').replace(/`/g, '')
+    // 跳过表头与 `|:--|` 分隔行
+    if (!id || id.includes('--') || id === 'round-id') continue
+    out.set(id, { id, topic: cells[2] || undefined })
+  }
+  return out
+}
+
+async function loadRounds(scope: SessionScope, root: string): Promise<RoundInfo[]> {
+  let tree: { entries: FsEntry[] }
+  try { tree = await fsTree(scope, `${root}/.archive/rounds`) } catch { return [] }
+  const ids = tree.entries
+    .filter((e: FsEntry) => e.isDir && /^\d{4}-\d{2}-\d{2}/.test(e.name))
+    .map((e: FsEntry) => e.name)
+    .sort()
+    .reverse() // 新轮在前
+  if (ids.length === 0) return []
+  const meta = await fsRead(scope, `${root}/.archive/README.md`)
+    .then(r => r.kind === 'text' ? parseRoundsIndex(r.content) : new Map<string, RoundInfo>())
+    .catch(() => new Map<string, RoundInfo>())
+  return ids.map(id => meta.get(id) ?? { id })
+}
+
 // ─── Data loading ────────────────────────────────────────────────────────────
 
 const mdEntries = (tree: { entries: FsEntry[] }) => tree.entries.filter((e: FsEntry) => e.name.endsWith('.md') && !e.isDir)
@@ -480,7 +527,7 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
     dir, mapRaw: mapRaws[i]?.kind === 'text' ? mapRaws[i].content : '',
   }))
   const seen = new Set<string>()
-  const picked: { file: FsEntry; from: string }[] = []
+  const picked: { file: FsEntry; from: string; group: string }[] = []
   for (const e of fileGroups.flat()) {
     if (seen.has(e.file.path)) continue
     seen.add(e.file.path)
@@ -508,7 +555,7 @@ const EXPLORE_PROMPT = (t: ParsedTicket) =>
 const ADVANCE_PROMPT = (t: ParsedTicket) =>
   `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`
 
-function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose }: {
+function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose, readOnly }: {
   ticket: ParsedTicket
   planDir: string
   scope: SessionScope
@@ -516,6 +563,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
   sessions: Map<string, SessionSummary>
   onChanged: () => void
   onClose: () => void
+  readOnly?: boolean   // 历史轮次快照：归档纪律「勿据以实现」，派活/拍板动作停用
 }) {
   const [fullBody, setFullBody] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -619,16 +667,18 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
     </button>
   )
   const actions: React.ReactNode[] = []
-  if (kind === 'ticket') {
-    if (ticket.session !== undefined && rebind) {
-      actions.push(btn('新建 session 并重新绑定', () => void createAndBind(ADVANCE_PROMPT(ticket)), 'create', '#f7ad31'))
-      actions.push(btn('取消', () => { setRebind(false); setMsg(null) }, 'cancel', '#666'))
-    } else {
-      if (ticket.session === undefined) actions.push(btn('🧭 开始推演', () => void dispatchTicket('explore'), 'explore'))
-      actions.push(btn('▶ 推进', () => void dispatchTicket('advance'), 'advance'))
+  if (!readOnly) {
+    if (kind === 'ticket') {
+      if (ticket.session !== undefined && rebind) {
+        actions.push(btn('新建 session 并重新绑定', () => void createAndBind(ADVANCE_PROMPT(ticket)), 'create', '#f7ad31'))
+        actions.push(btn('取消', () => { setRebind(false); setMsg(null) }, 'cancel', '#666'))
+      } else {
+        if (ticket.session === undefined) actions.push(btn('🧭 开始推演', () => void dispatchTicket('explore'), 'explore'))
+        actions.push(btn('▶ 推进', () => void dispatchTicket('advance'), 'advance'))
+      }
     }
+    if (kind === 'approval' && pending) actions.push(btn('✅ 拍板（派 /plan-approve）', () => void settle(), 'settle', '#4ed17e'))
   }
-  if (kind === 'approval' && pending) actions.push(btn('✅ 拍板（派 /plan-approve）', () => void settle(), 'settle', '#4ed17e'))
   const jumps: [string, string][] = []
   if (ticket.session !== undefined) jumps.push([ticket.session, '绑定 session'])
   if (ticket.originSession !== undefined) jumps.push([ticket.originSession, '来源 session'])
@@ -682,7 +732,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 
 // ─── Variant A: Kanban ───────────────────────────────────────────────────────
 
-function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null }) {
+function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null; readOnly?: boolean }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const groups = useMemo(() => {
     const g: Record<TicketStatus, ParsedTicket[]> = { resolved: [], out_of_scope: [], claimed: [], open: [] }
@@ -703,7 +753,8 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination 
         <span style={{ fontSize: 14, fontWeight: 700 }}>Kanban</span>
         <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · {done} resolved</span>
       </div>
-      {waiting.length > 0 && (
+      {/* 归档轮次里不该再有 pending；万一轮内有漏拍板的旧文档，也不在此催办 */}
+      {!readOnly && waiting.length > 0 && (
         <div style={{ margin: '8px 16px 0', padding: '8px 12px', borderRadius: 8, background: '#3a2410', border: '1px solid #7a4a15', fontSize: 13 }}>
           <div style={{ fontWeight: 700, color: '#f7ad31', marginBottom: 4 }}>⏳ 等你拍板（{waiting.length}）</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -753,14 +804,14 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination 
           </div>
         ))}
       </div>
-      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} />}
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
   )
 }
 
 // ─── Variant C: Table ────────────────────────────────────────────────────────
 
-function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void }) {
+function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
   const [query, setQuery] = useState('')
   // Default to work still outstanding. Completed tickets are the bulk of a
   // mature repo (here 51 of 55), so showing them by default buries the three
@@ -897,7 +948,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged }: { tickets:
           )}
         </div>
       </div>
-      {detail && <DetailModal ticket={detail} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setDetail(null)} />}
+      {detail && <DetailModal ticket={detail} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setDetail(null)} readOnly={readOnly} />}
     </div>
   )
 }
@@ -1004,7 +1055,7 @@ function layoutGraph(tickets: ParsedTicket[]) {
   return { pos, sidePos, edges, W, H, capX: W_MAIN / 2, endY, startCapY: START_Y - CAP_H / 2, endCapY: endY - CAP_H / 2 }
 }
 
-function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void }) {
+function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
   const [sel, setSel] = useState<string | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const L = useMemo(() => layoutGraph(tickets), [tickets])
@@ -1079,7 +1130,7 @@ function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged }: { tickets:
           </svg>
         </div>
       </div>
-      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setSel(null)} />}
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setSel(null)} readOnly={readOnly} />}
     </div>
   )
 }
@@ -1108,7 +1159,7 @@ function effortStage(own: ParsedTicket[]): { stage: string; color: string } {
   return { stage: '✅ 收口', color: '#4ed17e' }
 }
 
-function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged }: {
+function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
   efforts: { dir: string; mapRaw: string }[]
   planDir: string
@@ -1116,6 +1167,7 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
   ctx: any
   sessions: Map<string, SessionSummary>
   onChanged: () => void
+  readOnly?: boolean
 }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const byId = new Map(tickets.map(t => [t.id, t]))
@@ -1195,7 +1247,7 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
           ))
         })}
       </div>
-      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} />}
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
   )
 }
@@ -1216,15 +1268,21 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // Session snapshot for the C1 status chips; refetched alongside the plan so
   // post-dispatch refreshes see the new running flags too.
   const [sessions, setSessions] = useState<Map<string, SessionSummary>>(() => new Map())
+  // 历史轮次：round === null 看现行 `.plan/`；选中轮 id 后数据源切到
+  // `.archive/rounds/<id>/`（plan-archive 的轮目录就是当时 `.plan/` 的快照，
+  // 加载逻辑原样复用），整页进入只读。
+  const [rounds, setRounds] = useState<RoundInfo[]>([])
+  const [round, setRound] = useState<string | null>(null)
   const load = useCallback(async () => {
     setLoading(true); setError(null)
-    const dir = scope.cwd ? `${scope.cwd}/.plan` : '.plan'
+    const base = scope.cwd ? `${scope.cwd}/` : ''
+    const dir = round === null ? `${base}.plan` : `${base}.archive/rounds/${round}`
     try {
       const r = await loadPlan(scope, dir)
       if (!r) { setError('empty'); setLoading(false); return }
       setData(r)
     } catch { setError('failed') } finally { setLoading(false) }
-  }, [scope.sessionId, scope.cwd])
+  }, [scope.sessionId, scope.cwd, round])
   const loadSessions = useCallback(() => {
     sessionList()
       .then(items => setSessions(new Map(items.map(s => [s.sessionId, s]))))
@@ -1232,6 +1290,14 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   }, [])
   useEffect(() => { void load() }, [load])
   useEffect(() => { loadSessions() }, [loadSessions])
+  // 轮次清单不随派发变化，只在进入（或换仓库）时读一次；换仓库时复位轮选中。
+  useEffect(() => {
+    setRound(null)
+    if (!scope.cwd) { setRounds([]); return }
+    loadRounds(scope, scope.cwd).then(setRounds).catch(() => setRounds([]))
+  }, [scope.sessionId, scope.cwd])
+  // 换轮后旧 effort 下标可能越界，回到「全部地图」。
+  useEffect(() => { setEffortIdx(-1) }, [round])
   // Post-dispatch refresh: the plan files may have a new `session:` binding and
   // the session map may have a new entry — both reread together.
   const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])
@@ -1280,13 +1346,14 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   if (error || !data) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: BG, color: '#888' }}>
-        <span>No .plan found in current directory.</span>
+        <span>{round === null ? 'No .plan found in current directory.' : `轮次 ${round} 读取失败（目录可能已被移动或删除）。`}</span>
         {refreshBtn('⟳ 重新读取')}
       </div>
     )
   }
 
   const planDir = data.effortDir
+  const readOnly = round !== null
   const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
   const subBtn = (active: boolean): React.CSSProperties => ({ flex: 1, padding: '5px 0', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11 })
 
@@ -1309,8 +1376,32 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
         ))}
         {/* The files change outside this view — another session writes them, or
             this one does. Re-reading is the only way to see that. */}
-        <div style={{ marginLeft: 'auto' }}>{refreshBtn()}</div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {rounds.length > 0 && (
+            <select
+              value={round ?? ''}
+              onChange={e => setRound(e.target.value === '' ? null : e.target.value)}
+              title="按轮查看历史归档（.archive/rounds，只读）"
+              style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${round !== null ? '#7a4a15' : BORDER}`, background: HEADER_BG, color: round !== null ? '#f7ad31' : TEXT_DIM, fontSize: 12, outline: 'none', maxWidth: 280, cursor: 'pointer' }}
+            >
+              <option value="">📍 现行（.plan）</option>
+              {rounds.map(r => (
+                <option key={r.id} value={r.id}>🗄️ {r.id}{r.topic ? ` · ${r.topic}` : ''}</option>
+              ))}
+            </select>
+          )}
+          {refreshBtn()}
+        </div>
       </div>
+      {round !== null && (
+        <div style={{ padding: '6px 12px', background: '#241d10', borderBottom: '1px solid #7a4a1566', fontSize: 12, color: '#e8c9a0', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>
+            🗄️ 历史轮次快照（只读）：<strong style={{ fontFamily: 'ui-monospace,Menlo,monospace' }}>{round}</strong>
+            {rounds.find(r => r.id === round)?.topic ? ` · ${rounds.find(r => r.id === round)?.topic}` : ''}
+          </span>
+          <span style={{ color: '#a98d5f' }}>归档内容勿据以实现；派活 / 拍板动作已停用。</span>
+        </div>
+      )}
       {top === 'route' && (
         <>
           {data.efforts.length > 0 && (
@@ -1339,15 +1430,15 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
             <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
             <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
           </div>
-          {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} />}
-          {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
-          {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
+          {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} />}
+          {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
-      {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
+      {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
       {top === 'guide' && <GuideView scope={scope} />}
-      {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
-      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
+      {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
 }
@@ -1372,8 +1463,8 @@ function GuideView({ scope }: { scope: SessionScope }) {
   const H = ({ children }: { children: React.ReactNode }) => (
     <div style={{ fontSize: 14, fontWeight: 700, color: TEXT, margin: '20px 0 8px' }}>{children}</div>
   )
-  const P = ({ children }: { children: React.ReactNode }) => (
-    <div style={{ fontSize: 12.5, lineHeight: 1.8, color: TEXT_DIM, margin: '6px 0' }}>{children}</div>
+  const P = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
+    <div style={{ fontSize: 12.5, lineHeight: 1.8, color: TEXT_DIM, margin: '6px 0', ...style }}>{children}</div>
   )
   const Code = ({ children }: { children: React.ReactNode }) => (
     <code style={{ background: 'rgba(255,255,255,.08)', padding: '1px 5px', borderRadius: 4, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 11.5, color: ACCENT_SOFT }}>{children}</code>
@@ -1491,6 +1582,8 @@ function GuideView({ scope }: { scope: SessionScope }) {
             <strong style={{ color: TEXT }}>归档在哪？</strong><br />
             已完成内容由 <Code>plan-archive</Code>（手动触发）迁到 <Code>.archive/</Code>，
             并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。
+            右上角「轮次」选择器可切进某一轮的快照（<Code>.archive/rounds/&lt;round-id&gt;/</Code>），
+            按轮只读查看当时的路线 / 工单 / 拍板。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
@@ -1512,9 +1605,10 @@ function approvalState(t: ParsedTicket): ApprovalFilter {
   return 'settled'
 }
 
-function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }: { approvals: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void }) {
+function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly }: { approvals: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
-  const [filter, setFilter] = useState<ApprovalFilter>('pending')
+  // 历史轮次的拍板都该已结案，默认「全部」而不是「待拍板」，否则开进来就是一句空态。
+  const [filter, setFilter] = useState<ApprovalFilter>(readOnly ? 'all' : 'pending')
 
   const counts = useMemo(() => ({
     pending: approvals.filter(t => approvalState(t) === 'pending').length,
@@ -1531,7 +1625,8 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }: { approva
   if (approvals.length === 0) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
-        没有待你拍板的文档。<br />
+        {readOnly ? '该轮次没有拍板文档。' : '没有待你拍板的文档。'}
+        <br />
         <span style={{ fontSize: 12, color: TEXT_FAINT }}>审批文档写 `status: pending` 后会出现在这里。</span>
       </div>
     )
@@ -1581,7 +1676,7 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }: { approva
           })}
         </div>
       )}
-      {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} />}
+      {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
   )
 }

@@ -452,6 +452,47 @@ function ageLabel(t) {
 	if (d === 0) return "今天";
 	return `挂了 ${d} 天`;
 }
+function parseRoundsIndex(raw) {
+	const out = /* @__PURE__ */ new Map();
+	let inSection = false;
+	let inTable = false;
+	for (const line of raw.split("\n")) {
+		if (/^#{1,6}\s/.test(line)) {
+			inSection = /^#{1,6}\s+轮次索引/.test(line);
+			inTable = false;
+			continue;
+		}
+		if (!line.trimStart().startsWith("|")) {
+			if (inTable) {
+				inSection = false;
+				inTable = false;
+			}
+			continue;
+		}
+		if (!inSection) continue;
+		inTable = true;
+		const cells = line.split("|").map((c) => c.trim());
+		const id = (cells[1] ?? "").replace(/`/g, "");
+		if (!id || id.includes("--") || id === "round-id") continue;
+		out.set(id, {
+			id,
+			topic: cells[2] || void 0
+		});
+	}
+	return out;
+}
+async function loadRounds(scope, root) {
+	let tree;
+	try {
+		tree = await fsTree(scope, `${root}/.archive/rounds`);
+	} catch {
+		return [];
+	}
+	const ids = tree.entries.filter((e) => e.isDir && /^\d{4}-\d{2}-\d{2}/.test(e.name)).map((e) => e.name).sort().reverse();
+	if (ids.length === 0) return [];
+	const meta = await fsRead(scope, `${root}/.archive/README.md`).then((r) => r.kind === "text" ? parseRoundsIndex(r.content) : /* @__PURE__ */ new Map()).catch(() => /* @__PURE__ */ new Map());
+	return ids.map((id) => meta.get(id) ?? { id });
+}
 const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
 const ROOT_GROUP = "\0root";
 async function collectTicketFiles(scope, effortDir) {
@@ -533,7 +574,7 @@ async function loadPlan(scope, planDir) {
 const shortSession = (id) => id.replace(/^session-/, "").slice(0, 8);
 const EXPLORE_PROMPT = (t) => `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档。`;
 const ADVANCE_PROMPT = (t) => `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`;
-function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose }) {
+function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose, readOnly }) {
 	const [fullBody, setFullBody] = useState(null);
 	const [busy, setBusy] = useState(null);
 	const [msg, setMsg] = useState(null);
@@ -668,17 +709,19 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 		children: busy === key ? "…" : label
 	});
 	const actions = [];
-	if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
-		actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
-		actions.push(btn("取消", () => {
-			setRebind(false);
-			setMsg(null);
-		}, "cancel", "#666"));
-	} else {
-		if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
-		actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+	if (!readOnly) {
+		if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
+			actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
+			actions.push(btn("取消", () => {
+				setRebind(false);
+				setMsg(null);
+			}, "cancel", "#666"));
+		} else {
+			if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
+			actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+		}
+		if (kind === "approval" && pending) actions.push(btn("✅ 拍板（派 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 	}
-	if (kind === "approval" && pending) actions.push(btn("✅ 拍板（派 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 	const jumps = [];
 	if (ticket.session !== void 0) jumps.push([ticket.session, "绑定 session"]);
 	if (ticket.originSession !== void 0) jumps.push([ticket.originSession, "来源 session"]);
@@ -922,7 +965,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 		})
 	});
 }
-function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination }) {
+function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	const groups = useMemo(() => {
 		const g = {
@@ -972,7 +1015,7 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination 
 					]
 				})]
 			}),
-			waiting.length > 0 && /* @__PURE__ */ jsxs("div", {
+			!readOnly && waiting.length > 0 && /* @__PURE__ */ jsxs("div", {
 				style: {
 					margin: "8px 16px 0",
 					padding: "8px 12px",
@@ -1267,12 +1310,13 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination 
 				ctx,
 				sessions,
 				onChanged,
-				onClose: () => setFocus(null)
+				onClose: () => setFocus(null),
+				readOnly
 			})
 		]
 	});
 }
-function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged }) {
+function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [query, setQuery] = useState("");
 	const OUTSTANDING = ["open", "claimed"];
 	const [statusSet, setStatusSet] = useState(() => new Set(OUTSTANDING));
@@ -1824,7 +1868,8 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged }) {
 				ctx,
 				sessions,
 				onChanged,
-				onClose: () => setDetail(null)
+				onClose: () => setDetail(null),
+				readOnly
 			})
 		]
 	});
@@ -1953,7 +1998,7 @@ function layoutGraph(tickets) {
 		endCapY: endY - CAP_H / 2
 	};
 }
-function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged }) {
+function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [sel, setSel] = useState(null);
 	const [hover, setHover] = useState(null);
 	const { pos, sidePos, edges, W, H, capX, startCapY, endCapY, endY } = useMemo(() => layoutGraph(tickets), [tickets]);
@@ -2307,7 +2352,8 @@ function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged }) {
 				ctx,
 				sessions,
 				onChanged,
-				onClose: () => setSel(null)
+				onClose: () => setSel(null),
+				readOnly
 			})
 		]
 	});
@@ -2338,7 +2384,7 @@ function effortStage(own) {
 		color: "#4ed17e"
 	};
 }
-function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged }) {
+function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	const byId = new Map(tickets.map((t) => [t.id, t]));
 	const unmetBlocker = (t) => t.blockedBy.some((r) => {
@@ -2591,7 +2637,8 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
 				ctx,
 				sessions,
 				onChanged,
-				onClose: () => setFocus(null)
+				onClose: () => setFocus(null),
+				readOnly
 			})
 		]
 	});
@@ -2605,10 +2652,13 @@ function PlanView(props) {
 	const [effortIdx, setEffortIdx] = useState(0);
 	const [variant, setVariant] = useState("A");
 	const [sessions, setSessions] = useState(() => /* @__PURE__ */ new Map());
+	const [rounds, setRounds] = useState([]);
+	const [round, setRound] = useState(null);
 	const load = useCallback(async () => {
 		setLoading(true);
 		setError(null);
-		const dir = scope.cwd ? `${scope.cwd}/.plan` : ".plan";
+		const base = scope.cwd ? `${scope.cwd}/` : "";
+		const dir = round === null ? `${base}.plan` : `${base}.archive/rounds/${round}`;
 		try {
 			const r = await loadPlan(scope, dir);
 			if (!r) {
@@ -2622,7 +2672,11 @@ function PlanView(props) {
 		} finally {
 			setLoading(false);
 		}
-	}, [scope.sessionId, scope.cwd]);
+	}, [
+		scope.sessionId,
+		scope.cwd,
+		round
+	]);
 	const loadSessions = useCallback(() => {
 		sessionList().then((items) => setSessions(new Map(items.map((s) => [s.sessionId, s])))).catch(() => setSessions(/* @__PURE__ */ new Map()));
 	}, []);
@@ -2632,6 +2686,17 @@ function PlanView(props) {
 	useEffect(() => {
 		loadSessions();
 	}, [loadSessions]);
+	useEffect(() => {
+		setRound(null);
+		if (!scope.cwd) {
+			setRounds([]);
+			return;
+		}
+		loadRounds(scope, scope.cwd).then(setRounds).catch(() => setRounds([]));
+	}, [scope.sessionId, scope.cwd]);
+	useEffect(() => {
+		setEffortIdx(-1);
+	}, [round]);
 	const onChanged = useCallback(() => {
 		load();
 		loadSessions();
@@ -2695,9 +2760,10 @@ function PlanView(props) {
 			background: BG,
 			color: "#888"
 		},
-		children: [/* @__PURE__ */ jsx("span", { children: "No .plan found in current directory." }), refreshBtn("⟳ 重新读取")]
+		children: [/* @__PURE__ */ jsx("span", { children: round === null ? "No .plan found in current directory." : `轮次 ${round} 读取失败（目录可能已被移动或删除）。` }), refreshBtn("⟳ 重新读取")]
 	});
 	const planDir = data.effortDir;
+	const readOnly = round !== null;
 	const tabBtn = (active) => ({
 		padding: "6px 12px",
 		border: "none",
@@ -2777,9 +2843,64 @@ function PlanView(props) {
 						},
 						children: t.count
 					})]
-				}, t.id)), /* @__PURE__ */ jsx("div", {
-					style: { marginLeft: "auto" },
-					children: refreshBtn()
+				}, t.id)), /* @__PURE__ */ jsxs("div", {
+					style: {
+						marginLeft: "auto",
+						display: "flex",
+						alignItems: "center",
+						gap: 6
+					},
+					children: [rounds.length > 0 && /* @__PURE__ */ jsxs("select", {
+						value: round ?? "",
+						onChange: (e) => setRound(e.target.value === "" ? null : e.target.value),
+						title: "按轮查看历史归档（.archive/rounds，只读）",
+						style: {
+							padding: "4px 8px",
+							borderRadius: 6,
+							border: `1px solid ${round !== null ? "#7a4a15" : BORDER}`,
+							background: HEADER_BG,
+							color: round !== null ? "#f7ad31" : TEXT_DIM,
+							fontSize: 12,
+							outline: "none",
+							maxWidth: 280,
+							cursor: "pointer"
+						},
+						children: [/* @__PURE__ */ jsx("option", {
+							value: "",
+							children: "📍 现行（.plan）"
+						}), rounds.map((r) => /* @__PURE__ */ jsxs("option", {
+							value: r.id,
+							children: [
+								"🗄️ ",
+								r.id,
+								r.topic ? ` · ${r.topic}` : ""
+							]
+						}, r.id))]
+					}), refreshBtn()]
+				})]
+			}),
+			round !== null && /* @__PURE__ */ jsxs("div", {
+				style: {
+					padding: "6px 12px",
+					background: "#241d10",
+					borderBottom: "1px solid #7a4a1566",
+					fontSize: 12,
+					color: "#e8c9a0",
+					display: "flex",
+					gap: 10,
+					alignItems: "center",
+					flexWrap: "wrap"
+				},
+				children: [/* @__PURE__ */ jsxs("span", { children: [
+					"🗄️ 历史轮次快照（只读）：",
+					/* @__PURE__ */ jsx("strong", {
+						style: { fontFamily: "ui-monospace,Menlo,monospace" },
+						children: round
+					}),
+					rounds.find((r) => r.id === round)?.topic ? ` · ${rounds.find((r) => r.id === round)?.topic}` : ""
+				] }), /* @__PURE__ */ jsx("span", {
+					style: { color: "#a98d5f" },
+					children: "归档内容勿据以实现；派活 / 拍板动作已停用。"
 				})]
 			}),
 			top === "route" && /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -2872,7 +2993,8 @@ function PlanView(props) {
 					ctx,
 					sessions,
 					onChanged,
-					destination
+					destination,
+					readOnly
 				}),
 				variant === "D" && /* @__PURE__ */ jsx(ViewD, {
 					tickets: mapTickets,
@@ -2880,7 +3002,8 @@ function PlanView(props) {
 					scope,
 					ctx,
 					sessions,
-					onChanged
+					onChanged,
+					readOnly
 				}),
 				variant === "C" && /* @__PURE__ */ jsx(ViewC, {
 					tickets: mapTickets,
@@ -2888,7 +3011,8 @@ function PlanView(props) {
 					scope,
 					ctx,
 					sessions,
-					onChanged
+					onChanged,
+					readOnly
 				})
 			] }),
 			top === "tickets" && /* @__PURE__ */ jsx(ViewC, {
@@ -2897,7 +3021,8 @@ function PlanView(props) {
 				scope,
 				ctx,
 				sessions,
-				onChanged
+				onChanged,
+				readOnly
 			}),
 			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
 			top === "approvals" && /* @__PURE__ */ jsx(ApprovalsView, {
@@ -2905,7 +3030,8 @@ function PlanView(props) {
 				scope,
 				ctx,
 				sessions,
-				onChanged
+				onChanged,
+				readOnly
 			}),
 			top === "overview" && /* @__PURE__ */ jsx(OverviewView, {
 				tickets: all,
@@ -2914,7 +3040,8 @@ function PlanView(props) {
 				scope,
 				ctx,
 				sessions,
-				onChanged
+				onChanged,
+				readOnly
 			})
 		]
 	});
@@ -2929,12 +3056,13 @@ function GuideView({ scope }) {
 		},
 		children
 	});
-	const P = ({ children }) => /* @__PURE__ */ jsx("div", {
+	const P = ({ children, style }) => /* @__PURE__ */ jsx("div", {
 		style: {
 			fontSize: 12.5,
 			lineHeight: 1.8,
 			color: TEXT_DIM,
-			margin: "6px 0"
+			margin: "6px 0",
+			...style
 		},
 		children
 	});
@@ -3302,7 +3430,9 @@ function GuideView({ scope }) {
 								/* @__PURE__ */ jsx(Code, { children: "plan-archive" }),
 								"（手动触发）迁到 ",
 								/* @__PURE__ */ jsx(Code, { children: ".archive/" }),
-								"， 并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。"
+								"， 并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。 右上角「轮次」选择器可切进某一轮的快照（",
+								/* @__PURE__ */ jsx(Code, { children: ".archive/rounds/<round-id>/" }),
+								"）， 按轮只读查看当时的路线 / 工单 / 拍板。"
 							]
 						}),
 						/* @__PURE__ */ jsxs("div", {
@@ -3344,9 +3474,9 @@ function approvalState(t) {
 	if (statusWord(t) === "pending") return "pending";
 	return "settled";
 }
-function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }) {
+function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
-	const [filter, setFilter] = useState("pending");
+	const [filter, setFilter] = useState(readOnly ? "all" : "pending");
 	const counts = useMemo(() => ({
 		pending: approvals.filter((t) => approvalState(t) === "pending").length,
 		settled: approvals.filter((t) => approvalState(t) === "settled").length,
@@ -3366,7 +3496,7 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }) {
 			textAlign: "center"
 		},
 		children: [
-			"没有待你拍板的文档。",
+			readOnly ? "该轮次没有拍板文档。" : "没有待你拍板的文档。",
 			/* @__PURE__ */ jsx("br", {}),
 			/* @__PURE__ */ jsx("span", {
 				style: {
@@ -3549,7 +3679,8 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }) {
 				ctx,
 				sessions,
 				onChanged,
-				onClose: () => setFocus(null)
+				onClose: () => setFocus(null),
+				readOnly
 			})
 		]
 	});
