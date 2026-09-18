@@ -1,0 +1,48 @@
+{
+  "title": "Agent Skill Report",
+  "generated_at": "2026-09-15T11:37:07.034448+00:00",
+  "harness": "dsh",
+  "handle": "dsh-plugin",
+  "stats": {
+    "sessions_analyzed": 11,
+    "sessions_scanned": 12,
+    "skills_found": 51,
+    "skills_used": 5,
+    "window_days": 45
+  },
+  "scores": {
+    "efficiency": 0.809,
+    "code_quality": 0.95,
+    "skill_coverage": 0.455,
+    "overall": 0.805
+  },
+  "top_findings": [
+    "Four of eleven sessions burned over 120 tool calls each to answer one question, and none of them opened the relevant source file first. The 4cd5a757 rtk-install session spent 121 calls with 22 failing probes; d810570c spent 161 calls with 37. A single targeted read of the install doc or the sidebar source would have collapsed both.",
+    "The installed DSH skill catalog is invisible to four of these sessions. 51 skills are installed (2 project, 49 preset) yet only 5 sessions invoked one, and three sessions that needed one — 4cd5a757 for setup, 84df625b for sidebar work, d810570c for investigation — ran with 'skills detected: (none)'.",
+    "Long sessions are steered, not self-correcting: 0cb48c56 took 34 user turns and 17 repeated tool calls to finish a prototype, and 84df625b took 7 user turns with 229 calls. The work landed in both cases, but the user supplied the direction the agent did not derive."
+  ],
+  "suggestions": [
+    {
+      "skill": "dsh-knowledge",
+      "change": "Add a trigger line for install/setup questions so the skill fires before trial-and-error probing.",
+      "evidence": "Session 4cd5a757 ('dsh 怎么安装 rtk') ran 121 tool calls with 22 error-ish outputs and detected no skill, on a question the dsh-knowledge chapter index covers directly. Efficiency 0.4.",
+      "proposed_path": "proposed/dsh-knowledge/SKILL.md",
+      "diff": "--- /Users/huzilin/workdir/dsh-plugin/.dsh/skills/dsh-knowledge/SKILL.md\t2026-09-06 15:43:44\n+++ /var/folders/xm/d6btpd356cl8chrp70ysndc00000gn/T/skill-doctor-FhHO8boU/proposed/dsh-knowledge/SKILL.md\t2026-09-15 19:37:12\n@@ -1,9 +1,10 @@\n ---\n name: dsh-knowledge\n-description: \"DeepSeek Harness（dsh）中文技术文档知识库。当需要应用 dsh 的架构框架（Cordis 插件、Capability Seam、Agent 生命周期、会话事件模型、工具执行流水线、事件域选择、作用域隔离、配置组合），研究其内部机制，或在 DeepSeek Harness 项目上开发扩展/插件/子代理/Web UI 时使用。\"\n+description: \"DeepSeek Harness（dsh）中文技术文档知识库。当需要应用 dsh 的架构框架（Cordis 插件、Capability Seam、Agent 生命周期、会话事件模型、工具执行流水线、事件域选择、作用域隔离、配置组合），研究其内部机制，或在 DeepSeek Harness 项目上开发扩展/插件/子代理/Web UI 时使用；也包括 dsh 自身的安装、升级、环境配置与依赖（如 rtk）接入问题。\"\n ---\n \n <!-- argument-hint: [topic, framework name, or chapter number] -->\n+<!-- 安装/配置类问题先查 ch16-user-guide-dev.md，再动手试错。 -->\n \n # DeepSeek Harness（dsh）架构知识库\n **来源**: DeepSeek Harness 官方中文技术文档（docs/*.zh.md） | **源文件**: ~107 篇 | **章节**: 16 | **生成**: 2026-09-02\n"
+    },
+    {
+      "skill": "test-design-gate",
+      "change": "Require a post-install verification step: after installing or adapting any skill or plugin, load it once and confirm it resolves.",
+      "evidence": "Session 78aeb77b installed skill-doctor and session 4cd5a757 handled setup without either ending on a verified load; 4cd5a757 scored code-quality 'block' for exactly this gap.",
+      "proposed_path": null,
+      "diff": ""
+    },
+    {
+      "skill": "skill-doctor",
+      "change": "Default DSH runs to the skill roots DSH actually resolves, not every harness home, so skill_coverage is not diluted by unloadable skills.",
+      "evidence": "With --include-global-skills the collector found 76 skills including 52 from ~/.zcode/skills and 22 from ~/.codex/skills, none of which DSH can load. Scoping to the project root plus the preset dir gives the true 51. Applied in this run.",
+      "proposed_path": null,
+      "diff": ""
+    }
+  ],
+  "cta_url": "https://warp.dev/factories/request-access"
+}
