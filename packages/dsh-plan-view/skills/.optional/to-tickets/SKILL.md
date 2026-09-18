@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # To Tickets
 
+**本 skill 是 plan 流程的环节之一（落地链第二环）。** 它的上游 / 下游 / 交接契约（输入必须是 spec 或待拍板文档、不得手搓票格式）与文档形态约定，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层）。
+
 Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
 ## Process

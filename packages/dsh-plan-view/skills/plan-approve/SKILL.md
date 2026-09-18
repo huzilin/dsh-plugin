@@ -4,6 +4,8 @@ description: Settle the plan documents waiting on you — read every pending doc
 disable-model-invocation: true
 ---
 
+**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（to-tickets / 归档）、交接契约与文档形态约定，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层，先读那份再读本文件的 how）。
+
 You have decisions waiting. They are scattered across the `.plan/` documents that carry `status: pending`, some written days ago, some overtaken by later work, some still live. Reading them one at a time to find out which is which is the work this skill removes.
 
 **The first job is not to ask — it is to check.** Several `pending` documents are usually lying: their items were decided, superseded, or fixed in a later session, and nobody turned the status. Asking about those wastes the very attention the document was written to protect. So verify first, ask only about what survives.
@@ -50,6 +52,7 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
    - **When the ruling calls for work, produce the ticket by invoking `to-tickets`** — not by hand-writing a file, and not by noting the follow-up in prose and calling it filed. The ruling is not recorded until the ticket exists; name it in the record and link it beside the quoted ruling. A ticket invented by the settling session is shaped by whatever that session felt like, which is how one repo accumulates several incompatible ticket formats that no view can read.
    - **Tickets go one file each**, at `.plan/<effort>/tickets/<id>-<slug>.md`, with frontmatter `type` / `blocked_by` / `status`. `to-tickets` defaults to a single combined `tickets.md`; override that — a reader that loads tickets file-by-file counts a combined file as one ticket and silently loses every ticket inside it.
    - When no ruling calls for work (a question of fact, a choice among existing options), there is nothing to file.
+    - **If the ruling changes an architectural fact, update the charter.** When a ruling settles a bug, gap, or design question whose answer alters the system's layering, domain boundaries, state machines, contracts, or dependency edges — and the repo keeps a single architecture source of truth (novel: `docs/architecture.md`, self-declared "全局架构唯一正本") — correct that document in the same pass. This is the architecture-charter touchpoint for the *supplementary flow* (find-bug → to-approval → plan-approve): a bug fix that silently contradicts the charter is how the charter rots. Do not duplicate the ruling into the charter; update the facts and keep its document map pointing at the approval document that decided it. If the ruling changes no architectural fact, skip this step.
 
    A ruling written only in chat is lost the moment the session ends.
 

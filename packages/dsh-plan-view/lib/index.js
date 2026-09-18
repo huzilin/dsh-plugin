@@ -2420,58 +2420,92 @@ function GuideView({ scope }) {
 			padding: "4px 18px 28px"
 		},
 		children: /* @__PURE__ */ jsxs("div", {
-			style: { maxWidth: 880 },
+			style: { maxWidth: 900 },
 			children: [
 				/* @__PURE__ */ jsx(H, { children: "这个页面是什么" }),
 				/* @__PURE__ */ jsxs(P, { children: [
-					"「路线 / 工单 / 待拍板」三页显示的都是在 ",
+					"路线 / 工单 / 待拍板 三页显示的都是在 ",
 					/* @__PURE__ */ jsx(Code, { children: ".plan/" }),
-					" 下的 markdown。 本页说明这些文件怎么产生、谁维护、怎么流转。"
+					" 下的 markdown。 本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓",
+					/* @__PURE__ */ jsx(Code, { children: "skills/plan-protocol/SKILL.md" }),
+					"，本页是它的可视化速览。"
 				] }),
-				/* @__PURE__ */ jsx(H, { children: "一次工作的完整流转" }),
+				/* @__PURE__ */ jsx(H, { children: "主流程：先决策，再落地" }),
+				/* @__PURE__ */ jsxs(P, { children: [
+					"「",
+					/* @__PURE__ */ jsx("strong", {
+						style: { color: TEXT },
+						children: "已知要做"
+					}),
+					"」时走这条链——把需求写成 spec，再拆票实现。"
+				] }),
+				/* @__PURE__ */ jsx("div", {
+					style: {
+						display: "flex",
+						gap: 5,
+						flexWrap: "wrap",
+						margin: "10px 0",
+						alignItems: "center"
+					},
+					children: /* @__PURE__ */ jsx(Box, {
+						title: "① 决策循环",
+						who: "grill / wayfinder → to-approval → plan-approve",
+						tone: "decide",
+						children: "一轮轮收敛：把模糊决策拷问清楚、落待拍板、逐项拍板"
+					})
+				}),
+				/* @__PURE__ */ jsx("div", {
+					style: {
+						display: "flex",
+						gap: 5,
+						flexWrap: "wrap",
+						margin: "6px 0 4px",
+						alignItems: "center"
+					},
+					children: /* @__PURE__ */ jsx("span", {
+						style: {
+							fontSize: 11,
+							color: TEXT_FAINT,
+							marginRight: 2
+						},
+						children: "决策定案（结论是「要做 X」）↓"
+					})
+				}),
 				/* @__PURE__ */ jsxs("div", {
 					style: {
 						display: "flex",
 						gap: 5,
 						flexWrap: "wrap",
-						margin: "10px 0"
+						margin: "4px 0"
 					},
 					children: [
 						/* @__PURE__ */ jsxs(Box, {
-							title: "① 定需求",
+							title: "② 定需求",
 							who: "to-spec",
 							tone: "ok",
 							children: [
 								"产出 ",
 								/* @__PURE__ */ jsx(Code, { children: "spec.md" }),
-								"：要做什么、边界在哪"
+								"；写前读架构正本、写完更新"
 							]
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
-						/* @__PURE__ */ jsxs(Box, {
-							title: "② 拆票",
+						/* @__PURE__ */ jsx(Box, {
+							title: "③ 拆票",
 							who: "to-tickets",
 							tone: "ok",
-							children: [
-								"每票切穿各层、独立可验证；",
-								/* @__PURE__ */ jsx("br", {}),
-								"写明谁阻塞谁（frontier）"
-							]
+							children: "一票一文件、每票切穿各层、写明谁阻塞谁"
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
-						/* @__PURE__ */ jsxs(Box, {
-							title: "③ 执行",
-							who: "implement-spec / implement",
+						/* @__PURE__ */ jsx(Box, {
+							title: "④ 执行",
+							who: "implement / implement-spec",
 							tone: "ok",
-							children: [
-								"按票图派 subagent，",
-								/* @__PURE__ */ jsx("br", {}),
-								"并行实现、逐个合并"
-							]
+							children: "按票派 subagent，并行实现、逐个合并"
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
 						/* @__PURE__ */ jsxs(Box, {
-							title: "④ 回写",
+							title: "⑤ 回写",
 							who: "plan-sync（执行时同步）",
 							tone: "ok",
 							children: [
@@ -2479,13 +2513,6 @@ function GuideView({ scope }) {
 								/* @__PURE__ */ jsx(Code, { children: "status" }),
 								"、补落地注"
 							]
-						}),
-						/* @__PURE__ */ jsx(Arrow, {}),
-						/* @__PURE__ */ jsx(Box, {
-							title: "⑤ 展示",
-							who: "本插件",
-							tone: "read",
-							children: "读 frontmatter 渲染三页"
 						})
 					]
 				}),
@@ -2494,35 +2521,26 @@ function GuideView({ scope }) {
 					children: [
 						/* @__PURE__ */ jsx("strong", {
 							style: { color: TEXT },
-							children: "回写发生在两处"
+							children: "回写发生在两处，是同一件事的两种时机"
 						}),
-						"：执行类 skill（",
-						/* @__PURE__ */ jsx(Code, { children: "implement-spec" }),
-						" / ",
-						/* @__PURE__ */ jsx(Code, { children: "implement" }),
-						"） 在每张票合并落地时",
+						"：执行类 skill 在每张票合并落地时",
 						/* @__PURE__ */ jsx("strong", {
 							style: { color: TEXT },
 							children: "当场"
 						}),
 						"翻状态；",
 						/* @__PURE__ */ jsx(Code, { children: "plan-sync" }),
-						" 用于事后对账——把「看起来已完成、票面还没翻」的条目找回来补齐。 两者是同一件事的两种时机，不是两条流程。"
+						" 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两条流程。"
 					]
 				}),
-				/* @__PURE__ */ jsx(H, { children: "待拍板在这条链上的位置" }),
+				/* @__PURE__ */ jsx(H, { children: "补充流程：执行中暴露的问题" }),
 				/* @__PURE__ */ jsxs(P, { children: [
-					"上面那条链是「",
+					"「",
 					/* @__PURE__ */ jsx("strong", {
 						style: { color: TEXT },
-						children: "已经决定要做"
+						children: "发现一个 bug / 缺口"
 					}),
-					"之后怎么落地」。 而「",
-					/* @__PURE__ */ jsx("strong", {
-						style: { color: TEXT },
-						children: "要不要做、怎么做"
-					}),
-					"」本身也要先定——那就是待拍板："
+					"」时走这条链——先拍板定论，依据就是拍板文档本身。"
 				] }),
 				/* @__PURE__ */ jsxs("div", {
 					style: {
@@ -2532,63 +2550,54 @@ function GuideView({ scope }) {
 						margin: "10px 0"
 					},
 					children: [
-						/* @__PURE__ */ jsxs(Box, {
-							title: "讨论 / 拷问",
-							who: "grilling",
+						/* @__PURE__ */ jsx(Box, {
+							title: "发现",
+							who: "find-bug",
 							tone: "decide",
-							children: [
-								"一次问一个决策，",
-								/* @__PURE__ */ jsx("br", {}),
-								"问题先落成文档"
-							]
+							children: "执行 / 测试中暴露的问题"
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
 						/* @__PURE__ */ jsxs(Box, {
 							title: "待拍板文档",
-							who: "to-approval",
+							who: "to-approval → plan-approve",
 							tone: "decide",
-							children: [
-								/* @__PURE__ */ jsx(Code, { children: "status: pending" }),
-								/* @__PURE__ */ jsx("br", {}),
-								"「待拍板」页列出"
-							]
+							children: ["落文档、拍板；", /* @__PURE__ */ jsx("strong", {
+								style: { color: TEXT },
+								children: "依据 = 这份文档本身"
+							})]
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
-						/* @__PURE__ */ jsxs(Box, {
-							title: "你拍板",
-							who: "plan-approve",
-							tone: "decide",
-							children: [
-								"逐项核定、录结论、",
-								/* @__PURE__ */ jsx("br", {}),
-								"推进文档状态"
-							]
+						/* @__PURE__ */ jsx(Box, {
+							title: "依据",
+							who: "（不追加、不新建 spec）",
+							tone: "read",
+							children: "拍板文档自带原话 + 争议 + 结论，天然当上游"
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
-						/* @__PURE__ */ jsxs(Box, {
-							title: "结论是工单",
-							who: "to-tickets",
+						/* @__PURE__ */ jsx(Box, {
+							title: "接回落地链",
+							who: "to-tickets → implement → plan-sync",
 							tone: "ok",
-							children: [
-								"当场生成标准票，",
-								/* @__PURE__ */ jsx("br", {}),
-								"接回上面的 ②"
-							]
+							children: "同上 ③ ④ ⑤"
 						})
 					]
 				}),
 				/* @__PURE__ */ jsxs(P, { children: [
-					"两条链在「",
+					"两条流在「",
 					/* @__PURE__ */ jsx("strong", {
 						style: { color: TEXT },
 						children: "结论 = 要做某件事"
 					}),
-					"」处汇合： 拍板结论若要求干活，",
+					"」处汇合：拍板结论若要求干活，",
 					/* @__PURE__ */ jsx("strong", {
 						style: { color: TEXT },
-						children: "同一轮就该落成票"
+						children: "同一轮就该落成标准票"
 					}),
-					"， 而不是把结论留在文档里等人再拆一次。"
+					"（",
+					/* @__PURE__ */ jsx(Code, { children: "plan-approve" }),
+					" 调 ",
+					/* @__PURE__ */ jsx(Code, { children: "to-tickets" }),
+					"），而不是把结论留在文档里等人再拆一次。"
 				] }),
 				/* @__PURE__ */ jsx(H, { children: "票的形态约定" }),
 				/* @__PURE__ */ jsxs(P, { children: [
@@ -2698,6 +2707,21 @@ function GuideView({ scope }) {
 							children: [
 								/* @__PURE__ */ jsx("strong", {
 									style: { color: TEXT },
+									children: "归档在哪？"
+								}),
+								/* @__PURE__ */ jsx("br", {}),
+								"已完成内容由 ",
+								/* @__PURE__ */ jsx(Code, { children: "plan-archive" }),
+								"（手动触发）迁到 ",
+								/* @__PURE__ */ jsx(Code, { children: ".archive/" }),
+								"， 并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。"
+							]
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							style: { margin: "10px 0" },
+							children: [
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
 									children: "历史遗留的 impl/ 、impl-fe/ 目录？"
 								}),
 								/* @__PURE__ */ jsx("br", {}),
@@ -2719,7 +2743,9 @@ function GuideView({ scope }) {
 					children: [
 						"本页内容随约定演进；若与 ",
 						/* @__PURE__ */ jsx(Code, { children: "skills/" }),
-						" 下的 skill 正文冲突，以 skill 为准。"
+						" 下的 skill 正文或 ",
+						/* @__PURE__ */ jsx(Code, { children: "plan-protocol" }),
+						" 冲突，以 skill 为准。"
 					]
 				})
 			]

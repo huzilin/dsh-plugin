@@ -4,6 +4,8 @@ description: Reconcile `.plan/` tickets with what actually shipped — read ever
 disable-model-invocation: true
 ---
 
+**本 skill 是 plan 流程的环节之一（落地链收尾对账）。** 它在流程中的位置、回写两时机的约定、与 implement* 的分工，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层）。
+
 A ticket's `status` is a claim, and nothing enforces it. Work gets finished in a session that never went back to turn the field; other work gets marked done and the acceptance boxes stay empty. The ticket file then tells the next session something untrue — either "still to do" about finished work, or "finished" with no evidence for it.
 
 This skill closes that loop. It is the fourth step of the lifecycle the plan view documents: `to-spec` writes the requirement, `to-tickets` splits it, the implementation skills build it — and this one reconciles what was built with what the tickets claim.

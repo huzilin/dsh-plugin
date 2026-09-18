@@ -1100,75 +1100,73 @@ function GuideView({ scope }: { scope: SessionScope }) {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '4px 18px 28px' }}>
-      <div style={{ maxWidth: 880 }}>
+      <div style={{ maxWidth: 900 }}>
 
         <H>这个页面是什么</H>
         <P>
-          「路线 / 工单 / 待拍板」三页显示的都是在 <Code>.plan/</Code> 下的 markdown。
-          本页说明这些文件怎么产生、谁维护、怎么流转。
+          路线 / 工单 / 待拍板 三页显示的都是在 <Code>.plan/</Code> 下的 markdown。
+          本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓
+          <Code>skills/plan-protocol/SKILL.md</Code>，本页是它的可视化速览。
         </P>
 
-        <H>一次工作的完整流转</H>
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0' }}>
-          <Box title="① 定需求" who="to-spec" tone="ok">
-            产出 <Code>spec.md</Code>：要做什么、边界在哪
+        <H>主流程：先决策，再落地</H>
+        <P>「<strong style={{ color: TEXT }}>已知要做</strong>」时走这条链——把需求写成 spec，再拆票实现。</P>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0', alignItems: 'center' }}>
+          <Box title="① 决策循环" who="grill / wayfinder → to-approval → plan-approve" tone="decide">
+            一轮轮收敛：把模糊决策拷问清楚、落待拍板、逐项拍板
+          </Box>
+        </div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '6px 0 4px', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: TEXT_FAINT, marginRight: 2 }}>决策定案（结论是「要做 X」）↓</span>
+        </div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '4px 0' }}>
+          <Box title="② 定需求" who="to-spec" tone="ok">
+            产出 <Code>spec.md</Code>；写前读架构正本、写完更新
           </Box>
           <Arrow />
-          <Box title="② 拆票" who="to-tickets" tone="ok">
-            每票切穿各层、独立可验证；<br />写明谁阻塞谁（frontier）
+          <Box title="③ 拆票" who="to-tickets" tone="ok">
+            一票一文件、每票切穿各层、写明谁阻塞谁
           </Box>
           <Arrow />
-          <Box title="③ 执行" who="implement-spec / implement" tone="ok">
-            按票图派 subagent，<br />并行实现、逐个合并
+          <Box title="④ 执行" who="implement / implement-spec" tone="ok">
+            按票派 subagent，并行实现、逐个合并
           </Box>
           <Arrow />
-          <Box title="④ 回写" who="plan-sync（执行时同步）" tone="ok">
+          <Box title="⑤ 回写" who="plan-sync（执行时同步）" tone="ok">
             勾验收项、置 <Code>status</Code>、补落地注
-          </Box>
-          <Arrow />
-          <Box title="⑤ 展示" who="本插件" tone="read">
-            读 frontmatter 渲染三页
           </Box>
         </div>
         <P style={{ marginTop: 2 }}>
-          <strong style={{ color: TEXT }}>回写发生在两处</strong>：执行类 skill（<Code>implement-spec</Code> / <Code>implement</Code>）
-          在每张票合并落地时<strong style={{ color: TEXT }}>当场</strong>翻状态；
-          <Code>plan-sync</Code> 用于事后对账——把「看起来已完成、票面还没翻」的条目找回来补齐。
-          两者是同一件事的两种时机，不是两条流程。
+          <strong style={{ color: TEXT }}>回写发生在两处，是同一件事的两种时机</strong>：执行类 skill 在每张票合并落地时<strong style={{ color: TEXT }}>当场</strong>翻状态；
+          <Code>plan-sync</Code> 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两条流程。
         </P>
 
-        <H>待拍板在这条链上的位置</H>
-        <P>
-          上面那条链是「<strong style={{ color: TEXT }}>已经决定要做</strong>之后怎么落地」。
-          而「<strong style={{ color: TEXT }}>要不要做、怎么做</strong>」本身也要先定——那就是待拍板：
-        </P>
+        <H>补充流程：执行中暴露的问题</H>
+        <P>「<strong style={{ color: TEXT }}>发现一个 bug / 缺口</strong>」时走这条链——先拍板定论，依据就是拍板文档本身。</P>
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0' }}>
-          <Box title="讨论 / 拷问" who="grilling" tone="decide">
-            一次问一个决策，<br />问题先落成文档
+          <Box title="发现" who="find-bug" tone="decide">
+            执行 / 测试中暴露的问题
           </Box>
           <Arrow />
-          <Box title="待拍板文档" who="to-approval" tone="decide">
-            <Code>status: pending</Code><br />「待拍板」页列出
+          <Box title="待拍板文档" who="to-approval → plan-approve" tone="decide">
+            落文档、拍板；<strong style={{ color: TEXT }}>依据 = 这份文档本身</strong>
           </Box>
           <Arrow />
-          <Box title="你拍板" who="plan-approve" tone="decide">
-            逐项核定、录结论、<br />推进文档状态
+          <Box title="依据" who="（不追加、不新建 spec）" tone="read">
+            拍板文档自带原话 + 争议 + 结论，天然当上游
           </Box>
           <Arrow />
-          <Box title="结论是工单" who="to-tickets" tone="ok">
-            当场生成标准票，<br />接回上面的 ②
+          <Box title="接回落地链" who="to-tickets → implement → plan-sync" tone="ok">
+            同上 ③ ④ ⑤
           </Box>
         </div>
         <P>
-          两条链在「<strong style={{ color: TEXT }}>结论 = 要做某件事</strong>」处汇合：
-          拍板结论若要求干活，<strong style={{ color: TEXT }}>同一轮就该落成票</strong>，
-          而不是把结论留在文档里等人再拆一次。
+          两条流在「<strong style={{ color: TEXT }}>结论 = 要做某件事</strong>」处汇合：拍板结论若要求干活，<strong style={{ color: TEXT }}>同一轮就该落成标准票</strong>
+          （<Code>plan-approve</Code> 调 <Code>to-tickets</Code>），而不是把结论留在文档里等人再拆一次。
         </P>
 
         <H>票的形态约定</H>
-        <P>
-          一个 effort 目录下，票按<strong style={{ color: TEXT }}>一票一文件</strong>放：
-        </P>
+        <P>一个 effort 目录下，票按<strong style={{ color: TEXT }}>一票一文件</strong>放：</P>
         <div style={{ fontSize: 12, lineHeight: 1.9, color: TEXT_DIM, background: '#141416', border: `1px solid ${BORDER_LIGHT}`, borderRadius: 8, padding: '10px 14px', margin: '8px 0', fontFamily: 'ui-monospace,Menlo,monospace' }}>
           .plan/&lt;effort&gt;/<br />
           &nbsp;&nbsp;map.md &nbsp;<span style={{ color: TEXT_FAINT }}>← effort 标志：没有它，整个目录不被加载</span><br />
@@ -1197,6 +1195,11 @@ function GuideView({ scope }: { scope: SessionScope }) {
             两者都不擅自改。
           </div>
           <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>归档在哪？</strong><br />
+            已完成内容由 <Code>plan-archive</Code>（手动触发）迁到 <Code>.archive/</Code>，
+            并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。
+          </div>
+          <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
             那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「工单」页，不再单独成页；
             收尾时会清理并入 <Code>tickets/</Code>。
@@ -1204,13 +1207,12 @@ function GuideView({ scope }: { scope: SessionScope }) {
         </div>
 
         <div style={{ marginTop: 22, paddingTop: 12, borderTop: `1px solid ${BORDER_LIGHT}`, fontSize: 11, color: TEXT_FAINT }}>
-          本页内容随约定演进；若与 <Code>skills/</Code> 下的 skill 正文冲突，以 skill 为准。
+          本页内容随约定演进；若与 <Code>skills/</Code> 下的 skill 正文或 <Code>plan-protocol</Code> 冲突，以 skill 为准。
         </div>
       </div>
     </div>
   )
 }
-
 function approvalState(t: ParsedTicket): ApprovalFilter {
   const w = statusWord(t)
   if (w === 'pending') return 'pending'
