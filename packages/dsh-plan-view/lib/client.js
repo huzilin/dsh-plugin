@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
 		let react_jsx_runtime = require("react/jsx-runtime");
-		//#region ../../../../dsh-plugin/packages/dsh-plan-view/src/client/api.ts
+		//#region src/client/api.ts
 		async function call(method, payload) {
 			const resp = await fetch(`/sidebar/api/${method}`, {
 				method: "POST",
@@ -14,7 +14,7 @@ window.__ModuleLoader__.load({
 				body: JSON.stringify(payload)
 			});
 			const parsed = await resp.json();
-			if (!resp.ok || parsed?.ok !== true || parsed?.value === void 0) throw new Error(parsed?.error?.message ?? `HTTP ${resp.status}`);
+			if (!resp.ok || parsed?.ok !== true) throw new Error(parsed?.error?.message ?? `HTTP ${resp.status}`);
 			return parsed.value;
 		}
 		function scopePayload(scope, extra) {
@@ -30,8 +30,60 @@ window.__ModuleLoader__.load({
 		async function fsRead(scope, path) {
 			return call("fs.read", scopePayload(scope, { path }));
 		}
+		async function fsWrite(scope, path, content) {
+			await call("fs.write", scopePayload(scope, {
+				path,
+				content
+			}));
+		}
+		async function rpc(method, args) {
+			const resp = await fetch(`/api/${method}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					type: "client-request",
+					rpcId: crypto.randomUUID(),
+					method,
+					payload: { args }
+				})
+			});
+			const full = await resp.json();
+			if (!resp.ok || full.result?.ok !== true) throw new Error(full.result?.error?.message ?? `HTTP ${resp.status}`);
+			return full.result.value;
+		}
+		async function sessionList() {
+			return (await rpc("session/list", { _request: {} })).items;
+		}
+		/** E1 liveness probe: find the session in the list, undefined when absent. */
+		async function sessionAlive(sessionId) {
+			return (await sessionList()).find((s) => s.sessionId === sessionId);
+		}
+		async function sessionCreate(cwd) {
+			return (await rpc("session/create", { _request: cwd === void 0 ? {} : { cwd } })).sessionId;
+		}
+		/** Non-blocking dispatch: queue one human message on the session's inbox. */
+		async function sessionPrompt(sessionId, text) {
+			await rpc("session/prompt", { _request: {
+				requestId: crypto.randomUUID(),
+				sessionId,
+				mode: "queue",
+				content: [{
+					type: "text",
+					text
+				}],
+				clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+			} });
+		}
+		/** Run one slash command (e.g. `/plan-approve <doc>`) inside a session. */
+		async function commandExecute(agentId, line) {
+			return rpc("commands/execute", {
+				agentId,
+				line,
+				submittedAttachments: []
+			});
+		}
 		//#endregion
-		//#region ../../../../dsh-plugin/packages/dsh-plan-view/src/client/PlanView.tsx
+		//#region src/client/PlanView.tsx
 		/**
 		* Plan view v2: reads .plan/ wayfinder maps, derives ticket status per
 		* the TRACKER-MARKDOWN contract, and renders three views:
@@ -75,8 +127,27 @@ window.__ModuleLoader__.load({
 				status: fm.status,
 				date: fm.date,
 				origin: fm.origin,
+				session: fm.session,
+				originSession: fm["origin_session"],
 				body
 			};
+		}
+		/**
+		* Set (or add) one frontmatter key in a raw document, preserving everything
+		* else. This is the B1 write-back: dispatching work from the plan view binds
+		* the session id onto the ticket so the next click jumps back instead of
+		* forking a new session.
+		*/
+		function upsertFrontmatterKey(raw, key, value) {
+			const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+			if (m && m[1] != null) {
+				const lines = m[1].split("\n");
+				const i = lines.findIndex((l) => l.startsWith(`${key}:`));
+				if (i >= 0) lines[i] = `${key}: ${value}`;
+				else lines.push(`${key}: ${value}`);
+				return `---\n${lines.join("\n")}\n---\n${m[2] ?? ""}`;
+			}
+			return `---\n${key}: ${value}\n---\n\n${raw}`;
 		}
 		const DONE_STATUS = new Set([
 			"done",
@@ -465,8 +536,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				efforts
 			};
 		}
-		function DetailModal({ ticket, planDir, scope, onClose }) {
+		const shortSession = (id) => id.replace(/^session-/, "").slice(0, 8);
+		const EXPLORE_PROMPT = (t) => `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档。`;
+		const ADVANCE_PROMPT = (t) => `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`;
+		function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose }) {
 			const [fullBody, setFullBody] = (0, react.useState)(null);
+			const [busy, setBusy] = (0, react.useState)(null);
+			const [msg, setMsg] = (0, react.useState)(null);
+			const [rebind, setRebind] = (0, react.useState)(false);
 			(0, react.useEffect)(() => {
 				let alive = true;
 				fsRead(scope, ticket.path ?? `${planDir}/tickets/${ticket.file}`).then((r) => {
@@ -481,7 +558,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				planDir,
 				scope
 			]);
-			const body = fullBody ?? ticket.body;
 			(0, react.useEffect)(() => {
 				const onKey = (e) => {
 					if (e.key === "Escape") onClose();
@@ -489,6 +565,155 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				window.addEventListener("keydown", onKey);
 				return () => window.removeEventListener("keydown", onKey);
 			}, [onClose]);
+			const openInGui = (sessionId) => {
+				if (ctx?.uiWorkspace?.openSession === void 0) {
+					setMsg("此环境没有跳转能力（uiWorkspace 不可用）。");
+					return false;
+				}
+				ctx.uiWorkspace.openSession(sessionId);
+				return true;
+			};
+			/** Pure jump with the E1 liveness check. */
+			const jump = async (sessionId) => {
+				setMsg(null);
+				setBusy("jump");
+				try {
+					if (await sessionAlive(sessionId) === void 0) {
+						setMsg("该 session 已不可用（可能已被回收）。");
+						return;
+					}
+					openInGui(sessionId);
+				} catch (e) {
+					setMsg(`查询 session 失败：${e.message}`);
+				} finally {
+					setBusy(null);
+				}
+			};
+			/** Create a session bound to this repo, write the B1 binding, dispatch, jump. */
+			const createAndBind = async (promptText) => {
+				setMsg(null);
+				setRebind(false);
+				setBusy("create");
+				try {
+					const sessionId = await sessionCreate(scope.cwd);
+					const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`;
+					const raw = await fsRead(scope, target);
+					if (raw.kind === "text") await fsWrite(scope, target, upsertFrontmatterKey(raw.content, "session", sessionId));
+					await sessionPrompt(sessionId, promptText);
+					openInGui(sessionId);
+					onChanged();
+					setMsg(`已在新 session ${shortSession(sessionId)} 派活（非阻塞），绑定已写回票面。`);
+				} catch (e) {
+					setMsg(`派发失败：${e.message}`);
+				} finally {
+					setBusy(null);
+				}
+			};
+			/** ①/② dispatch on a ticket: jump back when bound, create when not. */
+			const dispatchTicket = async (mode) => {
+				const promptText = mode === "explore" ? EXPLORE_PROMPT(ticket) : ADVANCE_PROMPT(ticket);
+				if (!ticket.session) {
+					await createAndBind(promptText);
+					return;
+				}
+				setMsg(null);
+				setBusy(mode);
+				try {
+					if (await sessionAlive(ticket.session) === void 0) {
+						setRebind(true);
+						setMsg("绑定的 session 已不可用。可新建 session 并重新绑定。");
+						return;
+					}
+					await sessionPrompt(ticket.session, promptText);
+					openInGui(ticket.session);
+					onChanged();
+					setMsg(`已派给 session ${shortSession(ticket.session)}（非阻塞）。`);
+				} catch (e) {
+					setMsg(`派发失败：${e.message}`);
+				} finally {
+					setBusy(null);
+				}
+			};
+			/** ③ 拍板: run /plan-approve in the origin session, or this one. */
+			const settle = async () => {
+				setMsg(null);
+				setBusy("settle");
+				try {
+					let target = ticket.originSession;
+					if (target !== void 0) {
+						if (await sessionAlive(target) === void 0) target = void 0;
+					}
+					const at = target ?? scope.sessionId;
+					await commandExecute(at, `/plan-approve ${ticket.file}`);
+					onChanged();
+					setMsg(`已在 session ${shortSession(at)} 派 /plan-approve（非阻塞）。`);
+				} catch (e) {
+					setMsg(`拍板派发失败：${e.message}`);
+				} finally {
+					setBusy(null);
+				}
+			};
+			const kind = ticketKind(ticket);
+			const pending = isPending(ticket);
+			const boundLive = ticket.session !== void 0 ? sessions.get(ticket.session) : void 0;
+			const btn = (label, onClick, key, tone = ACCENT) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				disabled: busy !== null,
+				onClick,
+				style: {
+					padding: "5px 12px",
+					borderRadius: 7,
+					border: `1px solid ${tone}`,
+					background: `${tone}1a`,
+					color: tone,
+					cursor: busy === null ? "pointer" : "default",
+					fontSize: 12,
+					fontWeight: 600,
+					opacity: busy === null || busy === key ? 1 : .5
+				},
+				children: busy === key ? "…" : label
+			});
+			const actions = [];
+			if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
+				actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
+				actions.push(btn("取消", () => {
+					setRebind(false);
+					setMsg(null);
+				}, "cancel", "#666"));
+			} else {
+				if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
+				actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+			}
+			if (kind === "approval" && pending) actions.push(btn("✅ 拍板（派 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
+			const jumps = [];
+			if (ticket.session !== void 0) jumps.push([ticket.session, "绑定 session"]);
+			if (ticket.originSession !== void 0) jumps.push([ticket.originSession, "来源 session"]);
+			const body = fullBody ?? ticket.body;
+			const chipRow = jumps.map(([id, label]) => {
+				const live = sessions.get(id);
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					title: `${label}: ${id}${live === void 0 ? "（已不可用）" : live.running ? "（运行中）" : "（空闲）"}`,
+					onClick: () => {
+						if (busy === null) jump(id);
+					},
+					style: {
+						fontSize: 11,
+						padding: "2px 9px",
+						borderRadius: 999,
+						background: live !== void 0 ? "#2ecc7118" : CHIP_BG,
+						color: live !== void 0 ? "#4ed17e" : "#888",
+						border: `1px solid ${BORDER}`,
+						cursor: "pointer"
+					},
+					children: [
+						live === void 0 ? "⚪" : live.running ? "🟢" : "⚪",
+						" ",
+						label,
+						" ",
+						shortSession(id)
+					]
+				}, id);
+			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					position: "fixed",
@@ -656,6 +881,36 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										color: "#f2555a"
 									},
 									children: ["blocked_by: ", ticket.blockedBy.map((n) => `#${n}`).join(", ")]
+								}),
+								chipRow
+							]
+						}),
+						(actions.length > 0 || msg !== null) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								padding: "10px 20px",
+								borderBottom: `1px solid ${BORDER_LIGHT}`,
+								display: "flex",
+								gap: 8,
+								alignItems: "center",
+								flexWrap: "wrap"
+							},
+							children: [
+								actions,
+								boundLive?.running === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: {
+										fontSize: 11,
+										color: "#4ed17e"
+									},
+									children: "🟢 session 运行中"
+								}),
+								msg !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: {
+										fontSize: 12,
+										color: TEXT_DIM,
+										flex: 1,
+										minWidth: 200
+									},
+									children: msg
 								})
 							]
 						}),
@@ -673,7 +928,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				})
 			});
 		}
-		function ViewA({ tickets, planDir, scope, destination }) {
+		function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const groups = (0, react.useMemo)(() => {
 				const g = {
@@ -1015,12 +1270,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						ticket: focus,
 						planDir,
 						scope,
+						ctx,
+						sessions,
+						onChanged,
 						onClose: () => setFocus(null)
 					})
 				]
 			});
 		}
-		function ViewC({ tickets, planDir, scope }) {
+		function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged }) {
 			const [query, setQuery] = (0, react.useState)("");
 			const OUTSTANDING = ["open", "claimed"];
 			const [statusSet, setStatusSet] = (0, react.useState)(() => new Set(OUTSTANDING));
@@ -1569,6 +1827,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						ticket: detail,
 						planDir,
 						scope,
+						ctx,
+						sessions,
+						onChanged,
 						onClose: () => setDetail(null)
 					})
 				]
@@ -1698,7 +1959,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				endCapY: endY - CAP_H / 2
 			};
 		}
-		function ViewD({ tickets, planDir, scope }) {
+		function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged }) {
 			const [sel, setSel] = (0, react.useState)(null);
 			const [hover, setHover] = (0, react.useState)(null);
 			const { pos, sidePos, edges, W, H, capX, startCapY, endCapY, endY } = (0, react.useMemo)(() => layoutGraph(tickets), [tickets]);
@@ -2049,19 +2310,307 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						ticket: focus,
 						planDir,
 						scope,
+						ctx,
+						sessions,
+						onChanged,
 						onClose: () => setSel(null)
 					})
 				]
 			});
 		}
+		function effortStage(own) {
+			const open = own.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed"));
+			const pend = own.filter((t) => ticketKind(t) === "approval" && isPending(t));
+			const byId = new Map(own.map((t) => [t.id, t]));
+			const unmet = (t) => t.blockedBy.some((r) => {
+				const b = resolveRef(r, byId);
+				const bt = b === void 0 ? void 0 : byId.get(b);
+				return bt !== void 0 && (displayStatus(bt) === "open" || displayStatus(bt) === "claimed");
+			});
+			const frontier = open.filter((t) => !unmet(t));
+			if (open.length > 0) return frontier.length > 0 ? {
+				stage: "② 落地链中",
+				color: ACCENT_SOFT
+			} : {
+				stage: "⛔ 卡 blocked",
+				color: "#f2555a"
+			};
+			if (pend.length > 0) return {
+				stage: "① 决策循环中",
+				color: "#f7ad31"
+			};
+			return {
+				stage: "✅ 收口",
+				color: "#4ed17e"
+			};
+		}
+		function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged }) {
+			const [focus, setFocus] = (0, react.useState)(null);
+			const byId = new Map(tickets.map((t) => [t.id, t]));
+			const unmetBlocker = (t) => t.blockedBy.some((r) => {
+				const b = resolveRef(r, byId);
+				const bt = b === void 0 ? void 0 : byId.get(b);
+				return bt !== void 0 && (displayStatus(bt) === "open" || displayStatus(bt) === "claimed");
+			});
+			const oldestPending = (0, react.useMemo)(() => tickets.filter((t) => ticketKind(t) === "approval" && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [tickets]);
+			const longestBlocked = (0, react.useMemo)(() => tickets.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed") && unmetBlocker(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [tickets]);
+			const running = (0, react.useMemo)(() => tickets.filter((t) => t.session !== void 0 && (displayStatus(t) === "open" || displayStatus(t) === "claimed")), [tickets]);
+			const row = (t, right) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				onClick: () => setFocus(t),
+				style: {
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					padding: "6px 8px",
+					borderRadius: 7,
+					cursor: "pointer",
+					background: "transparent"
+				},
+				onMouseEnter: (e) => {
+					e.currentTarget.style.background = RAISED;
+				},
+				onMouseLeave: (e) => {
+					e.currentTarget.style.background = "transparent";
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							fontSize: 10,
+							fontFamily: "monospace",
+							color: TEXT_FAINT,
+							minWidth: 28
+						},
+						children: shortId(t)
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							flex: 1,
+							fontSize: 12.5,
+							color: TEXT,
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+							whiteSpace: "nowrap"
+						},
+						children: t.title
+					}),
+					right
+				]
+			}, `${t.effort}/${t.file}`);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					overflowY: "auto",
+					padding: 14,
+					display: "flex",
+					flexDirection: "column",
+					gap: 12
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						style: {
+							display: "flex",
+							gap: 10,
+							flexWrap: "wrap"
+						},
+						children: efforts.map((e) => {
+							const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
+							const work = own.filter((t) => ticketKind(t) === "ticket" && !t.outOfScope);
+							const done = work.filter((t) => t.resolved).length;
+							const pct = work.length > 0 ? Math.round(done / work.length * 100) : 0;
+							const { stage, color } = effortStage(own);
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									flex: "1 1 220px",
+									minWidth: 220,
+									padding: "10px 12px",
+									borderRadius: 10,
+									background: CARD,
+									border: `1px solid ${BORDER}`,
+									borderTop: `3px solid ${color}`
+								},
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											fontSize: 11,
+											color: TEXT_FAINT,
+											fontFamily: "monospace",
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											whiteSpace: "nowrap"
+										},
+										children: e.dir.split("/").pop()
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											fontSize: 15,
+											fontWeight: 700,
+											color,
+											margin: "3px 0 6px"
+										},
+										children: stage
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											height: 5,
+											borderRadius: 3,
+											background: CHIP_BG,
+											overflow: "hidden"
+										},
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+											height: "100%",
+											width: `${pct}%`,
+											background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
+										} })
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											fontSize: 11,
+											color: TEXT_FAINT,
+											marginTop: 5
+										},
+										children: [
+											pct,
+											"% · ",
+											work.length - done,
+											" 张在途 · ",
+											own.filter((t) => ticketKind(t) === "approval" && isPending(t)).length,
+											" 待拍板"
+										]
+									})
+								]
+							}, e.dir);
+						})
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: 12,
+							flexWrap: "wrap"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								flex: "1 1 320px",
+								minWidth: 300,
+								padding: "10px 12px",
+								borderRadius: 10,
+								background: CARD,
+								border: `1px solid ${BORDER}`
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontSize: 12,
+									fontWeight: 700,
+									color: "#f7ad31",
+									marginBottom: 6
+								},
+								children: "⏳ 最久待拍板"
+							}), oldestPending.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontSize: 12,
+									color: TEXT_FAINT
+								},
+								children: "没有挂起的拍板。"
+							}) : oldestPending.map((t) => row(t, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: {
+									fontSize: 11,
+									color: "#f7ad31",
+									flexShrink: 0
+								},
+								children: ageLabel(t) ?? "pending"
+							})))]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								flex: "1 1 320px",
+								minWidth: 300,
+								padding: "10px 12px",
+								borderRadius: 10,
+								background: CARD,
+								border: `1px solid ${BORDER}`
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontSize: 12,
+									fontWeight: 700,
+									color: "#f2555a",
+									marginBottom: 6
+								},
+								children: "⛔ 最长等待 blocker"
+							}), longestBlocked.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontSize: 12,
+									color: TEXT_FAINT
+								},
+								children: "没有等依赖的票。"
+							}) : longestBlocked.map((t) => row(t, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: {
+									fontSize: 11,
+									color: "#f2555a",
+									fontFamily: "monospace",
+									flexShrink: 0
+								},
+								children: t.blockedBy.map((n) => `#${n}`).join(" ")
+							})))]
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							padding: "10px 12px",
+							borderRadius: 10,
+							background: CARD,
+							border: `1px solid ${BORDER}`
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								fontSize: 12,
+								fontWeight: 700,
+								color: ACCENT_SOFT,
+								marginBottom: 6
+							},
+							children: "🔗 后台任务（绑 session 的在途票）"
+						}), running.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								fontSize: 12,
+								color: TEXT_FAINT
+							},
+							children: "没有。从工单详情里「开始推演 / 推进」会在这里出现。"
+						}) : running.map((t) => {
+							const s = t.session !== void 0 ? sessions.get(t.session) : void 0;
+							return row(t, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								style: {
+									fontSize: 11,
+									fontFamily: "monospace",
+									flexShrink: 0,
+									color: s === void 0 ? "#666" : s.running ? "#4ed17e" : TEXT_FAINT
+								},
+								children: [
+									s === void 0 ? "⚪ 已回收" : s.running ? "🟢 运行中" : "⚪ 空闲",
+									" ",
+									shortSession(t.session)
+								]
+							}));
+						})]
+					}),
+					focus && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
+						ticket: focus,
+						planDir,
+						scope,
+						ctx,
+						sessions,
+						onChanged,
+						onClose: () => setFocus(null)
+					})
+				]
+			});
+		}
 		function PlanView(props) {
-			const { scope } = props;
+			const { ctx, scope } = props;
 			const [data, setData] = (0, react.useState)(null);
 			const [error, setError] = (0, react.useState)(null);
 			const [loading, setLoading] = (0, react.useState)(true);
 			const [top, setTop] = (0, react.useState)("route");
 			const [effortIdx, setEffortIdx] = (0, react.useState)(0);
 			const [variant, setVariant] = (0, react.useState)("A");
+			const [sessions, setSessions] = (0, react.useState)(() => /* @__PURE__ */ new Map());
 			const load = (0, react.useCallback)(async () => {
 				setLoading(true);
 				setError(null);
@@ -2080,9 +2629,19 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					setLoading(false);
 				}
 			}, [scope.sessionId, scope.cwd]);
+			const loadSessions = (0, react.useCallback)(() => {
+				sessionList().then((items) => setSessions(new Map(items.map((s) => [s.sessionId, s])))).catch(() => setSessions(/* @__PURE__ */ new Map()));
+			}, []);
 			(0, react.useEffect)(() => {
 				load();
 			}, [load]);
+			(0, react.useEffect)(() => {
+				loadSessions();
+			}, [loadSessions]);
+			const onChanged = (0, react.useCallback)(() => {
+				load();
+				loadSessions();
+			}, [load, loadSessions]);
 			const all = data?.tickets ?? [];
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
@@ -2167,6 +2726,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			});
 			const tabs = [
 				{
+					id: "overview",
+					label: "🧭 总览",
+					count: approvals.filter((t) => isPending(t)).length
+				},
+				{
 					id: "route",
 					label: "🗺️ 路线",
 					count: mapOwnTickets.length
@@ -2215,7 +2779,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								style: {
 									marginLeft: 5,
 									fontSize: 11,
-									color: t.id === "approvals" && t.count > 0 ? "#f7ad31" : "#777"
+									color: (t.id === "approvals" || t.id === "overview") && t.count > 0 ? "#f7ad31" : "#777"
 								},
 								children: t.count
 							})]
@@ -2311,28 +2875,52 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							tickets: mapTickets,
 							planDir,
 							scope,
+							ctx,
+							sessions,
+							onChanged,
 							destination
 						}),
 						variant === "D" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewD, {
 							tickets: mapTickets,
 							planDir,
-							scope
+							scope,
+							ctx,
+							sessions,
+							onChanged
 						}),
 						variant === "C" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
 							tickets: mapTickets,
 							planDir,
-							scope
+							scope,
+							ctx,
+							sessions,
+							onChanged
 						})
 					] }),
 					top === "tickets" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
 						tickets: mapOwnTickets,
 						planDir,
-						scope
+						scope,
+						ctx,
+						sessions,
+						onChanged
 					}),
 					top === "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideView, { scope }),
 					top === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
 						approvals,
-						scope
+						scope,
+						ctx,
+						sessions,
+						onChanged
+					}),
+					top === "overview" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OverviewView, {
+						tickets: all,
+						efforts: data.efforts,
+						planDir,
+						scope,
+						ctx,
+						sessions,
+						onChanged
 					})
 				]
 			});
@@ -2701,11 +3289,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											children: "看到状态不对怎么办？"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
-										"先跑 ",
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-lint" }),
-										" 查结构性漂移（同票双档、缺 map.md、缺状态头）； 再跑 ",
+										"结构漂移先用只读脚本查：",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "node …/dsh-plan-view/scripts/plan-lint.mjs 仓库根" }),
+										"（同票双档、缺 map.md、缺状态头/非法 status）； 再跑 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
-										" 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。 两者都不擅自改。"
+										" 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。 两者都只报告、不擅自改。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -2762,7 +3350,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			if (statusWord(t) === "pending") return "pending";
 			return "settled";
 		}
-		function ApprovalsView({ approvals, scope }) {
+		function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const [filter, setFilter] = (0, react.useState)("pending");
 			const counts = (0, react.useMemo)(() => ({
@@ -2964,13 +3552,16 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						ticket: focus,
 						planDir: "",
 						scope,
+						ctx,
+						sessions,
+						onChanged,
 						onClose: () => setFocus(null)
 					})
 				]
 			});
 		}
 		//#endregion
-		//#region ../../../../dsh-plugin/packages/dsh-plan-view/src/client/index.tsx
+		//#region src/client/index.tsx
 		const inject = ["betterSidebar", "slots"];
 		function apply(ctx) {
 			ctx.effect(() => ctx.betterSidebar.registerTab({

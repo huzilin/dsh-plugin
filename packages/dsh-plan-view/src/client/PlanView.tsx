@@ -9,7 +9,10 @@
  * Self-contained: uses its own api module, inline styles, zero CSS deps.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fsTree, fsRead, type SessionScope, type FsEntry } from './api'
+import {
+  commandExecute, fsRead, fsTree, fsWrite, sessionAlive, sessionCreate, sessionList, sessionPrompt,
+  type SessionScope, type SessionSummary, type FsEntry,
+} from './api'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +24,8 @@ interface ParsedTicket {
   status: string | undefined  // frontmatter `status` — the portable state field
   date: string | undefined    // frontmatter `date` — used for "how long has this been pending"
   origin: string | undefined  // frontmatter `origin` — why an approval doc exists
+  session: string | undefined       // frontmatter `session` — the session bound to this ticket (B1)
+  originSession: string | undefined // frontmatter `origin_session` — the session that produced an approval (B1)
   path?: string               // resolved fs path, since tickets are not always under tickets/
   effort?: string             // which effort dir this came from; ROOT_GROUP for .plan's own top level
   group?: string              // subdirectory within the effort: 'tickets' | 'impl' | 'impl-fe' | …
@@ -53,8 +58,27 @@ function deriveTicketStatus(file: string, raw: string): ParsedTicket {
     type: fm.type,
     blockedBy: parseBlockedBy(fm.blocked_by),
     resolved: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
-    status: fm.status, date: fm.date, origin: fm.origin, body,
+    status: fm.status, date: fm.date, origin: fm.origin,
+    session: fm.session, originSession: fm['origin_session'], body,
   }
+}
+
+/**
+ * Set (or add) one frontmatter key in a raw document, preserving everything
+ * else. This is the B1 write-back: dispatching work from the plan view binds
+ * the session id onto the ticket so the next click jumps back instead of
+ * forking a new session.
+ */
+function upsertFrontmatterKey(raw: string, key: string, value: string): string {
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
+  if (m && m[1] != null) {
+    const lines = m[1].split('\n')
+    const i = lines.findIndex(l => l.startsWith(`${key}:`))
+    if (i >= 0) lines[i] = `${key}: ${value}`
+    else lines.push(`${key}: ${value}`)
+    return `---\n${lines.join('\n')}\n---\n${m[2] ?? ''}`
+  }
+  return `---\n${key}: ${value}\n---\n\n${raw}`
 }
 
 // Status vocabulary shared by both conventions in the wild: wayfinder's
@@ -469,10 +493,34 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
-// ─── Shared detail modal ─────────────────────────────────────────────────────
+// ─── Shared detail modal + action layer ──────────────────────────────────────
+//
+// Every page opens the same modal, so the actions live here once: ① 开始推演 /
+// ② 推进 on a ticket, ③ 跳转 / 拍板 on a pending approval. Dispatch is
+// non-blocking by construction — session/prompt queues a message and returns —
+// and the binding (frontmatter `session:`) is written back here so the next
+// click jumps back into the same session instead of forking a new one.
 
-function DetailModal({ ticket, planDir, scope, onClose }: { ticket: ParsedTicket; planDir: string; scope: SessionScope; onClose: () => void }) {
+const shortSession = (id: string) => id.replace(/^session-/, '').slice(0, 8)
+
+const EXPLORE_PROMPT = (t: ParsedTicket) =>
+  `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档。`
+const ADVANCE_PROMPT = (t: ParsedTicket) =>
+  `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`
+
+function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose }: {
+  ticket: ParsedTicket
+  planDir: string
+  scope: SessionScope
+  ctx: any
+  sessions: Map<string, SessionSummary>
+  onChanged: () => void
+  onClose: () => void
+}) {
   const [fullBody, setFullBody] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [rebind, setRebind] = useState(false) // E1: bound session died — offering recreate
   useEffect(() => {
     let alive = true
     // `path` is known when the file was discovered; fall back to the wayfinder
@@ -485,13 +533,119 @@ function DetailModal({ ticket, planDir, scope, onClose }: { ticket: ParsedTicket
     })
     return () => { alive = false }
   }, [ticket.file, ticket.path, planDir, scope])
-  const body = fullBody ?? ticket.body
   // Close on Escape, and lock the background from scrolling while open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
+
+  const openInGui = (sessionId: string): boolean => {
+    if (ctx?.uiWorkspace?.openSession === undefined) {
+      setMsg('此环境没有跳转能力（uiWorkspace 不可用）。')
+      return false
+    }
+    ctx.uiWorkspace.openSession(sessionId)
+    return true
+  }
+  /** Pure jump with the E1 liveness check. */
+  const jump = async (sessionId: string) => {
+    setMsg(null); setBusy('jump')
+    try {
+      const live = await sessionAlive(sessionId)
+      if (live === undefined) { setMsg('该 session 已不可用（可能已被回收）。'); return }
+      openInGui(sessionId)
+    } catch (e) { setMsg(`查询 session 失败：${(e as Error).message}`) }
+    finally { setBusy(null) }
+  }
+  /** Create a session bound to this repo, write the B1 binding, dispatch, jump. */
+  const createAndBind = async (promptText: string) => {
+    setMsg(null); setRebind(false); setBusy('create')
+    try {
+      const sessionId = await sessionCreate(scope.cwd)
+      const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`
+      const raw = await fsRead(scope, target)
+      if (raw.kind === 'text') await fsWrite(scope, target, upsertFrontmatterKey(raw.content, 'session', sessionId))
+      await sessionPrompt(sessionId, promptText)
+      openInGui(sessionId)
+      onChanged()
+      setMsg(`已在新 session ${shortSession(sessionId)} 派活（非阻塞），绑定已写回票面。`)
+    } catch (e) { setMsg(`派发失败：${(e as Error).message}`) }
+    finally { setBusy(null) }
+  }
+  /** ①/② dispatch on a ticket: jump back when bound, create when not. */
+  const dispatchTicket = async (mode: 'explore' | 'advance') => {
+    const promptText = mode === 'explore' ? EXPLORE_PROMPT(ticket) : ADVANCE_PROMPT(ticket)
+    if (!ticket.session) { await createAndBind(promptText); return }
+    setMsg(null); setBusy(mode)
+    try {
+      const live = await sessionAlive(ticket.session)
+      if (live === undefined) { setRebind(true); setMsg('绑定的 session 已不可用。可新建 session 并重新绑定。'); return }
+      await sessionPrompt(ticket.session, promptText)
+      openInGui(ticket.session)
+      onChanged()
+      setMsg(`已派给 session ${shortSession(ticket.session)}（非阻塞）。`)
+    } catch (e) { setMsg(`派发失败：${(e as Error).message}`) }
+    finally { setBusy(null) }
+  }
+  /** ③ 拍板: run /plan-approve in the origin session, or this one. */
+  const settle = async () => {
+    setMsg(null); setBusy('settle')
+    try {
+      let target = ticket.originSession
+      if (target !== undefined) {
+        const live = await sessionAlive(target)
+        if (live === undefined) target = undefined
+      }
+      const at = target ?? scope.sessionId
+      await commandExecute(at, `/plan-approve ${ticket.file}`)
+      onChanged()
+      setMsg(`已在 session ${shortSession(at)} 派 /plan-approve（非阻塞）。`)
+    } catch (e) { setMsg(`拍板派发失败：${(e as Error).message}`) }
+    finally { setBusy(null) }
+  }
+
+  const kind = ticketKind(ticket)
+  const pending = isPending(ticket)
+  const boundLive = ticket.session !== undefined ? sessions.get(ticket.session) : undefined
+  const btn = (label: string, onClick: () => void, key: string, tone: string = ACCENT): React.ReactNode => (
+    <button
+      type="button"
+      disabled={busy !== null}
+      onClick={onClick}
+      style={{ padding: '5px 12px', borderRadius: 7, border: `1px solid ${tone}`, background: `${tone}1a`, color: tone, cursor: busy === null ? 'pointer' : 'default', fontSize: 12, fontWeight: 600, opacity: busy === null || busy === key ? 1 : 0.5 }}
+    >
+      {busy === key ? '…' : label}
+    </button>
+  )
+  const actions: React.ReactNode[] = []
+  if (kind === 'ticket') {
+    if (ticket.session !== undefined && rebind) {
+      actions.push(btn('新建 session 并重新绑定', () => void createAndBind(ADVANCE_PROMPT(ticket)), 'create', '#f7ad31'))
+      actions.push(btn('取消', () => { setRebind(false); setMsg(null) }, 'cancel', '#666'))
+    } else {
+      if (ticket.session === undefined) actions.push(btn('🧭 开始推演', () => void dispatchTicket('explore'), 'explore'))
+      actions.push(btn('▶ 推进', () => void dispatchTicket('advance'), 'advance'))
+    }
+  }
+  if (kind === 'approval' && pending) actions.push(btn('✅ 拍板（派 /plan-approve）', () => void settle(), 'settle', '#4ed17e'))
+  const jumps: [string, string][] = []
+  if (ticket.session !== undefined) jumps.push([ticket.session, '绑定 session'])
+  if (ticket.originSession !== undefined) jumps.push([ticket.originSession, '来源 session'])
+  const body = fullBody ?? ticket.body
+  const chipRow: React.ReactNode[] = jumps.map(([id, label]) => {
+    const live = sessions.get(id)
+    return (
+      <span
+        key={id}
+        title={`${label}: ${id}${live === undefined ? '（已不可用）' : live.running ? '（运行中）' : '（空闲）'}`}
+        onClick={() => { if (busy === null) void jump(id) }}
+        style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: live !== undefined ? '#2ecc7118' : CHIP_BG, color: live !== undefined ? '#4ed17e' : '#888', border: `1px solid ${BORDER}`, cursor: 'pointer' }}
+      >
+        {live === undefined ? '⚪' : live.running ? '🟢' : '⚪'} {label} {shortSession(id)}
+      </span>
+    )
+  })
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
       <div style={{ width: 'min(1080px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: HEADER_BG, border: `1px solid ${BORDER}`, borderRadius: 14, boxShadow: '0 16px 48px rgba(0,0,0,.55)' }} onClick={e => e.stopPropagation()}>
@@ -511,7 +665,15 @@ function DetailModal({ ticket, planDir, scope, onClose }: { ticket: ParsedTicket
           {ageLabel(ticket) && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ffa94d22', color: '#f7ad31' }}>{ageLabel(ticket)}</span>}
           {ticket.origin && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: '#888', border: `1px solid ${BORDER}` }}>origin: {ticket.origin}</span>}
           {ticket.blockedBy.length > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ff6b6b22', color: '#f2555a' }}>blocked_by: {ticket.blockedBy.map(n => `#${n}`).join(', ')}</span>}
+          {chipRow}
         </div>
+        {(actions.length > 0 || msg !== null) && (
+          <div style={{ padding: '10px 20px', borderBottom: `1px solid ${BORDER_LIGHT}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {actions}
+            {boundLive?.running === true && <span style={{ fontSize: 11, color: '#4ed17e' }}>🟢 session 运行中</span>}
+            {msg !== null && <span style={{ fontSize: 12, color: TEXT_DIM, flex: 1, minWidth: 200 }}>{msg}</span>}
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 20px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(body) }} />
       </div>
     </div>
@@ -520,7 +682,7 @@ function DetailModal({ ticket, planDir, scope, onClose }: { ticket: ParsedTicket
 
 // ─── Variant A: Kanban ───────────────────────────────────────────────────────
 
-function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; destination: string | null }) {
+function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const groups = useMemo(() => {
     const g: Record<TicketStatus, ParsedTicket[]> = { resolved: [], out_of_scope: [], claimed: [], open: [] }
@@ -591,14 +753,14 @@ function ViewA({ tickets, planDir, scope, destination }: { tickets: ParsedTicket
           </div>
         ))}
       </div>
-      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} onClose={() => setFocus(null)} />}
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} />}
     </div>
   )
 }
 
 // ─── Variant C: Table ────────────────────────────────────────────────────────
 
-function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
+function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void }) {
   const [query, setQuery] = useState('')
   // Default to work still outstanding. Completed tickets are the bulk of a
   // mature repo (here 51 of 55), so showing them by default buries the three
@@ -735,7 +897,7 @@ function ViewC({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
           )}
         </div>
       </div>
-      {detail && <DetailModal ticket={detail} planDir={planDir} scope={scope} onClose={() => setDetail(null)} />}
+      {detail && <DetailModal ticket={detail} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setDetail(null)} />}
     </div>
   )
 }
@@ -842,7 +1004,7 @@ function layoutGraph(tickets: ParsedTicket[]) {
   return { pos, sidePos, edges, W, H, capX: W_MAIN / 2, endY, startCapY: START_Y - CAP_H / 2, endCapY: endY - CAP_H / 2 }
 }
 
-function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope }) {
+function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void }) {
   const [sel, setSel] = useState<string | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const L = useMemo(() => layoutGraph(tickets), [tickets])
@@ -917,17 +1079,133 @@ function ViewD({ tickets, planDir, scope }: { tickets: ParsedTicket[]; planDir: 
           </svg>
         </div>
       </div>
-      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} onClose={() => setSel(null)} />}
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+// ─── Overview (D1): stages + cross-effort stuck points ──────────────────────
+//
+// The route/tickets/approvals tabs each show one slice. This page answers the
+// single question a returning reader actually has: where is everything stuck?
+// Stages derive from the data already loaded — no extra reads — and every row
+// opens the shared modal, where the jump/dispatch actions live.
+
+function effortStage(own: ParsedTicket[]): { stage: string; color: string } {
+  const open = own.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed'))
+  const pend = own.filter(t => ticketKind(t) === 'approval' && isPending(t))
+  const byId = new Map(own.map(t => [t.id, t]))
+  const unmet = (t: ParsedTicket) => t.blockedBy.some(r => {
+    const b = resolveRef(r, byId)
+    const bt = b === undefined ? undefined : byId.get(b)
+    return bt !== undefined && (displayStatus(bt) === 'open' || displayStatus(bt) === 'claimed')
+  })
+  const frontier = open.filter(t => !unmet(t))
+  if (open.length > 0) return frontier.length > 0
+    ? { stage: '② 落地链中', color: ACCENT_SOFT }
+    : { stage: '⛔ 卡 blocked', color: '#f2555a' }
+  if (pend.length > 0) return { stage: '① 决策循环中', color: '#f7ad31' }
+  return { stage: '✅ 收口', color: '#4ed17e' }
+}
+
+function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged }: {
+  tickets: ParsedTicket[]
+  efforts: { dir: string; mapRaw: string }[]
+  planDir: string
+  scope: SessionScope
+  ctx: any
+  sessions: Map<string, SessionSummary>
+  onChanged: () => void
+}) {
+  const [focus, setFocus] = useState<ParsedTicket | null>(null)
+  const byId = new Map(tickets.map(t => [t.id, t]))
+  const unmetBlocker = (t: ParsedTicket) => t.blockedBy.some(r => {
+    const b = resolveRef(r, byId)
+    const bt = b === undefined ? undefined : byId.get(b)
+    return bt !== undefined && (displayStatus(bt) === 'open' || displayStatus(bt) === 'claimed')
+  })
+  const oldestPending = useMemo(
+    () => tickets.filter(t => ticketKind(t) === 'approval' && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5),
+    [tickets],
+  )
+  const longestBlocked = useMemo(
+    () => tickets.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed') && unmetBlocker(t))
+      .sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tickets],
+  )
+  const running = useMemo(
+    () => tickets.filter(t => t.session !== undefined && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')),
+    [tickets],
+  )
+  const row = (t: ParsedTicket, right?: React.ReactNode) => (
+    <div key={`${t.effort}/${t.file}`} onClick={() => setFocus(t)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', background: 'transparent' }}
+      onMouseEnter={e => { e.currentTarget.style.background = RAISED }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
+      <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, minWidth: 28 }}>{shortId(t)}</span>
+      <span style={{ flex: 1, fontSize: 12.5, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+      {right}
+    </div>
+  )
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* 阶段指示 — one card per effort */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {efforts.map(e => {
+          const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
+          const work = own.filter(t => ticketKind(t) === 'ticket' && !t.outOfScope)
+          const done = work.filter(t => t.resolved).length
+          const pct = work.length > 0 ? Math.round((done / work.length) * 100) : 0
+          const { stage, color } = effortStage(own)
+          return (
+            <div key={e.dir} style={{ flex: '1 1 220px', minWidth: 220, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, borderTop: `3px solid ${color}` }}>
+              <div style={{ fontSize: 11, color: TEXT_FAINT, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.dir.split('/').pop()}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color, margin: '3px 0 6px' }}>{stage}</div>
+              <div style={{ height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+              </div>
+              <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>{pct}% · {work.length - done} 张在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板</div>
+            </div>
+          )
+        })}
+      </div>
+      {/* 卡点聚合 */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px', minWidth: 300, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#f7ad31', marginBottom: 6 }}>⏳ 最久待拍板</div>
+          {oldestPending.length === 0 ? <div style={{ fontSize: 12, color: TEXT_FAINT }}>没有挂起的拍板。</div> : oldestPending.map(t => row(t,
+            <span style={{ fontSize: 11, color: '#f7ad31', flexShrink: 0 }}>{ageLabel(t) ?? 'pending'}</span>,
+          ))}
+        </div>
+        <div style={{ flex: '1 1 320px', minWidth: 300, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#f2555a', marginBottom: 6 }}>⛔ 最长等待 blocker</div>
+          {longestBlocked.length === 0 ? <div style={{ fontSize: 12, color: TEXT_FAINT }}>没有等依赖的票。</div> : longestBlocked.map(t => row(t,
+            <span style={{ fontSize: 11, color: '#f2555a', fontFamily: 'monospace', flexShrink: 0 }}>{t.blockedBy.map(n => `#${n}`).join(' ')}</span>,
+          ))}
+        </div>
+      </div>
+      {/* 后台任务（C1）：绑了 session 的在途票 + 运行状态 */}
+      <div style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: ACCENT_SOFT, marginBottom: 6 }}>🔗 后台任务（绑 session 的在途票）</div>
+        {running.length === 0 ? <div style={{ fontSize: 12, color: TEXT_FAINT }}>没有。从工单详情里「开始推演 / 推进」会在这里出现。</div> : running.map(t => {
+          const s = t.session !== undefined ? sessions.get(t.session) : undefined
+          return row(t, (
+            <span style={{ fontSize: 11, fontFamily: 'monospace', flexShrink: 0, color: s === undefined ? '#666' : s.running ? '#4ed17e' : TEXT_FAINT }}>
+              {s === undefined ? '⚪ 已回收' : s.running ? '🟢 运行中' : '⚪ 空闲'} {shortSession(t.session!)}
+            </span>
+          ))
+        })}
+      </div>
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} />}
     </div>
   )
 }
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'route' | 'tickets' | 'guide' | 'approvals'
+type TopView = 'route' | 'tickets' | 'approvals' | 'overview' | 'guide'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
-  const { scope } = props as { scope: SessionScope; tab: any; visible: boolean }
+  const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
   const [data, setData] = useState<PlanData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -935,6 +1213,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const [effortIdx, setEffortIdx] = useState(0)
   // The route view keeps its three renderings of the same map.
   const [variant, setVariant] = useState<'A' | 'C' | 'D'>('A')
+  // Session snapshot for the C1 status chips; refetched alongside the plan so
+  // post-dispatch refreshes see the new running flags too.
+  const [sessions, setSessions] = useState<Map<string, SessionSummary>>(() => new Map())
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     const dir = scope.cwd ? `${scope.cwd}/.plan` : '.plan'
@@ -944,7 +1225,16 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       setData(r)
     } catch { setError('failed') } finally { setLoading(false) }
   }, [scope.sessionId, scope.cwd])
+  const loadSessions = useCallback(() => {
+    sessionList()
+      .then(items => setSessions(new Map(items.map(s => [s.sessionId, s]))))
+      .catch(() => setSessions(new Map()))
+  }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { loadSessions() }, [loadSessions])
+  // Post-dispatch refresh: the plan files may have a new `session:` binding and
+  // the session map may have a new entry — both reread together.
+  const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])
 
   const all = data?.tickets ?? []
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
@@ -1001,6 +1291,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const subBtn = (active: boolean): React.CSSProperties => ({ flex: 1, padding: '5px 0', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11 })
 
   const tabs: { id: TopView; label: string; count: number }[] = [
+    { id: 'overview', label: '🧭 总览', count: approvals.filter(t => isPending(t)).length },
     { id: 'route', label: '🗺️ 路线', count: mapOwnTickets.length },
     { id: 'tickets', label: '🎫 工单', count: mapOwnTickets.length },
     { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
@@ -1013,7 +1304,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
             {t.label}
-            <span style={{ marginLeft: 5, fontSize: 11, color: t.id === 'approvals' && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>
+            <span style={{ marginLeft: 5, fontSize: 11, color: (t.id === 'approvals' || t.id === 'overview') && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>
           </button>
         ))}
         {/* The files change outside this view — another session writes them, or
@@ -1048,14 +1339,15 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
             <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
             <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
           </div>
-          {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} destination={destination} />}
-          {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} />}
-          {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} />}
+          {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} />}
+          {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
+          {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
         </>
       )}
-      {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} />}
+      {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
       {top === 'guide' && <GuideView scope={scope} />}
-      {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} />}
+      {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
+      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} />}
     </div>
   )
 }
@@ -1190,9 +1482,10 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
-            先跑 <Code>plan-lint</Code> 查结构性漂移（同票双档、缺 map.md、缺状态头）；
+            结构漂移先用只读脚本查：<Code>node …/dsh-plan-view/scripts/plan-lint.mjs 仓库根</Code>
+            （同票双档、缺 map.md、缺状态头/非法 status）；
             再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
-            两者都不擅自改。
+            两者都只报告、不擅自改。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>归档在哪？</strong><br />
@@ -1219,7 +1512,7 @@ function approvalState(t: ParsedTicket): ApprovalFilter {
   return 'settled'
 }
 
-function ApprovalsView({ approvals, scope }: { approvals: ParsedTicket[]; scope: SessionScope }) {
+function ApprovalsView({ approvals, scope, ctx, sessions, onChanged }: { approvals: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const [filter, setFilter] = useState<ApprovalFilter>('pending')
 
@@ -1288,7 +1581,7 @@ function ApprovalsView({ approvals, scope }: { approvals: ParsedTicket[]; scope:
           })}
         </div>
       )}
-      {focus && <DetailModal ticket={focus} planDir="" scope={scope} onClose={() => setFocus(null)} />}
+      {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} />}
     </div>
   )
 }
