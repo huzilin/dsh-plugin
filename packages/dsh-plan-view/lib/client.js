@@ -2429,17 +2429,113 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				color: "#4ed17e"
 			};
 		}
-		function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+		function inEffort(t, dir) {
+			return t.effort === dir || t.effort === ROOT_GROUP;
+		}
+		function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }) {
+			const groups = [
+				"speculation",
+				"impl",
+				void 0
+			].map((kind) => ({
+				kind,
+				items: efforts.map((e, i) => ({
+					e,
+					i,
+					kind: mapKind(e.dir, all)
+				})).filter((w) => w.kind === kind)
+			})).filter((g) => g.items.length > 0);
+			const allOn = effortIdx < 0;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					display: "flex",
+					gap: 6,
+					padding: "8px 10px 6px",
+					flexWrap: "wrap",
+					borderBottom: `1px solid ${BORDER_LIGHT}`,
+					alignItems: "center"
+				},
+				children: [efforts.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					onClick: () => setEffortIdx(-1),
+					style: {
+						fontSize: 11,
+						padding: "3px 9px",
+						borderRadius: 999,
+						cursor: "pointer",
+						border: `1px solid ${allOn ? ACCENT : BORDER}`,
+						color: allOn ? ACCENT : TEXT_FAINT,
+						background: allOn ? `${ACCENT}22` : "transparent"
+					},
+					children: ["全部地图 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: { opacity: .7 },
+						children: totalCount
+					})]
+				}), groups.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					style: {
+						display: "inline-flex",
+						gap: 6,
+						alignItems: "center",
+						flexWrap: "wrap"
+					},
+					children: [
+						groups.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							style: {
+								fontSize: 10,
+								color: TEXT_FAINT,
+								padding: "3px 2px"
+							},
+							children: g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : "📄 其他"
+						}),
+						g.items.map(({ e, i, kind }) => {
+							const on = effortIdx === i;
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								onClick: () => setEffortIdx(i),
+								title: e.dir,
+								style: {
+									fontSize: 11,
+									padding: "3px 9px",
+									borderRadius: 999,
+									cursor: "pointer",
+									border: `1px solid ${on ? ACCENT : BORDER}`,
+									color: on ? ACCENT : TEXT_FAINT,
+									background: on ? `${ACCENT}22` : "transparent"
+								},
+								children: [
+									kind ? MAP_KIND_META[kind].icon : "🗺️",
+									" ",
+									e.dir.split("/").pop(),
+									" ",
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: { opacity: .7 },
+										children: countFor(e.dir)
+									})
+								]
+							}, e.dir);
+						}),
+						g !== groups[groups.length - 1] && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
+							width: 1,
+							height: 16,
+							background: BORDER,
+							margin: "0 4px"
+						} })
+					]
+				}, String(g.kind)))]
+			});
+		}
+		function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const byId = new Map(tickets.map((t) => [t.id, t]));
+			const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : void 0;
+			const shownEfforts = effortIdx < 0 ? efforts : efforts.filter((_, i) => i === effortIdx);
+			const visible = (0, react.useMemo)(() => selectedDir === void 0 ? tickets : tickets.filter((t) => inEffort(t, selectedDir)), [tickets, selectedDir]);
 			const unmetBlocker = (t) => t.blockedBy.some((r) => {
 				const b = resolveRef(r, byId);
 				const bt = b === void 0 ? void 0 : byId.get(b);
 				return bt !== void 0 && (displayStatus(bt) === "open" || displayStatus(bt) === "claimed");
 			});
-			const oldestPending = (0, react.useMemo)(() => tickets.filter((t) => ticketKind(t) === "approval" && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [tickets]);
-			const longestBlocked = (0, react.useMemo)(() => tickets.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed") && unmetBlocker(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [tickets]);
-			const running = (0, react.useMemo)(() => tickets.filter((t) => t.session !== void 0 && (displayStatus(t) === "open" || displayStatus(t) === "claimed")), [tickets]);
+			const oldestPending = (0, react.useMemo)(() => visible.filter((t) => ticketKind(t) === "approval" && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [visible]);
+			const longestBlocked = (0, react.useMemo)(() => visible.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed") && unmetBlocker(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [visible]);
+			const running = (0, react.useMemo)(() => visible.filter((t) => t.session !== void 0 && (displayStatus(t) === "open" || displayStatus(t) === "claimed")), [visible]);
 			const row = (t, right) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				onClick: () => setFocus(t),
 				style: {
@@ -2491,13 +2587,21 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					gap: 12
 				},
 				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortChips, {
+						efforts,
+						all: tickets,
+						effortIdx,
+						setEffortIdx,
+						countFor: (dir) => tickets.filter((t) => inEffort(t, dir) && ticketKind(t) === "ticket").length,
+						totalCount: tickets.filter((t) => ticketKind(t) === "ticket").length
+					}),
 					[
 						"speculation",
 						"impl",
 						void 0
 					].map((kind) => ({
 						kind,
-						items: efforts.map((e, i) => ({
+						items: shownEfforts.map((e, i) => ({
 							e,
 							i
 						})).filter(({ e }) => mapKind(e.dir, tickets) === kind)
@@ -2589,7 +2693,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 												work.length - done,
 												" 张在途 · ",
 												own.filter((t) => ticketKind(t) === "approval" && isPending(t)).length,
-												" 待拍板"
+												" 待拍板",
+												(() => {
+													const dn = defects.filter((t) => t.effort === e.dir).length;
+													if (dn === 0) return null;
+													return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+														style: {
+															color: "#f2555a",
+															marginLeft: 6
+														},
+														children: ["🐞 ", dn]
+													});
+												})()
 											]
 										})
 									]
@@ -2794,6 +2909,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				effortIdx,
 				selectedDir
 			]);
+			const mapApprovals = (0, react.useMemo)(() => effortIdx < 0 ? approvals : approvals.filter((t) => selectedDir !== void 0 && inEffort(t, selectedDir)), [
+				approvals,
+				effortIdx,
+				selectedDir
+			]);
 			const destination = (0, react.useMemo)(() => {
 				const mapRaw = effortIdx >= 0 ? data?.efforts[effortIdx]?.mapRaw : data?.mapRaw;
 				if (!mapRaw) return null;
@@ -2876,17 +2996,17 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				{
 					id: "route",
 					label: "🗺️ 路线",
-					count: mapOwnTickets.length
+					count: mapTickets.length
 				},
 				{
 					id: "tickets",
 					label: "🎫 工单",
-					count: mapOwnTickets.length
+					count: mapTickets.length
 				},
 				{
 					id: "approvals",
 					label: "⏳ 待拍板",
-					count: approvals.length
+					count: mapApprovals.length
 				},
 				{
 					id: "ledger",
@@ -2997,100 +3117,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						})]
 					}),
 					top === "route" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						data.efforts.length > 0 && (() => {
-							const withIdx = data.efforts.map((e, i) => ({
-								e,
-								i,
-								kind: mapKind(e.dir, all)
-							}));
-							const groups = [
-								"speculation",
-								"impl",
-								void 0
-							].map((kind) => ({
-								kind,
-								items: withIdx.filter((w) => w.kind === kind)
-							})).filter((g) => g.items.length > 0);
-							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									display: "flex",
-									gap: 6,
-									padding: "8px 10px 6px",
-									flexWrap: "wrap",
-									borderBottom: `1px solid ${BORDER_LIGHT}`,
-									alignItems: "center"
-								},
-								children: [data.efforts.length > 1 && (() => {
-									const on = effortIdx < 0;
-									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										onClick: () => setEffortIdx(-1),
-										style: {
-											fontSize: 11,
-											padding: "3px 9px",
-											borderRadius: 999,
-											cursor: "pointer",
-											border: `1px solid ${on ? ACCENT : BORDER}`,
-											color: on ? ACCENT : TEXT_FAINT,
-											background: on ? `${ACCENT}22` : "transparent"
-										},
-										children: ["全部地图 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: { opacity: .7 },
-											children: mapOwnTickets.length
-										})]
-									});
-								})(), groups.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									style: {
-										display: "inline-flex",
-										gap: 6,
-										alignItems: "center",
-										flexWrap: "wrap"
-									},
-									children: [
-										groups.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 10,
-												color: TEXT_FAINT,
-												padding: "3px 2px"
-											},
-											children: g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : "📄 其他"
-										}),
-										g.items.map(({ e, i, kind }) => {
-											const on = effortIdx === i;
-											const n = mapOwnTickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP).length;
-											return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												onClick: () => setEffortIdx(i),
-												title: e.dir,
-												style: {
-													fontSize: 11,
-													padding: "3px 9px",
-													borderRadius: 999,
-													cursor: "pointer",
-													border: `1px solid ${on ? ACCENT : BORDER}`,
-													color: on ? ACCENT : TEXT_FAINT,
-													background: on ? `${ACCENT}22` : "transparent"
-												},
-												children: [
-													kind ? MAP_KIND_META[kind].icon : "🗺️",
-													" ",
-													e.dir.split("/").pop(),
-													" ",
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: { opacity: .7 },
-														children: n
-													})
-												]
-											}, e.dir);
-										}),
-										g !== groups[groups.length - 1] && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
-											width: 1,
-											height: 16,
-											background: BORDER,
-											margin: "0 4px"
-										} })
-									]
-								}, String(g.kind)))]
-							});
-						})(),
+						data.efforts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortChips, {
+							efforts: data.efforts,
+							all,
+							effortIdx,
+							setEffortIdx,
+							countFor: (dir) => mapOwnTickets.filter((t) => inEffort(t, dir)).length,
+							totalCount: mapOwnTickets.length
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "flex",
@@ -3149,24 +3183,38 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							readOnly
 						})
 					] }),
-					top === "tickets" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
-						tickets: mapOwnTickets,
+					top === "tickets" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [data.efforts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortChips, {
+						efforts: data.efforts,
+						all,
+						effortIdx,
+						setEffortIdx,
+						countFor: (dir) => mapOwnTickets.filter((t) => inEffort(t, dir)).length,
+						totalCount: mapOwnTickets.length
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
+						tickets: mapTickets,
 						planDir,
 						scope,
 						ctx,
 						sessions,
 						onChanged,
 						readOnly
-					}),
+					})] }),
 					top === "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideView, { scope }),
-					top === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
-						approvals,
+					top === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [data.efforts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortChips, {
+						efforts: data.efforts,
+						all,
+						effortIdx,
+						setEffortIdx,
+						countFor: (dir) => approvals.filter((t) => inEffort(t, dir)).length,
+						totalCount: approvals.length
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
+						approvals: mapApprovals,
 						scope,
 						ctx,
 						sessions,
 						onChanged,
 						readOnly
-					}),
+					})] }),
 					top === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
 						ledgers,
 						scope,
@@ -3175,17 +3223,27 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						onChanged,
 						readOnly
 					}),
-					top === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
+					top === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [data.efforts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortChips, {
+						efforts: data.efforts,
+						all,
+						effortIdx,
+						setEffortIdx,
+						countFor: (dir) => defects.filter((t) => t.effort === dir).length,
+						totalCount: defects.length
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
 						defects: mapDefects,
 						scope,
 						ctx,
 						sessions,
 						onChanged,
 						readOnly
-					}),
+					})] }),
 					top === "overview" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OverviewView, {
 						tickets: all,
 						efforts: data.efforts,
+						defects,
+						effortIdx,
+						setEffortIdx,
 						planDir,
 						scope,
 						ctx,

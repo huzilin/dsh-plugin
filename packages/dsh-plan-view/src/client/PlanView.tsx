@@ -1208,9 +1208,65 @@ function effortStage(own: ParsedTicket[]): { stage: string; color: string } {
   return { stage: '✅ 收口', color: '#4ed17e' }
 }
 
-function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+// ─── Effort chips ────────────────────────────────────────────────────────────
+//
+// The one map selector, shared by every map-scoped page (2026-09-21 拍板：
+// 筛选后看到的都是同一张图). Bound to the top-level effortIdx, so switching
+// maps on one page switches them everywhere; only the per-chip count differs
+// per page (tickets, approvals, defects…), via countFor/totalCount.
+
+function inEffort(t: ParsedTicket, dir: string): boolean {
+  return t.effort === dir || t.effort === ROOT_GROUP
+}
+
+function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }: {
+  efforts: { dir: string; mapRaw: string }[]
+  all: ParsedTicket[]
+  effortIdx: number
+  setEffortIdx: (i: number) => void
+  countFor: (dir: string) => number
+  totalCount: number
+}) {
+  // 分开展示：推演图一组、实施图一组，未判型的垫后（2026-09-20 拍板）。
+  const groups = (['speculation', 'impl', undefined] as const)
+    .map(kind => ({ kind, items: efforts.map((e, i) => ({ e, i, kind: mapKind(e.dir, all) })).filter(w => w.kind === kind) }))
+    .filter(g => g.items.length > 0)
+  const allOn = effortIdx < 0
+  return (
+    <div style={{ display: 'flex', gap: 6, padding: '8px 10px 6px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}`, alignItems: 'center' }}>
+      {efforts.length > 1 && (
+        <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${allOn ? ACCENT : BORDER}`, color: allOn ? ACCENT : TEXT_FAINT, background: allOn ? `${ACCENT}22` : 'transparent' }}>
+          全部地图 <span style={{ opacity: .7 }}>{totalCount}</span>
+        </span>
+      )}
+      {groups.map(g => (
+        <span key={String(g.kind)} style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {groups.length > 1 && (
+            <span style={{ fontSize: 10, color: TEXT_FAINT, padding: '3px 2px' }}>
+              {g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : '📄 其他'}
+            </span>
+          )}
+          {g.items.map(({ e, i, kind }) => {
+            const on = effortIdx === i
+            return (
+              <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
+                {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{countFor(e.dir)}</span>
+              </span>
+            )
+          })}
+          {g !== groups[groups.length - 1] && <span style={{ width: 1, height: 16, background: BORDER, margin: '0 4px' }} />}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
   efforts: { dir: string; mapRaw: string }[]
+  defects: ParsedTicket[]
+  effortIdx: number
+  setEffortIdx: (i: number) => void
   planDir: string
   scope: SessionScope
   ctx: any
@@ -1220,24 +1276,32 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
 }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const byId = new Map(tickets.map(t => [t.id, t]))
+  // 页内筛选（2026-09-21 拍板）：绑定全局 effortIdx——选中某图后，卡片与
+  // 下方三个聚合区都只看该图；根层松散文档与路线页同语义保持可见。
+  const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : undefined
+  const shownEfforts = effortIdx < 0 ? efforts : efforts.filter((_, i) => i === effortIdx)
+  const visible = useMemo(
+    () => (selectedDir === undefined ? tickets : tickets.filter(t => inEffort(t, selectedDir))),
+    [tickets, selectedDir],
+  )
   const unmetBlocker = (t: ParsedTicket) => t.blockedBy.some(r => {
     const b = resolveRef(r, byId)
     const bt = b === undefined ? undefined : byId.get(b)
     return bt !== undefined && (displayStatus(bt) === 'open' || displayStatus(bt) === 'claimed')
   })
   const oldestPending = useMemo(
-    () => tickets.filter(t => ticketKind(t) === 'approval' && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5),
-    [tickets],
+    () => visible.filter(t => ticketKind(t) === 'approval' && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5),
+    [visible],
   )
   const longestBlocked = useMemo(
-    () => tickets.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed') && unmetBlocker(t))
+    () => visible.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed') && unmetBlocker(t))
       .sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tickets],
+    [visible],
   )
   const running = useMemo(
-    () => tickets.filter(t => t.session !== undefined && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')),
-    [tickets],
+    () => visible.filter(t => t.session !== undefined && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')),
+    [visible],
   )
   const row = (t: ParsedTicket, right?: React.ReactNode) => (
     <div key={`${t.effort}/${t.file}`} onClick={() => setFocus(t)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', background: 'transparent' }}
@@ -1249,9 +1313,12 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
   )
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <EffortChips efforts={efforts} all={tickets} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
+        countFor={dir => tickets.filter(t => inEffort(t, dir) && ticketKind(t) === 'ticket').length}
+        totalCount={tickets.filter(t => ticketKind(t) === 'ticket').length} />
       {/* 阶段指示 — one card per effort, 推演图/实施图分两组（2026-09-20 拍板） */}
       {(['speculation', 'impl', undefined] as const)
-        .map(kind => ({ kind, items: efforts.map((e, i) => ({ e, i })).filter(({ e }) => mapKind(e.dir, tickets) === kind) }))
+        .map(kind => ({ kind, items: shownEfforts.map((e, i) => ({ e, i })).filter(({ e }) => mapKind(e.dir, tickets) === kind) }))
         .filter(g => g.items.length > 0)
         .map(g => (
           <div key={String(g.kind)} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1273,7 +1340,14 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
                     <div style={{ height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
                       <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
                     </div>
-                    <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>{pct}% · {work.length - done} 张在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板</div>
+                    <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>
+                      {pct}% · {work.length - done} 张在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板
+                      {(() => {
+                        const dn = defects.filter(t => t.effort === e.dir).length
+                        if (dn === 0) return null
+                        return <span style={{ color: '#f2555a', marginLeft: 6 }}>🐞 {dn}</span>
+                      })()}
+                    </div>
                   </div>
                 )
               })}
@@ -1386,6 +1460,12 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     () => (effortIdx < 0 ? defects : defects.filter(t => t.effort === selectedDir)),
     [defects, effortIdx, selectedDir],
   )
+  // 待拍板同语义随图切换（2026-09-21 拍板：筛选后看到的都是同一张图）；
+  // 根层松散待拍板（.plan 根层待拍板-*.md）与路线页松散票同语义保持可见。
+  const mapApprovals = useMemo(
+    () => (effortIdx < 0 ? approvals : approvals.filter(t => selectedDir !== undefined && inEffort(t, selectedDir))),
+    [approvals, effortIdx, selectedDir],
+  )
 
   const destination = useMemo(() => {
     const mapRaw = effortIdx >= 0 ? data?.efforts[effortIdx]?.mapRaw : data?.mapRaw
@@ -1428,9 +1508,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: approvals.filter(t => isPending(t)).length },
-    { id: 'route', label: '🗺️ 路线', count: mapOwnTickets.length },
-    { id: 'tickets', label: '🎫 工单', count: mapOwnTickets.length },
-    { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
+    { id: 'route', label: '🗺️ 路线', count: mapTickets.length },
+    { id: 'tickets', label: '🎫 工单', count: mapTickets.length },
+    { id: 'approvals', label: '⏳ 待拍板', count: mapApprovals.length },
     { id: 'ledger', label: '📒 台账', count: ledgers.length },
     { id: 'defects', label: '🐞 缺陷', count: mapDefects.length },
     { id: 'guide', label: '📖 说明', count: 0 },
@@ -1475,44 +1555,11 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       )}
       {top === 'route' && (
         <>
-          {data.efforts.length > 0 && (() => {
-            // 分开展示：推演图一组、实施图一组，未判型的垫后（2026-09-20 拍板）。
-            const withIdx = data.efforts.map((e, i) => ({ e, i, kind: mapKind(e.dir, all) }))
-            const groups = (['speculation', 'impl', undefined] as const)
-              .map(kind => ({ kind, items: withIdx.filter(w => w.kind === kind) }))
-              .filter(g => g.items.length > 0)
-            return (
-              <div style={{ display: 'flex', gap: 6, padding: '8px 10px 6px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}`, alignItems: 'center' }}>
-                {data.efforts.length > 1 && (() => {
-                  const on = effortIdx < 0
-                  return (
-                    <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
-                      全部地图 <span style={{ opacity: .7 }}>{mapOwnTickets.length}</span>
-                    </span>
-                  )
-                })()}
-                {groups.map(g => (
-                  <span key={String(g.kind)} style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    {groups.length > 1 && (
-                      <span style={{ fontSize: 10, color: TEXT_FAINT, padding: '3px 2px' }}>
-                        {g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : '📄 其他'}
-                      </span>
-                    )}
-                    {g.items.map(({ e, i, kind }) => {
-                      const on = effortIdx === i
-                      const n = mapOwnTickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP).length
-                      return (
-                        <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
-                          {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{n}</span>
-                        </span>
-                      )
-                    })}
-                    {g !== groups[groups.length - 1] && <span style={{ width: 1, height: 16, background: BORDER, margin: '0 4px' }} />}
-                  </span>
-                ))}
-              </div>
-            )
-          })()}
+          {data.efforts.length > 0 && (
+            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
+              countFor={dir => mapOwnTickets.filter(t => inEffort(t, dir)).length}
+              totalCount={mapOwnTickets.length} />
+          )}
           <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
             <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
             <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
@@ -1523,12 +1570,39 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
-      {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'tickets' && (
+        <>
+          {data.efforts.length > 0 && (
+            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
+              countFor={dir => mapOwnTickets.filter(t => inEffort(t, dir)).length}
+              totalCount={mapOwnTickets.length} />
+          )}
+          <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+        </>
+      )}
       {top === 'guide' && <GuideView scope={scope} />}
-      {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'approvals' && (
+        <>
+          {data.efforts.length > 0 && (
+            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
+              countFor={dir => approvals.filter(t => inEffort(t, dir)).length}
+              totalCount={approvals.length} />
+          )}
+          <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+        </>
+      )}
       {top === 'ledger' && <LedgerView ledgers={ledgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-      {top === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'defects' && (
+        <>
+          {data.efforts.length > 0 && (
+            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
+              countFor={dir => defects.filter(t => t.effort === dir).length}
+              totalCount={defects.length} />
+          )}
+          <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+        </>
+      )}
+      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
 }
