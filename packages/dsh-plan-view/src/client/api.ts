@@ -57,11 +57,15 @@ export async function fsWrite(scope: SessionScope, path: string, content: string
 //
 // A Remote call is `POST /api/<ns>/<method>` carrying the client-request
 // envelope; the gateway validates `args` against the generated descriptor,
-// whose field names are the Host method's parameter names (hence `_request`
-// for session/* — the Host parameter is spelled `_request`). The /api trust
-// fence is Host/Origin-based, not per-plugin: a same-origin fetch from this
-// page passes it like any other client call. Verified live against a running
-// harness: session/list returns items, commands/list reaches agent lookup.
+// whose field names are the Host method's parameter names, verbatim:
+// session/list takes `_request` (its Host parameter is `_request`), while
+// session/create and session/prompt take `request`. commands/execute takes
+// `agentId` (a SessionId string; the reference source tree spells it `agent`,
+// but the running gateway descriptor demands `agentId` — verified live
+// 2026-09-21). The /api trust fence is Host/Origin-based, not per-plugin: a
+// same-origin fetch from this page passes it like any other client call.
+// Verified live against a running harness: session/list returns items,
+// commands/list reaches agent lookup.
 
 async function rpc<T>(method: string, args: Record<string, unknown>): Promise<T> {
   const resp = await fetch(`/api/${method}`, {
@@ -102,14 +106,14 @@ export async function sessionAlive(sessionId: string): Promise<SessionSummary | 
 }
 
 export async function sessionCreate(cwd?: string): Promise<string> {
-  const v = await rpc<{ sessionId: string }>('session/create', { _request: cwd === undefined ? {} : { cwd } })
+  const v = await rpc<{ sessionId: string }>('session/create', { request: cwd === undefined ? {} : { cwd } })
   return v.sessionId
 }
 
 /** Non-blocking dispatch: queue one human message on the session's inbox. */
 export async function sessionPrompt(sessionId: string, text: string): Promise<void> {
   await rpc('session/prompt', {
-    _request: {
+    request: {
       requestId: crypto.randomUUID(),
       sessionId,
       mode: 'queue',
