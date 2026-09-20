@@ -2897,12 +2897,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
-			const globalLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
-			const mapLedgers = (0, react.useMemo)(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
-				ledgers,
-				effortIdx,
-				selectedDir
-			]);
 			const defects = (0, react.useMemo)(() => all.filter((t) => classify(t) === "defect"), [all]);
 			const mapOwnTickets = routeTickets;
 			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
@@ -2918,6 +2912,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			]);
 			const mapApprovals = (0, react.useMemo)(() => effortIdx < 0 ? approvals : approvals.filter((t) => selectedDir !== void 0 && inEffort(t, selectedDir)), [
 				approvals,
+				effortIdx,
+				selectedDir
+			]);
+			const globalLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
+			const mapLedgers = (0, react.useMemo)(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
+				ledgers,
 				effortIdx,
 				selectedDir
 			]);

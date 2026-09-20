@@ -1444,14 +1444,6 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
   const ledgers = useMemo(() => all.filter(t => classify(t) === 'ledger'), [all])
-  // 台账两级（2026-09-21 拍板拆分）：根层 `.plan/挂账台账.md` 是项目全局正本；
-  // `.plan/<effort>/挂账台账.md` 是图内台账（t.effort = 图目录）。第一层「台账」
-  // 页只看全局；地图页的台账子页只看当前图的图内台账。
-  const globalLedgers = useMemo(() => ledgers.filter(t => t.effort === ROOT_GROUP), [ledgers])
-  const mapLedgers = useMemo(
-    () => (effortIdx < 0 ? ledgers : ledgers.filter(t => t.effort === selectedDir)),
-    [ledgers, effortIdx, selectedDir],
-  )
   const defects = useMemo(() => all.filter(t => classify(t) === 'defect'), [all])
   // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
   // their own board — their tickets show in the normal ticket view until removed.
@@ -1477,6 +1469,14 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const mapApprovals = useMemo(
     () => (effortIdx < 0 ? approvals : approvals.filter(t => selectedDir !== undefined && inEffort(t, selectedDir))),
     [approvals, effortIdx, selectedDir],
+  )
+  // 台账两级（2026-09-21 拍板拆分）：根层 `.plan/挂账台账.md` 是项目全局正本；
+  // `.plan/<effort>/挂账台账.md` 是图内台账（t.effort = 图目录）。第一层「台账」
+  // 页只看全局；地图页的台账子页只看当前图的图内台账（全部地图态显示全部台账）。
+  const globalLedgers = useMemo(() => ledgers.filter(t => t.effort === ROOT_GROUP), [ledgers])
+  const mapLedgers = useMemo(
+    () => (effortIdx < 0 ? ledgers : ledgers.filter(t => t.effort === selectedDir)),
+    [ledgers, effortIdx, selectedDir],
   )
 
   const destination = useMemo(() => {
