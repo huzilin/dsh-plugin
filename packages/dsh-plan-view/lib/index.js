@@ -2891,6 +2891,12 @@ function PlanView(props) {
 	const routeTickets = useMemo(() => all.filter((t) => classify(t) === "ticket"), [all]);
 	const approvals = useMemo(() => all.filter((t) => classify(t) === "approval"), [all]);
 	const ledgers = useMemo(() => all.filter((t) => classify(t) === "ledger"), [all]);
+	const globalLedgers = useMemo(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
+	const mapLedgers = useMemo(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
+		ledgers,
+		effortIdx,
+		selectedDir
+	]);
 	const defects = useMemo(() => all.filter((t) => classify(t) === "defect"), [all]);
 	const mapOwnTickets = routeTickets;
 	const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
@@ -2973,14 +2979,14 @@ function PlanView(props) {
 		fontWeight: active ? 700 : 400
 	});
 	const subBtn = (active) => ({
-		flex: 1,
-		padding: "5px 0",
-		border: "none",
-		borderRadius: 6,
+		padding: "5px 12px",
+		border: `1px solid ${active ? BORDER : "transparent"}`,
+		borderRadius: 7,
 		cursor: "pointer",
 		background: active ? HEADER_BG : "transparent",
 		color: active ? TEXT : "#888",
-		fontSize: 11
+		fontSize: 11,
+		fontWeight: active ? 700 : 400
 	});
 	const tabs = [
 		{
@@ -2996,7 +3002,7 @@ function PlanView(props) {
 		{
 			id: "ledger",
 			label: "📒 台账",
-			count: ledgers.length
+			count: globalLedgers.length
 		},
 		{
 			id: "guide",
@@ -3108,10 +3114,11 @@ function PlanView(props) {
 				/* @__PURE__ */ jsx("div", {
 					style: {
 						display: "flex",
-						gap: 2,
-						padding: "4px 8px",
+						gap: 4,
+						padding: "5px 10px",
 						borderBottom: `1px solid ${BORDER}`,
-						background: BG
+						background: BG,
+						alignItems: "center"
 					},
 					children: [
 						[
@@ -3132,7 +3139,7 @@ function PlanView(props) {
 						[
 							"ledger",
 							"📒 台账",
-							ledgers.length
+							mapLedgers.length
 						],
 						[
 							"defects",
@@ -3156,8 +3163,8 @@ function PlanView(props) {
 					/* @__PURE__ */ jsxs("div", {
 						style: {
 							display: "flex",
-							gap: 2,
-							padding: "4px 8px",
+							gap: 4,
+							padding: "5px 10px",
 							borderBottom: `1px solid ${BORDER}`,
 							background: BG
 						},
@@ -3229,7 +3236,7 @@ function PlanView(props) {
 					readOnly
 				}),
 				mapSub === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
-					ledgers,
+					ledgers: mapLedgers,
 					scope,
 					ctx,
 					sessions,
@@ -3247,7 +3254,7 @@ function PlanView(props) {
 			] }),
 			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
 			top === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
-				ledgers,
+				ledgers: globalLedgers,
 				scope,
 				ctx,
 				sessions,

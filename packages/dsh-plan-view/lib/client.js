@@ -2897,6 +2897,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
+			const globalLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
+			const mapLedgers = (0, react.useMemo)(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
+				ledgers,
+				effortIdx,
+				selectedDir
+			]);
 			const defects = (0, react.useMemo)(() => all.filter((t) => classify(t) === "defect"), [all]);
 			const mapOwnTickets = routeTickets;
 			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
@@ -2979,14 +2985,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				fontWeight: active ? 700 : 400
 			});
 			const subBtn = (active) => ({
-				flex: 1,
-				padding: "5px 0",
-				border: "none",
-				borderRadius: 6,
+				padding: "5px 12px",
+				border: `1px solid ${active ? BORDER : "transparent"}`,
+				borderRadius: 7,
 				cursor: "pointer",
 				background: active ? HEADER_BG : "transparent",
 				color: active ? TEXT : "#888",
-				fontSize: 11
+				fontSize: 11,
+				fontWeight: active ? 700 : 400
 			});
 			const tabs = [
 				{
@@ -3002,7 +3008,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				{
 					id: "ledger",
 					label: "📒 台账",
-					count: ledgers.length
+					count: globalLedgers.length
 				},
 				{
 					id: "guide",
@@ -3114,10 +3120,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
 								display: "flex",
-								gap: 2,
-								padding: "4px 8px",
+								gap: 4,
+								padding: "5px 10px",
 								borderBottom: `1px solid ${BORDER}`,
-								background: BG
+								background: BG,
+								alignItems: "center"
 							},
 							children: [
 								[
@@ -3138,7 +3145,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								[
 									"ledger",
 									"📒 台账",
-									ledgers.length
+									mapLedgers.length
 								],
 								[
 									"defects",
@@ -3162,8 +3169,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								style: {
 									display: "flex",
-									gap: 2,
-									padding: "4px 8px",
+									gap: 4,
+									padding: "5px 10px",
 									borderBottom: `1px solid ${BORDER}`,
 									background: BG
 								},
@@ -3235,7 +3242,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							readOnly
 						}),
 						mapSub === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
-							ledgers,
+							ledgers: mapLedgers,
 							scope,
 							ctx,
 							sessions,
@@ -3253,7 +3260,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					] }),
 					top === "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideView, { scope }),
 					top === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
-						ledgers,
+						ledgers: globalLedgers,
 						scope,
 						ctx,
 						sessions,

@@ -1444,6 +1444,14 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
   const ledgers = useMemo(() => all.filter(t => classify(t) === 'ledger'), [all])
+  // 台账两级（2026-09-21 拍板拆分）：根层 `.plan/挂账台账.md` 是项目全局正本；
+  // `.plan/<effort>/挂账台账.md` 是图内台账（t.effort = 图目录）。第一层「台账」
+  // 页只看全局；地图页的台账子页只看当前图的图内台账。
+  const globalLedgers = useMemo(() => ledgers.filter(t => t.effort === ROOT_GROUP), [ledgers])
+  const mapLedgers = useMemo(
+    () => (effortIdx < 0 ? ledgers : ledgers.filter(t => t.effort === selectedDir)),
+    [ledgers, effortIdx, selectedDir],
+  )
   const defects = useMemo(() => all.filter(t => classify(t) === 'defect'), [all])
   // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
   // their own board — their tickets show in the normal ticket view until removed.
@@ -1508,12 +1516,12 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const planDir = data.effortDir
   const readOnly = round !== null
   const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
-  const subBtn = (active: boolean): React.CSSProperties => ({ flex: 1, padding: '5px 0', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11 })
+  const subBtn = (active: boolean): React.CSSProperties => ({ padding: '5px 12px', border: `1px solid ${active ? BORDER : 'transparent'}`, borderRadius: 7, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11, fontWeight: active ? 700 : 400 })
 
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: approvals.filter(t => isPending(t)).length },
     { id: 'map', label: '🗺️ 地图', count: mapTickets.length },
-    { id: 'ledger', label: '📒 台账', count: ledgers.length },
+    { id: 'ledger', label: '📒 台账', count: globalLedgers.length },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
@@ -1562,12 +1570,12 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               totalCount={mapOwnTickets.length} />
           )}
           {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
-          <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
+          <div style={{ display: 'flex', gap: 4, padding: '5px 10px', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
             {([
               ['route', '🗺️ 路线', mapTickets.length],
               ['tickets', '🎫 工单', mapTickets.length],
               ['approvals', '⏳ 待拍板', mapApprovals.length],
-              ['ledger', '📒 台账', ledgers.length],
+              ['ledger', '📒 台账', mapLedgers.length],
               ['defects', '🐞 缺陷', mapDefects.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={subBtn(mapSub === id)} onClick={() => setMapSub(id)}>
@@ -1577,7 +1585,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           </div>
           {mapSub === 'route' && (
             <>
-              <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
+              <div style={{ display: 'flex', gap: 4, padding: '5px 10px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
                 <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
                 <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
                 <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
@@ -1589,12 +1597,12 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           )}
           {mapSub === 'tickets' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'ledger' && <LedgerView ledgers={ledgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
-      {top === 'ledger' && <LedgerView ledgers={ledgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'ledger' && <LedgerView ledgers={globalLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
       {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
