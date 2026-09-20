@@ -2833,7 +2833,8 @@ function PlanView(props) {
 	const [data, setData] = useState(null);
 	const [error, setError] = useState(null);
 	const [loading, setLoading] = useState(true);
-	const [top, setTop] = useState("route");
+	const [top, setTop] = useState("map");
+	const [mapSub, setMapSub] = useState("route");
 	const [effortIdx, setEffortIdx] = useState(0);
 	const [variant, setVariant] = useState("A");
 	const [sessions, setSessions] = useState(() => /* @__PURE__ */ new Map());
@@ -2988,29 +2989,14 @@ function PlanView(props) {
 			count: approvals.filter((t) => isPending(t)).length
 		},
 		{
-			id: "route",
-			label: "🗺️ 路线",
+			id: "map",
+			label: "🗺️ 地图",
 			count: mapTickets.length
-		},
-		{
-			id: "tickets",
-			label: "🎫 工单",
-			count: mapTickets.length
-		},
-		{
-			id: "approvals",
-			label: "⏳ 待拍板",
-			count: mapApprovals.length
 		},
 		{
 			id: "ledger",
 			label: "📒 台账",
 			count: ledgers.length
-		},
-		{
-			id: "defects",
-			label: "🐞 缺陷",
-			count: mapDefects.length
 		},
 		{
 			id: "guide",
@@ -3046,7 +3032,7 @@ function PlanView(props) {
 						style: {
 							marginLeft: 5,
 							fontSize: 11,
-							color: (t.id === "approvals" || t.id === "overview") && t.count > 0 ? "#f7ad31" : "#777"
+							color: t.id === "overview" && t.count > 0 ? "#f7ad31" : "#777"
 						},
 						children: t.count
 					})]
@@ -3110,7 +3096,7 @@ function PlanView(props) {
 					children: "归档内容勿据以实现；派活 / 拍板动作已停用。"
 				})]
 			}),
-			top === "route" && /* @__PURE__ */ jsxs(Fragment, { children: [
+			top === "map" && /* @__PURE__ */ jsxs(Fragment, { children: [
 				data.efforts.length > 0 && /* @__PURE__ */ jsx(EffortChips, {
 					efforts: data.efforts,
 					all,
@@ -3119,7 +3105,7 @@ function PlanView(props) {
 					countFor: (dir) => mapOwnTickets.filter((t) => inEffort(t, dir)).length,
 					totalCount: mapOwnTickets.length
 				}),
-				/* @__PURE__ */ jsxs("div", {
+				/* @__PURE__ */ jsx("div", {
 					style: {
 						display: "flex",
 						gap: 2,
@@ -3128,48 +3114,130 @@ function PlanView(props) {
 						background: BG
 					},
 					children: [
-						/* @__PURE__ */ jsx("button", {
-							type: "button",
-							style: subBtn(variant === "A"),
-							onClick: () => setVariant("A"),
-							children: "📋 Kanban"
-						}),
-						/* @__PURE__ */ jsx("button", {
-							type: "button",
-							style: subBtn(variant === "D"),
-							onClick: () => setVariant("D"),
-							children: "📊 Relation"
-						}),
-						/* @__PURE__ */ jsx("button", {
-							type: "button",
-							style: subBtn(variant === "C"),
-							onClick: () => setVariant("C"),
-							children: "Table"
-						})
-					]
+						[
+							"route",
+							"🗺️ 路线",
+							mapTickets.length
+						],
+						[
+							"tickets",
+							"🎫 工单",
+							mapTickets.length
+						],
+						[
+							"approvals",
+							"⏳ 待拍板",
+							mapApprovals.length
+						],
+						[
+							"ledger",
+							"📒 台账",
+							ledgers.length
+						],
+						[
+							"defects",
+							"🐞 缺陷",
+							mapDefects.length
+						]
+					].map(([id, label, n]) => /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						style: subBtn(mapSub === id),
+						onClick: () => setMapSub(id),
+						children: [label, /* @__PURE__ */ jsx("span", {
+							style: {
+								marginLeft: 4,
+								opacity: .7
+							},
+							children: n
+						})]
+					}, id))
 				}),
-				variant === "A" && /* @__PURE__ */ jsx(ViewA, {
+				mapSub === "route" && /* @__PURE__ */ jsxs(Fragment, { children: [
+					/* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							gap: 2,
+							padding: "4px 8px",
+							borderBottom: `1px solid ${BORDER}`,
+							background: BG
+						},
+						children: [
+							/* @__PURE__ */ jsx("button", {
+								type: "button",
+								style: subBtn(variant === "A"),
+								onClick: () => setVariant("A"),
+								children: "📋 Kanban"
+							}),
+							/* @__PURE__ */ jsx("button", {
+								type: "button",
+								style: subBtn(variant === "D"),
+								onClick: () => setVariant("D"),
+								children: "📊 Relation"
+							}),
+							/* @__PURE__ */ jsx("button", {
+								type: "button",
+								style: subBtn(variant === "C"),
+								onClick: () => setVariant("C"),
+								children: "Table"
+							})
+						]
+					}),
+					variant === "A" && /* @__PURE__ */ jsx(ViewA, {
+						tickets: mapTickets,
+						planDir,
+						scope,
+						ctx,
+						sessions,
+						onChanged,
+						destination,
+						readOnly
+					}),
+					variant === "D" && /* @__PURE__ */ jsx(ViewD, {
+						tickets: mapTickets,
+						planDir,
+						scope,
+						ctx,
+						sessions,
+						onChanged,
+						readOnly
+					}),
+					variant === "C" && /* @__PURE__ */ jsx(ViewC, {
+						tickets: mapTickets,
+						planDir,
+						scope,
+						ctx,
+						sessions,
+						onChanged,
+						readOnly
+					})
+				] }),
+				mapSub === "tickets" && /* @__PURE__ */ jsx(ViewC, {
 					tickets: mapTickets,
 					planDir,
 					scope,
 					ctx,
 					sessions,
 					onChanged,
-					destination,
 					readOnly
 				}),
-				variant === "D" && /* @__PURE__ */ jsx(ViewD, {
-					tickets: mapTickets,
-					planDir,
+				mapSub === "approvals" && /* @__PURE__ */ jsx(ApprovalsView, {
+					approvals: mapApprovals,
 					scope,
 					ctx,
 					sessions,
 					onChanged,
 					readOnly
 				}),
-				variant === "C" && /* @__PURE__ */ jsx(ViewC, {
-					tickets: mapTickets,
-					planDir,
+				mapSub === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
+					ledgers,
+					scope,
+					ctx,
+					sessions,
+					onChanged,
+					readOnly
+				}),
+				mapSub === "defects" && /* @__PURE__ */ jsx(DefectView, {
+					defects: mapDefects,
 					scope,
 					ctx,
 					sessions,
@@ -3177,38 +3245,7 @@ function PlanView(props) {
 					readOnly
 				})
 			] }),
-			top === "tickets" && /* @__PURE__ */ jsxs(Fragment, { children: [data.efforts.length > 0 && /* @__PURE__ */ jsx(EffortChips, {
-				efforts: data.efforts,
-				all,
-				effortIdx,
-				setEffortIdx,
-				countFor: (dir) => mapOwnTickets.filter((t) => inEffort(t, dir)).length,
-				totalCount: mapOwnTickets.length
-			}), /* @__PURE__ */ jsx(ViewC, {
-				tickets: mapTickets,
-				planDir,
-				scope,
-				ctx,
-				sessions,
-				onChanged,
-				readOnly
-			})] }),
 			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
-			top === "approvals" && /* @__PURE__ */ jsxs(Fragment, { children: [data.efforts.length > 0 && /* @__PURE__ */ jsx(EffortChips, {
-				efforts: data.efforts,
-				all,
-				effortIdx,
-				setEffortIdx,
-				countFor: (dir) => approvals.filter((t) => inEffort(t, dir)).length,
-				totalCount: approvals.length
-			}), /* @__PURE__ */ jsx(ApprovalsView, {
-				approvals: mapApprovals,
-				scope,
-				ctx,
-				sessions,
-				onChanged,
-				readOnly
-			})] }),
 			top === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
 				ledgers,
 				scope,
@@ -3217,21 +3254,6 @@ function PlanView(props) {
 				onChanged,
 				readOnly
 			}),
-			top === "defects" && /* @__PURE__ */ jsxs(Fragment, { children: [data.efforts.length > 0 && /* @__PURE__ */ jsx(EffortChips, {
-				efforts: data.efforts,
-				all,
-				effortIdx,
-				setEffortIdx,
-				countFor: (dir) => defects.filter((t) => t.effort === dir).length,
-				totalCount: defects.length
-			}), /* @__PURE__ */ jsx(DefectView, {
-				defects: mapDefects,
-				scope,
-				ctx,
-				sessions,
-				onChanged,
-				readOnly
-			})] }),
 			top === "overview" && /* @__PURE__ */ jsx(OverviewView, {
 				tickets: all,
 				efforts: data.efforts,
@@ -3645,7 +3667,7 @@ function GuideView({ scope }) {
 									children: "历史遗留的 impl/ 、impl-fe/ 目录？"
 								}),
 								/* @__PURE__ */ jsx("br", {}),
-								"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「工单」页，不再单独成页； 收尾时会清理并入 ",
+								"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🎫 工单」子页，不再单独成页； 收尾时会清理并入 ",
 								/* @__PURE__ */ jsx(Code, { children: "tickets/" }),
 								"。"
 							]

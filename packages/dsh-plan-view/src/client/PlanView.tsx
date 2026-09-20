@@ -1388,14 +1388,18 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'overview' | 'guide'
+type TopView = 'overview' | 'map' | 'ledger' | 'guide'
+// 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
+// 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
+type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
   const [data, setData] = useState<PlanData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [top, setTop] = useState<TopView>('route')
+  const [top, setTop] = useState<TopView>('map')
+  const [mapSub, setMapSub] = useState<MapSub>('route')
   const [effortIdx, setEffortIdx] = useState(0)
   // The route view keeps its three renderings of the same map.
   const [variant, setVariant] = useState<'A' | 'C' | 'D'>('A')
@@ -1508,11 +1512,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: approvals.filter(t => isPending(t)).length },
-    { id: 'route', label: '🗺️ 路线', count: mapTickets.length },
-    { id: 'tickets', label: '🎫 工单', count: mapTickets.length },
-    { id: 'approvals', label: '⏳ 待拍板', count: mapApprovals.length },
+    { id: 'map', label: '🗺️ 地图', count: mapTickets.length },
     { id: 'ledger', label: '📒 台账', count: ledgers.length },
-    { id: 'defects', label: '🐞 缺陷', count: mapDefects.length },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
@@ -1522,7 +1523,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
             {t.label}
-            <span style={{ marginLeft: 5, fontSize: 11, color: (t.id === 'approvals' || t.id === 'overview') && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>
+            <span style={{ marginLeft: 5, fontSize: 11, color: t.id === 'overview' && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>
           </button>
         ))}
         {/* The files change outside this view — another session writes them, or
@@ -1553,55 +1554,47 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           <span style={{ color: '#a98d5f' }}>归档内容勿据以实现；派活 / 拍板动作已停用。</span>
         </div>
       )}
-      {top === 'route' && (
+      {top === 'map' && (
         <>
           {data.efforts.length > 0 && (
             <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
               countFor={dir => mapOwnTickets.filter(t => inEffort(t, dir)).length}
               totalCount={mapOwnTickets.length} />
           )}
+          {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
           <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
-            <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
-            <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
-            <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
+            {([
+              ['route', '🗺️ 路线', mapTickets.length],
+              ['tickets', '🎫 工单', mapTickets.length],
+              ['approvals', '⏳ 待拍板', mapApprovals.length],
+              ['ledger', '📒 台账', ledgers.length],
+              ['defects', '🐞 缺陷', mapDefects.length],
+            ] as [MapSub, string, number][]).map(([id, label, n]) => (
+              <button key={id} type="button" style={subBtn(mapSub === id)} onClick={() => setMapSub(id)}>
+                {label}<span style={{ marginLeft: 4, opacity: .7 }}>{n}</span>
+              </button>
+            ))}
           </div>
-          {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} />}
-          {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-        </>
-      )}
-      {top === 'tickets' && (
-        <>
-          {data.efforts.length > 0 && (
-            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
-              countFor={dir => mapOwnTickets.filter(t => inEffort(t, dir)).length}
-              totalCount={mapOwnTickets.length} />
+          {mapSub === 'route' && (
+            <>
+              <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
+                <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
+                <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
+                <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
+              </div>
+              {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} />}
+              {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+              {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+            </>
           )}
-          <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+          {mapSub === 'tickets' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'ledger' && <LedgerView ledgers={ledgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
-      {top === 'approvals' && (
-        <>
-          {data.efforts.length > 0 && (
-            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
-              countFor={dir => approvals.filter(t => inEffort(t, dir)).length}
-              totalCount={approvals.length} />
-          )}
-          <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
-        </>
-      )}
       {top === 'ledger' && <LedgerView ledgers={ledgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-      {top === 'defects' && (
-        <>
-          {data.efforts.length > 0 && (
-            <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
-              countFor={dir => defects.filter(t => t.effort === dir).length}
-              totalCount={defects.length} />
-          )}
-          <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
-        </>
-      )}
       {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
@@ -1751,7 +1744,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
-            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「工单」页，不再单独成页；
+            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🎫 工单」子页，不再单独成页；
             收尾时会清理并入 <Code>tickets/</Code>。
           </div>
         </div>
