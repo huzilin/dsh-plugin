@@ -2113,7 +2113,7 @@ interface ChainEdge { from: string; to: string; kind: 'source' | 'spawn' | 'ment
 const CHAIN_EDGE_STYLE: Record<ChainEdge['kind'], { color: string; dashed?: boolean; label: string }> = {
   source: { color: '#f7ad31', label: '出自票' },
   spawn: { color: '#609bfa', label: '转票落地' },
-  mention: { color: '#f2555a', label: '提及挂账' },
+  mention: { color: '#f2555a', label: '提及关联' },
   dep: { color: 'rgba(255,255,255,.30)', dashed: true, label: 'blocked' },
 }
 
@@ -2189,6 +2189,15 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
       const target = `l:挂账-${m[1]}`
       if (byKey.has(target) && !edges.some(e => e.from === target && e.to === ds.key)) edges.push({ from: target, to: ds.key, kind: 'mention' })
+    }
+    // 缺陷详情提及票号 / tickets/NN- 引用 → 挂到对应票下（写法即关联，免拆文件）
+    for (const m of ds.text.matchAll(/(?:^|[^\w-])票\s*(\d+)/g)) {
+      const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
+      if (t !== undefined && !edges.some(e => e.to === ds.key && e.from === `t:${t.id}`)) edges.push({ from: `t:${t.id}`, to: ds.key, kind: 'mention' })
+    }
+    for (const m of ds.text.matchAll(/tickets\/(\d+)-/g)) {
+      const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
+      if (t !== undefined && !edges.some(e => e.to === ds.key && e.from === `t:${t.id}`)) edges.push({ from: `t:${t.id}`, to: ds.key, kind: 'mention' })
     }
   }
   const depById = new Map(tickets.map(t => [t.id, t]))

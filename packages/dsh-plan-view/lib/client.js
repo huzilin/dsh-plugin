@@ -4482,7 +4482,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			},
 			mention: {
 				color: "#f2555a",
-				label: "提及挂账"
+				label: "提及关联"
 			},
 			dep: {
 				color: "rgba(255,255,255,.30)",
@@ -4572,13 +4572,31 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					});
 				}
 			}
-			for (const ds of defectSections) for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
-				const target = `l:挂账-${m[1]}`;
-				if (byKey.has(target) && !edges.some((e) => e.from === target && e.to === ds.key)) edges.push({
-					from: target,
-					to: ds.key,
-					kind: "mention"
-				});
+			for (const ds of defectSections) {
+				for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
+					const target = `l:挂账-${m[1]}`;
+					if (byKey.has(target) && !edges.some((e) => e.from === target && e.to === ds.key)) edges.push({
+						from: target,
+						to: ds.key,
+						kind: "mention"
+					});
+				}
+				for (const m of ds.text.matchAll(/(?:^|[^\w-])票\s*(\d+)/g)) {
+					const t = chainTicketByNum(tickets, parseInt(m[1] ?? "0", 10));
+					if (t !== void 0 && !edges.some((e) => e.to === ds.key && e.from === `t:${t.id}`)) edges.push({
+						from: `t:${t.id}`,
+						to: ds.key,
+						kind: "mention"
+					});
+				}
+				for (const m of ds.text.matchAll(/tickets\/(\d+)-/g)) {
+					const t = chainTicketByNum(tickets, parseInt(m[1] ?? "0", 10));
+					if (t !== void 0 && !edges.some((e) => e.to === ds.key && e.from === `t:${t.id}`)) edges.push({
+						from: `t:${t.id}`,
+						to: ds.key,
+						kind: "mention"
+					});
+				}
 			}
 			const depById = new Map(tickets.map((t) => [t.id, t]));
 			for (const t of tickets) for (const r of t.blockedBy) {
