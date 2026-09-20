@@ -3927,6 +3927,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
+		const LEDGER_STATES = [
+			"在挂",
+			"已销",
+			"已转票"
+		];
 		/** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
 		function parseLedgerEntries(body) {
 			const out = [];
@@ -3935,10 +3940,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				const m = (sec.split("\n")[0]?.trim() ?? "").match(/^(挂账-[\w.-]+)\s+(.+)$/);
 				if (!m?.[1] || !m[2]) continue;
 				const field = (name) => sec.match(new RegExp(`^- ${name}:\\s*(.+)$`, "m"))?.[1]?.trim() ?? "";
+				const rawState = field("状态") || "在挂";
+				const core = LEDGER_STATES.find((s) => rawState.startsWith(s)) ?? rawState;
+				const note = core === rawState ? "" : rawState.slice(core.length).replace(/^[（(]\s*/, "").replace(/[)）]\s*$/, "");
 				out.push({
 					id: m[1],
 					title: m[2],
-					state: field("状态") || "在挂",
+					state: core,
+					stateNote: note,
 					blocker: field("卡点"),
 					startWhen: field("启动条件"),
 					source: field("来源")
@@ -4095,13 +4104,32 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
+		const LEDGER_STATE_COLOR = {
+			"在挂": {
+				bg: "#ffa94d22",
+				fg: "#f7ad31"
+			},
+			"已销": {
+				bg: "#2ecc7122",
+				fg: "#4ed17e"
+			},
+			"已转票": {
+				bg: "#609bfa22",
+				fg: "#609bfa"
+			}
+		};
 		function LedgerCard({ entry: e }) {
+			const tone = LEDGER_STATE_COLOR[e.state] ?? {
+				bg: CHIP_BG,
+				fg: TEXT_FAINT
+			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					style: {
 						display: "flex",
 						alignItems: "center",
-						gap: 8
+						gap: 8,
+						flexWrap: "wrap"
 					},
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -4109,8 +4137,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								fontSize: 10,
 								padding: "1px 8px",
 								borderRadius: 999,
-								background: e.state === "在挂" ? "#ffa94d22" : "#2ecc7122",
-								color: e.state === "在挂" ? "#f7ad31" : "#4ed17e",
+								background: tone.bg,
+								color: tone.fg,
 								flexShrink: 0
 							},
 							children: e.state
@@ -4118,6 +4146,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							style: {
 								flex: 1,
+								minWidth: 200,
 								fontSize: 13,
 								fontWeight: 700,
 								color: TEXT
@@ -4133,6 +4162,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							children: e.source
 						})
 					]
+				}),
+				e.stateNote && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					style: {
+						fontSize: 11,
+						color: tone.fg,
+						marginTop: 4,
+						lineHeight: 1.5
+					},
+					children: ["状态注记：", e.stateNote]
 				}),
 				e.blocker && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					style: {

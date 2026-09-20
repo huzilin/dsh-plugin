@@ -1859,11 +1859,14 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly }:
 interface LedgerEntry {
   id: string          // 挂账-NN
   title: string
-  state: string       // 状态（在挂 / 已销…）
+  state: string       // 核心状态词（在挂 / 已销 / 已转票）
+  stateNote: string   // 状态附注（括号内的补充说明，如「卡点已解除，2026-09-21」）
   blocker: string     // 卡点：为什么现在做不了
   startWhen: string   // 启动条件：什么情况可以开展
   source: string      // 来源（何时谁挂的）
 }
+
+const LEDGER_STATES = ['在挂', '已销', '已转票']
 
 /** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
 function parseLedgerEntries(body: string): LedgerEntry[] {
@@ -1878,9 +1881,14 @@ function parseLedgerEntries(body: string): LedgerEntry[] {
     const m = head.match(/^(挂账-[\w.-]+)\s+(.+)$/)
     if (!m?.[1] || !m[2]) continue
     const field = (name: string) => sec.match(new RegExp(`^- ${name}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? ''
+    // 状态词与附注拆离：「在挂（卡点已解除）」→ core=在挂, note=卡点已解除。
+    // 徽标只显示核心词（颜色判断才不会被附注带偏），附注单独小字呈现。
+    const rawState = field('状态') || '在挂'
+    const core = LEDGER_STATES.find(s => rawState.startsWith(s)) ?? rawState
+    const note = core === rawState ? '' : rawState.slice(core.length).replace(/^[（(]\s*/, '').replace(/[)）]\s*$/, '')
     out.push({
       id: m[1], title: m[2],
-      state: field('状态') || '在挂',
+      state: core, stateNote: note,
       blocker: field('卡点'),
       startWhen: field('启动条件'),
       source: field('来源'),
@@ -1945,14 +1953,22 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
   )
 }
 
+const LEDGER_STATE_COLOR: Record<string, { bg: string; fg: string }> = {
+  '在挂': { bg: '#ffa94d22', fg: '#f7ad31' },
+  '已销': { bg: '#2ecc7122', fg: '#4ed17e' },
+  '已转票': { bg: '#609bfa22', fg: '#609bfa' },
+}
+
 function LedgerCard({ entry: e }: { entry: LedgerEntry }) {
+  const tone = LEDGER_STATE_COLOR[e.state] ?? { bg: CHIP_BG, fg: TEXT_FAINT }
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: e.state === '在挂' ? '#ffa94d22' : '#2ecc7122', color: e.state === '在挂' ? '#f7ad31' : '#4ed17e', flexShrink: 0 }}>{e.state}</span>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: tone.bg, color: tone.fg, flexShrink: 0 }}>{e.state}</span>
+        <span style={{ flex: 1, minWidth: 200, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
         {e.source && <span style={{ fontSize: 10, color: TEXT_FAINT, flexShrink: 0 }}>{e.source}</span>}
       </div>
+      {e.stateNote && <div style={{ fontSize: 11, color: tone.fg, marginTop: 4, lineHeight: 1.5 }}>状态注记：{e.stateNote}</div>}
       {e.blocker && <div style={{ fontSize: 12, color: TEXT_DIM, marginTop: 6, lineHeight: 1.5 }}>卡点：{e.blocker}</div>}
       {e.startWhen && <div style={{ fontSize: 12, color: '#4ed17e', marginTop: 3, lineHeight: 1.5 }}>启动条件：{e.startWhen}</div>}
     </>
