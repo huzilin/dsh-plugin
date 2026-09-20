@@ -33,7 +33,7 @@ if (!existsSync(planDir)) {
 
 // ── collect every .md under .plan/, skipping archives ────────────────────────
 // handoffs/ 是 handoff 交接文档产物区，不属 plan 生态（plan-protocol §三「非治理目录」）。
-const SKIP = new Set(['.archive', 'node_modules', 'assets', 'qa', 'handoffs'])
+const SKIP = new Set(['.archive', 'node_modules', 'assets', 'qa', 'handoffs', 'ledger'])
 
 const violations = []
 const files = [] // { path (repo-relative), abs, dir, frontmatter, body }

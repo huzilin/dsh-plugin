@@ -578,6 +578,11 @@ async function loadPlan(scope, planDir) {
 			from: ROOT_GROUP,
 			group: ROOT_GROUP
 		}))),
+		rootTree.entries.some((e) => e.isDir && e.name === "ledger") ? fsTree(scope, `${planDir}/ledger`).then((t) => mdEntries(t).map((f) => ({
+			file: f,
+			from: ROOT_GROUP,
+			group: "ledger"
+		}))) : Promise.resolve([]),
 		...effortDirs.map(async (d) => await collectTicketFiles(scope, d).then((gs) => gs.map((g) => ({
 			file: g.file,
 			from: d,
@@ -3919,7 +3924,7 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly })
 /** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
 function parseLedgerEntries(body) {
 	const out = [];
-	const sections = body.split(/^### /m).slice(1);
+	const sections = /(^|\n)### 挂账-/.test(body) ? body.split(/^### /m).slice(1) : body.split(/^# /m).slice(1);
 	for (const sec of sections) {
 		const m = (sec.split("\n")[0]?.trim() ?? "").match(/^(挂账-[\w.-]+)\s+(.+)$/);
 		if (!m?.[1] || !m[2]) continue;
@@ -3948,14 +3953,14 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 			textAlign: "center"
 		},
 		children: [
-			"没有台账文档。",
+			"没有台账条目。",
 			/* @__PURE__ */ jsx("br", {}),
 			/* @__PURE__ */ jsx("span", {
 				style: {
 					fontSize: 12,
 					color: TEXT_FAINT
 				},
-				children: "`.plan/` 根层写 `type: ledger` 的挂账台账会单列在这里，不再随每张 map 重复。"
+				children: "一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.plan/<effort>/ledger/`，frontmatter 带 `type: ledger`。"
 			})
 		]
 	});
@@ -3974,7 +3979,7 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 					fontSize: 11,
 					color: TEXT_FAINT
 				},
-				children: "挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。"
+				children: "挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。"
 			}),
 			/* @__PURE__ */ jsx("div", {
 				style: {
@@ -3987,6 +3992,18 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 				},
 				children: ledgers.map((t) => {
 					const entries = parseLedgerEntries(t.body);
+					const single = entries.length === 1 ? entries[0] : void 0;
+					if (single !== void 0) return /* @__PURE__ */ jsx("div", {
+						onClick: () => setFocus(t),
+						style: {
+							padding: "10px 12px",
+							borderRadius: 10,
+							background: CARD,
+							border: `1px solid ${BORDER}`,
+							cursor: "pointer"
+						},
+						children: /* @__PURE__ */ jsx(LedgerCard, { entry: single })
+					}, t.file);
 					return /* @__PURE__ */ jsxs("div", {
 						style: {
 							display: "flex",
@@ -4042,9 +4059,9 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 									fontSize: 12,
 									color: TEXT_FAINT
 								},
-								children: "未解析出台账条目（需要 `### 挂账-NN` 小节格式），点开看全文。"
+								children: "未解析出台账条目（需要 `# 挂账-NN` 标题或 `### 挂账-NN` 小节格式），点开看全文。"
 							}),
-							entries.map((e) => /* @__PURE__ */ jsxs("div", {
+							entries.map((e) => /* @__PURE__ */ jsx("div", {
 								onClick: () => setFocus(t),
 								style: {
 									padding: "10px 12px",
@@ -4053,63 +4070,7 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 									border: `1px solid ${BORDER}`,
 									cursor: "pointer"
 								},
-								children: [
-									/* @__PURE__ */ jsxs("div", {
-										style: {
-											display: "flex",
-											alignItems: "center",
-											gap: 8
-										},
-										children: [
-											/* @__PURE__ */ jsx("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 8px",
-													borderRadius: 999,
-													background: e.state === "在挂" ? "#ffa94d22" : "#2ecc7122",
-													color: e.state === "在挂" ? "#f7ad31" : "#4ed17e",
-													flexShrink: 0
-												},
-												children: e.state
-											}),
-											/* @__PURE__ */ jsx("span", {
-												style: {
-													flex: 1,
-													fontSize: 13,
-													fontWeight: 700,
-													color: TEXT
-												},
-												children: e.title
-											}),
-											e.source && /* @__PURE__ */ jsx("span", {
-												style: {
-													fontSize: 10,
-													color: TEXT_FAINT,
-													flexShrink: 0
-												},
-												children: e.source
-											})
-										]
-									}),
-									e.blocker && /* @__PURE__ */ jsxs("div", {
-										style: {
-											fontSize: 12,
-											color: TEXT_DIM,
-											marginTop: 6,
-											lineHeight: 1.5
-										},
-										children: ["卡点：", e.blocker]
-									}),
-									e.startWhen && /* @__PURE__ */ jsxs("div", {
-										style: {
-											fontSize: 12,
-											color: "#4ed17e",
-											marginTop: 3,
-											lineHeight: 1.5
-										},
-										children: ["启动条件：", e.startWhen]
-									})
-								]
+								children: /* @__PURE__ */ jsx(LedgerCard, { entry: e })
 							}, e.id))
 						]
 					}, t.file);
@@ -4127,6 +4088,65 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 			})
 		]
 	});
+}
+function LedgerCard({ entry: e }) {
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsxs("div", {
+			style: {
+				display: "flex",
+				alignItems: "center",
+				gap: 8
+			},
+			children: [
+				/* @__PURE__ */ jsx("span", {
+					style: {
+						fontSize: 10,
+						padding: "1px 8px",
+						borderRadius: 999,
+						background: e.state === "在挂" ? "#ffa94d22" : "#2ecc7122",
+						color: e.state === "在挂" ? "#f7ad31" : "#4ed17e",
+						flexShrink: 0
+					},
+					children: e.state
+				}),
+				/* @__PURE__ */ jsx("span", {
+					style: {
+						flex: 1,
+						fontSize: 13,
+						fontWeight: 700,
+						color: TEXT
+					},
+					children: e.title
+				}),
+				e.source && /* @__PURE__ */ jsx("span", {
+					style: {
+						fontSize: 10,
+						color: TEXT_FAINT,
+						flexShrink: 0
+					},
+					children: e.source
+				})
+			]
+		}),
+		e.blocker && /* @__PURE__ */ jsxs("div", {
+			style: {
+				fontSize: 12,
+				color: TEXT_DIM,
+				marginTop: 6,
+				lineHeight: 1.5
+			},
+			children: ["卡点：", e.blocker]
+		}),
+		e.startWhen && /* @__PURE__ */ jsxs("div", {
+			style: {
+				fontSize: 12,
+				color: "#4ed17e",
+				marginTop: 3,
+				lineHeight: 1.5
+			},
+			children: ["启动条件：", e.startWhen]
+		})
+	] });
 }
 function parseDefectEntries(body) {
 	const lines = body.split("\n");

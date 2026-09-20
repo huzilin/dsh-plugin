@@ -561,6 +561,10 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   const [mapRaws, ...fileGroups] = await Promise.all([
     Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`))),
     Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
+    // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
+    rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'ledger')
+      ? fsTree(scope, `${planDir}/ledger`).then(t => mdEntries(t).map(f => ({ file: f, from: ROOT_GROUP, group: 'ledger' })))
+      : Promise.resolve([]),
     ...effortDirs.map(async (d: string) => await collectTicketFiles(scope, d).then(gs => gs.map(g => ({ file: g.file, from: d, group: g.group })))),
   ])
   const efforts = allEfforts.map((dir: string, i: number) => ({
@@ -1864,7 +1868,11 @@ interface LedgerEntry {
 /** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
 function parseLedgerEntries(body: string): LedgerEntry[] {
   const out: LedgerEntry[] = []
-  const sections = body.split(/^### /m).slice(1)
+  // 一账一文件（2026-09-21 拍板）：`# 挂账-NN 标题` 单条；旧单文件多小节
+  // （`### 挂账-NN`，如归档轮快照）保持兼容。
+  const sections = /(^|\n)### 挂账-/.test(body)
+    ? body.split(/^### /m).slice(1)
+    : body.split(/^# /m).slice(1)
   for (const sec of sections) {
     const head = sec.split('\n')[0]?.trim() ?? ''
     const m = head.match(/^(挂账-[\w.-]+)\s+(.+)$/)
@@ -1887,9 +1895,9 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
   if (ledgers.length === 0) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
-        没有台账文档。
+        没有台账条目。
         <br />
-        <span style={{ fontSize: 12, color: TEXT_FAINT }}>`.plan/` 根层写 `type: ledger` 的挂账台账会单列在这里，不再随每张 map 重复。</span>
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.plan/&lt;effort&gt;/ledger/`，frontmatter 带 `type: ledger`。</span>
       </div>
     )
   }
@@ -1897,11 +1905,20 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
-        挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。
+        挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ledgers.map(t => {
           const entries = parseLedgerEntries(t.body)
+          const single = entries.length === 1 ? entries[0] : undefined
+          if (single !== undefined) {
+            // 一账一文件：整个文件就是一笔，直接渲染卡片，不要组头。
+            return (
+              <div key={t.file} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer' }}>
+                <LedgerCard entry={single} />
+              </div>
+            )
+          }
           return (
             <div key={t.file} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1911,18 +1928,12 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
               </div>
               {entries.length === 0 && (
                 <div onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', fontSize: 12, color: TEXT_FAINT }}>
-                  未解析出台账条目（需要 `### 挂账-NN` 小节格式），点开看全文。
+                  未解析出台账条目（需要 `# 挂账-NN` 标题或 `### 挂账-NN` 小节格式），点开看全文。
                 </div>
               )}
               {entries.map(e => (
                 <div key={e.id} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: e.state === '在挂' ? '#ffa94d22' : '#2ecc7122', color: e.state === '在挂' ? '#f7ad31' : '#4ed17e', flexShrink: 0 }}>{e.state}</span>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
-                    {e.source && <span style={{ fontSize: 10, color: TEXT_FAINT, flexShrink: 0 }}>{e.source}</span>}
-                  </div>
-                  {e.blocker && <div style={{ fontSize: 12, color: TEXT_DIM, marginTop: 6, lineHeight: 1.5 }}>卡点：{e.blocker}</div>}
-                  {e.startWhen && <div style={{ fontSize: 12, color: '#4ed17e', marginTop: 3, lineHeight: 1.5 }}>启动条件：{e.startWhen}</div>}
+                  <LedgerCard entry={e} />
                 </div>
               ))}
             </div>
@@ -1931,6 +1942,20 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
       </div>
       {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
+  )
+}
+
+function LedgerCard({ entry: e }: { entry: LedgerEntry }) {
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: e.state === '在挂' ? '#ffa94d22' : '#2ecc7122', color: e.state === '在挂' ? '#f7ad31' : '#4ed17e', flexShrink: 0 }}>{e.state}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
+        {e.source && <span style={{ fontSize: 10, color: TEXT_FAINT, flexShrink: 0 }}>{e.source}</span>}
+      </div>
+      {e.blocker && <div style={{ fontSize: 12, color: TEXT_DIM, marginTop: 6, lineHeight: 1.5 }}>卡点：{e.blocker}</div>}
+      {e.startWhen && <div style={{ fontSize: 12, color: '#4ed17e', marginTop: 3, lineHeight: 1.5 }}>启动条件：{e.startWhen}</div>}
+    </>
   )
 }
 
