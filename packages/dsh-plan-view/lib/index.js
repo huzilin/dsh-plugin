@@ -4489,7 +4489,7 @@ const chainTicketByNum = (list, n) => list.find((t) => {
 	return m !== null && m !== void 0 && parseInt(m[1], 10) === n;
 });
 function buildChain(tickets, defects, ledgers) {
-	const TOP = 20;
+	const NODE_W = 250, INDENT = 64, TOP = 20;
 	const nodes = [];
 	const pos = /* @__PURE__ */ new Map();
 	const edges = [];
@@ -4540,34 +4540,20 @@ function buildChain(tickets, defects, ledgers) {
 			});
 		}
 	}
-	const cols = [
-		ticketNodes,
-		ledgerNodes,
-		defectNodes
+	const all = [
+		...ticketNodes,
+		...ledgerNodes,
+		...defectNodes
 	];
-	cols.forEach((col, ci) => {
-		const x = ci * 340;
-		col.forEach((node, ri) => {
-			const y = TOP + ri * 68;
-			nodes.push({
-				node,
-				x,
-				y
-			});
-			pos.set(node.key, {
-				x,
-				y
-			});
-		});
-	});
+	const byKey = new Map(all.map((n) => [n.key, n]));
 	for (const l of ledgerNodes) {
 		const body = l.ticket.body;
 		const src = parseLedgerEntries(body)[0]?.source ?? "";
 		for (const m of src.matchAll(/票\s*(\d+)/g)) {
 			const t = chainTicketByNum(tickets, parseInt(m[1] ?? "0", 10));
 			if (t !== void 0) edges.push({
-				from: l.key,
-				to: `t:${t.id}`,
+				from: `t:${t.id}`,
+				to: l.key,
 				kind: "source"
 			});
 		}
@@ -4582,49 +4568,107 @@ function buildChain(tickets, defects, ledgers) {
 	}
 	for (const ds of defectSections) for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
 		const target = `l:挂账-${m[1]}`;
-		if (pos.has(target) && !edges.some((e) => e.from === ds.key && e.to === target)) edges.push({
-			from: ds.key,
-			to: target,
+		if (byKey.has(target) && !edges.some((e) => e.from === target && e.to === ds.key)) edges.push({
+			from: target,
+			to: ds.key,
 			kind: "mention"
 		});
 	}
-	const byId = new Map(tickets.map((t) => [t.id, t]));
+	const depById = new Map(tickets.map((t) => [t.id, t]));
 	for (const t of tickets) for (const r of t.blockedBy) {
-		const b = resolveRef(r, byId);
-		if (b !== void 0 && byId.has(b)) edges.push({
+		const b = resolveRef(r, depById);
+		if (b !== void 0 && depById.has(b)) edges.push({
 			from: `t:${b}`,
 			to: `t:${t.id}`,
 			kind: "dep"
 		});
 	}
+	const parentOf = /* @__PURE__ */ new Map();
+	const childrenOf = /* @__PURE__ */ new Map();
+	const treeEdges = [];
+	const crossEdges = [];
+	for (const e of edges) {
+		if (!byKey.has(e.from) || !byKey.has(e.to)) {
+			crossEdges.push(e);
+			continue;
+		}
+		if (!parentOf.has(e.to)) {
+			parentOf.set(e.to, e.from);
+			if (!childrenOf.has(e.from)) childrenOf.set(e.from, []);
+			childrenOf.get(e.from).push(e.to);
+			treeEdges.push(e);
+		} else crossEdges.push(e);
+	}
+	const kindOrder = {
+		ticket: 0,
+		ledger: 1,
+		defect: 2
+	};
+	const roots = all.filter((n) => !parentOf.has(n.key)).sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.key.localeCompare(b.key));
+	let row = 0;
+	const walk = (key, depth) => {
+		const node = byKey.get(key);
+		const x = depth * INDENT;
+		const y = TOP + row * 68;
+		row++;
+		nodes.push({
+			node,
+			x,
+			y
+		});
+		pos.set(key, {
+			x,
+			y
+		});
+		for (const c of childrenOf.get(key) ?? []) walk(c, depth + 1);
+	};
+	for (const r of roots) walk(r.key, 0);
+	const maxRight = Math.max(...nodes.map((n) => n.x + NODE_W), NODE_W);
+	const H = Math.max(TOP + row * 68, 120) + 30;
 	return {
 		nodes,
-		edges,
+		treeEdges,
+		crossEdges,
 		pos,
-		W: 990,
-		H: Math.max(...cols.map((c) => TOP + c.length * 68), 120) + 40
+		W: maxRight + 40,
+		H
 	};
 }
 function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	const [active, setActive] = useState(null);
-	const { nodes, edges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [
+	const { nodes, treeEdges, crossEdges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [
 		tickets,
 		defects,
 		ledgers
 	]);
+	const NODE_W = 250;
 	const connectedEdges = useMemo(() => {
 		const m = /* @__PURE__ */ new Map();
 		if (active === null) return m;
-		for (const e of edges) if (e.from === active || e.to === active) {
+		for (const e of [...treeEdges, ...crossEdges]) if (e.from === active || e.to === active) {
 			if (!m.has(active)) m.set(active, /* @__PURE__ */ new Set());
 			m.get(active).add(`${e.from}->${e.to}`);
 		}
 		return m;
-	}, [edges, active]);
+	}, [
+		treeEdges,
+		crossEdges,
+		active
+	]);
 	const isConnected = (e) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false);
-	const mk = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`;
-	const NODE_H = 56, COL_W = 250;
+	const mk = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`;
+	const NODE_H = 56;
+	const KIND_COLOR = {
+		ticket: "#609bfa",
+		ledger: "#f7ad31",
+		defect: "#f2555a"
+	};
+	const KIND_LABEL = {
+		ticket: "工单/拍板",
+		ledger: "挂账",
+		defect: "缺陷"
+	};
 	return /* @__PURE__ */ jsxs("div", {
 		style: {
 			flex: 1,
@@ -4651,6 +4695,26 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 						},
 						children: "🧪 串联（实验）"
 					}),
+					Object.entries(KIND_COLOR).map(([kind, c]) => /* @__PURE__ */ jsxs("span", {
+						style: {
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 4,
+							fontSize: 10,
+							color: TEXT_FAINT
+						},
+						children: [
+							/* @__PURE__ */ jsx("span", { style: {
+								width: 3,
+								height: 12,
+								background: c,
+								display: "inline-block",
+								borderRadius: 2
+							} }),
+							" ",
+							KIND_LABEL[kind]
+						]
+					}, kind)),
 					Object.entries(CHAIN_EDGE_STYLE).map(([kind, s]) => /* @__PURE__ */ jsxs("span", {
 						style: {
 							display: "inline-flex",
@@ -4679,7 +4743,7 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 						children: [
 							nodes.length,
 							" 节点 · ",
-							edges.length,
+							treeEdges.length + crossEdges.length,
 							" 条连线 · 关系自文档文本抽取"
 						]
 					})
@@ -4718,22 +4782,28 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 							pointerEvents: "none",
 							zIndex: 1
 						},
-						children: edges.map((e, i) => {
+						children: [...treeEdges.map((e) => ({
+							e,
+							cross: false
+						})), ...crossEdges.map((e) => ({
+							e,
+							cross: true
+						}))].map(({ e, cross }, i) => {
 							const a = pos.get(e.from), b = pos.get(e.to);
 							if (a === void 0 || b === void 0) return null;
 							const st = CHAIN_EDGE_STYLE[e.kind];
 							const on = isConnected(e);
 							return /* @__PURE__ */ jsx("path", {
-								d: mk(a.x + COL_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2),
+								d: mk(a.x + NODE_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2),
 								fill: "none",
-								stroke: on ? st.color : "rgba(255,255,255,.12)",
+								stroke: cross ? "rgba(255,255,255,.14)" : on ? st.color : "rgba(255,255,255,.12)",
 								strokeWidth: on ? 2.4 : 1.3,
 								strokeDasharray: st.dashed ? "5 4" : void 0,
 								opacity: active !== null && !on ? .35 : 1
 							}, i);
 						})
 					}), nodes.map(({ node, x, y }) => {
-						const on = active === node.key || edges.some((e) => (e.from === node.key || e.to === node.key) && (active === null || isConnected(e)));
+						const on = active === node.key || edgesRelated(node.key, active, treeEdges, crossEdges);
 						return /* @__PURE__ */ jsxs("div", {
 							onClick: (ev) => {
 								ev.stopPropagation();
@@ -4746,7 +4816,7 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 								position: "absolute",
 								left: x,
 								top: y,
-								width: COL_W,
+								width: NODE_W,
 								height: NODE_H,
 								zIndex: 3,
 								display: "flex",
@@ -4759,59 +4829,76 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 								opacity: active !== null && !on ? .4 : 1,
 								transition: "opacity .15s"
 							},
-							children: [/* @__PURE__ */ jsx("span", { style: {
-								width: 4,
-								flexShrink: 0,
-								background: node.badgeColor
-							} }), /* @__PURE__ */ jsxs("div", {
-								style: {
-									padding: "7px 9px",
-									flex: 1,
-									minWidth: 0,
-									display: "flex",
-									flexDirection: "column",
-									gap: 3
-								},
-								children: [/* @__PURE__ */ jsxs("div", {
+							children: [
+								/* @__PURE__ */ jsx("span", { style: {
+									width: 4,
+									flexShrink: 0,
+									background: KIND_COLOR[node.kind]
+								} }),
+								/* @__PURE__ */ jsxs("div", {
 									style: {
+										padding: "7px 9px",
+										flex: 1,
+										minWidth: 0,
 										display: "flex",
-										alignItems: "center",
-										gap: 6
+										flexDirection: "column",
+										gap: 3
 									},
-									children: [/* @__PURE__ */ jsx("span", {
+									children: [/* @__PURE__ */ jsxs("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: 6,
+											paddingRight: 14
+										},
+										children: [/* @__PURE__ */ jsx("span", {
+											style: {
+												fontSize: 9,
+												padding: "1px 6px",
+												borderRadius: 999,
+												flexShrink: 0,
+												background: CHIP_BG,
+												color: "#999"
+											},
+											children: node.badge
+										}), /* @__PURE__ */ jsx("span", {
+											style: {
+												fontSize: 11,
+												fontWeight: 700,
+												color: TEXT,
+												lineHeight: 1.3,
+												overflow: "hidden",
+												textOverflow: "ellipsis",
+												whiteSpace: "nowrap",
+												flex: 1
+											},
+											children: node.title
+										})]
+									}), node.sub && /* @__PURE__ */ jsx("div", {
 										style: {
 											fontSize: 9,
-											padding: "1px 6px",
-											borderRadius: 999,
-											flexShrink: 0,
-											background: `${node.badgeColor}22`,
-											color: node.badgeColor
-										},
-										children: node.badge
-									}), /* @__PURE__ */ jsx("span", {
-										style: {
-											fontSize: 11,
-											fontWeight: 700,
-											color: TEXT,
-											lineHeight: 1.3,
+											color: TEXT_FAINT,
 											overflow: "hidden",
 											textOverflow: "ellipsis",
-											whiteSpace: "nowrap",
-											flex: 1
+											whiteSpace: "nowrap"
 										},
-										children: node.title
+										children: node.sub
 									})]
-								}), node.sub && /* @__PURE__ */ jsx("div", {
+								}),
+								/* @__PURE__ */ jsx("span", {
+									title: node.badge,
 									style: {
-										fontSize: 9,
-										color: TEXT_FAINT,
-										overflow: "hidden",
-										textOverflow: "ellipsis",
-										whiteSpace: "nowrap"
-									},
-									children: node.sub
-								})]
-							})]
+										position: "absolute",
+										right: 7,
+										top: 7,
+										width: 8,
+										height: 8,
+										borderRadius: 999,
+										background: node.badgeColor,
+										boxShadow: "0 0 0 2px rgba(0,0,0,.25)"
+									}
+								})
+							]
 						}, node.key);
 					})]
 				})
@@ -4828,6 +4915,11 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 			})
 		]
 	});
+}
+function edgesRelated(key, active, treeEdges, crossEdges) {
+	if (active === null) return true;
+	for (const e of [...treeEdges, ...crossEdges]) if (e.from === key && e.to === active || e.from === active && e.to === key) return true;
+	return false;
 }
 //#endregion
 //#region src/client/index.tsx

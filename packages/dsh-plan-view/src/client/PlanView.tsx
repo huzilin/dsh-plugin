@@ -2122,12 +2122,13 @@ const chainTicketByNum = (list: ParsedTicket[], n: number): ParsedTicket | undef
 
 function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: ParsedTicket[]): {
   nodes: { node: ChainNode; x: number; y: number }[]
-  edges: ChainEdge[]
+  treeEdges: ChainEdge[]
+  crossEdges: ChainEdge[]
   pos: Map<string, { x: number; y: number }>
   W: number
   H: number
 } {
-  const COL_W = 250, NODE_H = 56, GAP_X = 90, GAP_Y = 12, TOP = 20
+  const NODE_W = 250, NODE_H = 56, INDENT = 64, GAP_Y = 12, TOP = 20
   const nodes: { node: ChainNode; x: number; y: number }[] = []
   const pos = new Map<string, { x: number; y: number }>()
   const edges: ChainEdge[] = []
@@ -2167,48 +2168,70 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     }
   }
 
-  const cols: ChainNode[][] = [ticketNodes, ledgerNodes, defectNodes]
-  cols.forEach((col, ci) => {
-    const x = ci * (COL_W + GAP_X)
-    col.forEach((node, ri) => {
-      const y = TOP + ri * (NODE_H + GAP_Y)
-      nodes.push({ node, x, y })
-      pos.set(node.key, { x, y })
-    })
-  })
+  const all: ChainNode[] = [...ticketNodes, ...ledgerNodes, ...defectNodes]
+  const byKey = new Map(all.map(n => [n.key, n]))
 
-  // 挂账 → 出自票 / 转票落地
+  // 关系统一为「父 → 子」树方向（用户示例：ticket1→ticket2→挂账1→ticket3，
+  // 挂账1 分叉 → 缺陷1）：票 →(出自) 挂账 →(转票) 新票；挂账 →(被提及) 缺陷。
   for (const l of ledgerNodes) {
     const body = l.ticket.body
     const src = parseLedgerEntries(body)[0]?.source ?? ''
     for (const m of src.matchAll(/票\s*(\d+)/g)) {
       const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
-      if (t !== undefined) edges.push({ from: l.key, to: `t:${t.id}`, kind: 'source' })
+      if (t !== undefined) edges.push({ from: `t:${t.id}`, to: l.key, kind: 'source' })
     }
     for (const m of body.matchAll(/tickets\/(\d+)-/g)) {
       const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
       if (t !== undefined && !edges.some(e => e.from === l.key && e.to === `t:${t.id}`)) edges.push({ from: l.key, to: `t:${t.id}`, kind: 'spawn' })
     }
   }
-  // 缺陷 → 提及挂账
   for (const ds of defectSections) {
     for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
       const target = `l:挂账-${m[1]}`
-      if (pos.has(target) && !edges.some(e => e.from === ds.key && e.to === target)) edges.push({ from: ds.key, to: target, kind: 'mention' })
+      if (byKey.has(target) && !edges.some(e => e.from === target && e.to === ds.key)) edges.push({ from: target, to: ds.key, kind: 'mention' })
     }
   }
-  // 票间依赖（blockedBy，虚线）
-  const byId = new Map(tickets.map(t => [t.id, t]))
+  const depById = new Map(tickets.map(t => [t.id, t]))
   for (const t of tickets) {
     for (const r of t.blockedBy) {
-      const b = resolveRef(r, byId)
-      if (b !== undefined && byId.has(b)) edges.push({ from: `t:${b}`, to: `t:${t.id}`, kind: 'dep' })
+      const b = resolveRef(r, depById)
+      if (b !== undefined && depById.has(b)) edges.push({ from: `t:${b}`, to: `t:${t.id}`, kind: 'dep' })
     }
   }
 
-  const H = Math.max(...cols.map(c => TOP + c.length * (NODE_H + GAP_Y)), 120) + 40
-  const W = 3 * COL_W + 2 * GAP_X + 60
-  return { nodes, edges, pos, W, H }
+  // 树布局：每节点只认第一个父（其余边作交叉连线淡画），无父者为根；
+  // DFS 先序占行——子节点缩进一档排在父下方，兄弟竖排。
+  const parentOf = new Map<string, string>()
+  const childrenOf = new Map<string, string[]>()
+  const treeEdges: ChainEdge[] = []
+  const crossEdges: ChainEdge[] = []
+  for (const e of edges) {
+    if (!byKey.has(e.from) || !byKey.has(e.to)) { crossEdges.push(e); continue }
+    if (!parentOf.has(e.to)) {
+      parentOf.set(e.to, e.from)
+      if (!childrenOf.has(e.from)) childrenOf.set(e.from, [])
+      childrenOf.get(e.from)!.push(e.to)
+      treeEdges.push(e)
+    } else crossEdges.push(e)
+  }
+  const kindOrder: Record<ChainNode['kind'], number> = { ticket: 0, ledger: 1, defect: 2 }
+  const roots = all.filter(n => !parentOf.has(n.key))
+    .sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.key.localeCompare(b.key))
+  let row = 0
+  const walk = (key: string, depth: number): void => {
+    const node = byKey.get(key)!
+    const x = depth * INDENT
+    const y = TOP + row * (NODE_H + GAP_Y)
+    row++
+    nodes.push({ node, x, y })
+    pos.set(key, { x, y })
+    for (const c of childrenOf.get(key) ?? []) walk(c, depth + 1)
+  }
+  for (const r of roots) walk(r.key, 0)
+
+  const maxRight = Math.max(...nodes.map(n => n.x + NODE_W), NODE_W)
+  const H = Math.max(TOP + row * (NODE_H + GAP_Y), 120) + 30
+  return { nodes, treeEdges, crossEdges, pos, W: maxRight + 40, H }
 }
 
 function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }: {
@@ -2224,32 +2247,40 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const [active, setActive] = useState<string | null>(null)
-  const { nodes, edges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [tickets, defects, ledgers])
+  const { nodes, treeEdges, crossEdges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [tickets, defects, ledgers])
+  const NODE_W = 250
   const connectedEdges = useMemo(() => {
     const m = new Map<string, Set<string>>()
     if (active === null) return m
-    for (const e of edges) {
+    for (const e of [...treeEdges, ...crossEdges]) {
       if (e.from === active || e.to === active) {
         if (!m.has(active)) m.set(active, new Set())
         m.get(active)!.add(`${e.from}->${e.to}`)
       }
     }
     return m
-  }, [edges, active])
+  }, [treeEdges, crossEdges, active])
   const isConnected = (e: ChainEdge) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false)
-  const mk = (x1: number, y1: number, x2: number, y2: number) => `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`
-  const NODE_H = 56, COL_W = 250
+  const mk = (x1: number, y1: number, x2: number, y2: number) => `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`
+  const NODE_H = 56
+  const KIND_COLOR: Record<ChainNode['kind'], string> = { ticket: '#609bfa', ledger: '#f7ad31', defect: '#f2555a' }
+  const KIND_LABEL: Record<ChainNode['kind'], string> = { ticket: '工单/拍板', ledger: '挂账', defect: '缺陷' }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, overflow: 'hidden' }}>
       <div style={{ padding: '10px 16px 6px', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>🧪 串联（实验）</span>
+        {Object.entries(KIND_COLOR).map(([kind, c]) => (
+          <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: TEXT_FAINT }}>
+            <span style={{ width: 3, height: 12, background: c, display: 'inline-block', borderRadius: 2 }} /> {KIND_LABEL[kind as ChainNode['kind']]}
+          </span>
+        ))}
         {Object.entries(CHAIN_EDGE_STYLE).map(([kind, s]) => (
           <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: TEXT_FAINT }}>
             <span style={{ width: 16, height: 2, background: s.color, display: 'inline-block' }} /> {s.label}
           </span>
         ))}
-        <span style={{ fontSize: 11, color: TEXT_FAINT, marginLeft: 'auto' }}>{nodes.length} 节点 · {edges.length} 条连线 · 关系自文档文本抽取</span>
+        <span style={{ fontSize: 11, color: TEXT_FAINT, marginLeft: 'auto' }}>{nodes.length} 节点 · {treeEdges.length + crossEdges.length} 条连线 · 关系自文档文本抽取</span>
       </div>
       {nodes.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>当前图没有可串联的票 / 挂账 / 缺陷。</div>
@@ -2257,32 +2288,33 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
         <div style={{ flex: 1, overflow: 'auto', position: 'relative' }} onClick={() => setActive(null)}>
           <div style={{ position: 'relative', width: W, height: H, margin: '0 auto' }}>
             <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 1 }}>
-              {edges.map((e, i) => {
+              {[...treeEdges.map(e => ({ e, cross: false })), ...crossEdges.map(e => ({ e, cross: true }))].map(({ e, cross }, i) => {
                 const a = pos.get(e.from), b = pos.get(e.to)
                 if (a === undefined || b === undefined) return null
                 const st = CHAIN_EDGE_STYLE[e.kind]
                 const on = isConnected(e)
                 return (
-                  <path key={i} d={mk(a.x + COL_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2)} fill="none"
-                    stroke={on ? st.color : 'rgba(255,255,255,.12)'} strokeWidth={on ? 2.4 : 1.3}
+                  <path key={i} d={mk(a.x + NODE_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2)} fill="none"
+                    stroke={cross ? 'rgba(255,255,255,.14)' : on ? st.color : 'rgba(255,255,255,.12)'} strokeWidth={on ? 2.4 : 1.3}
                     strokeDasharray={st.dashed ? '5 4' : undefined} opacity={active !== null && !on ? 0.35 : 1} />
                 )
               })}
             </svg>
             {nodes.map(({ node, x, y }) => {
-              const on = active === node.key || edges.some(e => (e.from === node.key || e.to === node.key) && (active === null || isConnected(e)))
+              const on = active === node.key || edgesRelated(node.key, active, treeEdges, crossEdges)
               return (
                 <div key={node.key} onClick={ev => { ev.stopPropagation(); setActive(node.key); setFocus(node.ticket) }}
                   onMouseEnter={() => setActive(node.key)} onMouseLeave={() => setActive(null)}
-                  style={{ position: 'absolute', left: x, top: y, width: COL_W, height: NODE_H, zIndex: 3, display: 'flex', background: CARD, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${active === node.key ? TEXT : BORDER}`, boxShadow: active === node.key ? '0 4px 18px rgba(0,0,0,.5)' : '0 2px 8px rgba(0,0,0,.3)', opacity: active !== null && !on ? 0.4 : 1, transition: 'opacity .15s' }}>
-                  <span style={{ width: 4, flexShrink: 0, background: node.badgeColor }} />
+                  style={{ position: 'absolute', left: x, top: y, width: NODE_W, height: NODE_H, zIndex: 3, display: 'flex', background: CARD, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${active === node.key ? TEXT : BORDER}`, boxShadow: active === node.key ? '0 4px 18px rgba(0,0,0,.5)' : '0 2px 8px rgba(0,0,0,.3)', opacity: active !== null && !on ? 0.4 : 1, transition: 'opacity .15s' }}>
+                  <span style={{ width: 4, flexShrink: 0, background: KIND_COLOR[node.kind] }} />
                   <div style={{ padding: '7px 9px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 999, flexShrink: 0, background: `${node.badgeColor}22`, color: node.badgeColor }}>{node.badge}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 14 }}>
+                      <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 999, flexShrink: 0, background: CHIP_BG, color: '#999' }}>{node.badge}</span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{node.title}</span>
                     </div>
                     {node.sub && <div style={{ fontSize: 9, color: TEXT_FAINT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.sub}</div>}
                   </div>
+                  <span title={node.badge} style={{ position: 'absolute', right: 7, top: 7, width: 8, height: 8, borderRadius: 999, background: node.badgeColor, boxShadow: '0 0 0 2px rgba(0,0,0,.25)' }} />
                 </div>
               )
             })}
@@ -2292,4 +2324,12 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
       {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
   )
+}
+
+function edgesRelated(key: string, active: string | null, treeEdges: ChainEdge[], crossEdges: ChainEdge[]): boolean {
+  if (active === null) return true
+  for (const e of [...treeEdges, ...crossEdges]) {
+    if ((e.from === key && e.to === active) || (e.from === active && e.to === key)) return true
+  }
+  return false
 }
