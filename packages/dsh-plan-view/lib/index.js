@@ -53,11 +53,11 @@ async function sessionAlive(sessionId) {
 	return (await sessionList()).find((s) => s.sessionId === sessionId);
 }
 async function sessionCreate(cwd) {
-	return (await rpc("session/create", { _request: cwd === void 0 ? {} : { cwd } })).sessionId;
+	return (await rpc("session/create", { request: cwd === void 0 ? {} : { cwd } })).sessionId;
 }
 /** Non-blocking dispatch: queue one human message on the session's inbox. */
 async function sessionPrompt(sessionId, text) {
-	await rpc("session/prompt", { _request: {
+	await rpc("session/prompt", { request: {
 		requestId: crypto.randomUUID(),
 		sessionId,
 		mode: "queue",
@@ -413,6 +413,8 @@ const STATUS_ORDER = [
 function ticketKind(t) {
 	const ty = (t.type ?? "").trim().toLowerCase();
 	if (ty === "approval") return "approval";
+	if (ty === "qa-defect") return "defect";
+	if (ty === "ledger") return "ledger";
 	if (isPending(t)) return "approval";
 	if (ty === "spec" || ty === "design" || /^(map|readme|index)$/i.test(t.id)) return "note";
 	if (!ty && !t.status) return "note";
@@ -429,10 +431,47 @@ const KIND_META = {
 		icon: "⏳",
 		color: "#f7ad31"
 	},
+	ledger: {
+		label: "台账",
+		icon: "📒",
+		color: "#4ed17e"
+	},
+	defect: {
+		label: "缺陷",
+		icon: "🐞",
+		color: "#f2555a"
+	},
 	note: {
 		label: "说明",
 		icon: "📄",
 		color: TEXT_FAINT
+	}
+};
+const SPECULATION_TYPES = new Set([
+	"research",
+	"grilling",
+	"prototype"
+]);
+const IMPL_TYPES = new Set(["task", "impl"]);
+function mapKind(dir, tickets) {
+	let speculation = false, impl = false;
+	for (const t of tickets) {
+		if (t.effort !== dir) continue;
+		const ty = (t.type ?? "").trim().toLowerCase();
+		if (SPECULATION_TYPES.has(ty)) speculation = true;
+		if (IMPL_TYPES.has(ty)) impl = true;
+	}
+	if (speculation) return "speculation";
+	if (impl) return "impl";
+}
+const MAP_KIND_META = {
+	speculation: {
+		label: "推演图",
+		icon: "🗺️"
+	},
+	impl: {
+		label: "实施图",
+		icon: "🛠️"
 	}
 };
 /** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -562,7 +601,7 @@ async function loadPlan(scope, planDir) {
 		path: e.file.path,
 		effort: e.from,
 		group: e.group
-	}));
+	})).filter((t, i) => picked[i]?.group !== "qa" || ticketKind(t) === "defect");
 	const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 	return {
 		tickets,
@@ -2446,81 +2485,112 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
 			gap: 12
 		},
 		children: [
-			/* @__PURE__ */ jsx("div", {
+			[
+				"speculation",
+				"impl",
+				void 0
+			].map((kind) => ({
+				kind,
+				items: efforts.map((e, i) => ({
+					e,
+					i
+				})).filter(({ e }) => mapKind(e.dir, tickets) === kind)
+			})).filter((g) => g.items.length > 0).map((g) => /* @__PURE__ */ jsxs("div", {
 				style: {
 					display: "flex",
-					gap: 10,
-					flexWrap: "wrap"
+					flexDirection: "column",
+					gap: 8
 				},
-				children: efforts.map((e) => {
-					const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
-					const work = own.filter((t) => ticketKind(t) === "ticket" && !t.outOfScope);
-					const done = work.filter((t) => t.resolved).length;
-					const pct = work.length > 0 ? Math.round(done / work.length * 100) : 0;
-					const { stage, color } = effortStage(own);
-					return /* @__PURE__ */ jsxs("div", {
+				children: [/* @__PURE__ */ jsxs("div", {
+					style: {
+						fontSize: 12,
+						fontWeight: 700,
+						color: TEXT_DIM
+					},
+					children: [g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : "📄 其他地图", /* @__PURE__ */ jsxs("span", {
 						style: {
-							flex: "1 1 220px",
-							minWidth: 220,
-							padding: "10px 12px",
-							borderRadius: 10,
-							background: CARD,
-							border: `1px solid ${BORDER}`,
-							borderTop: `3px solid ${color}`
+							fontWeight: 400,
+							color: TEXT_FAINT,
+							marginLeft: 6
 						},
-						children: [
-							/* @__PURE__ */ jsx("div", {
-								style: {
-									fontSize: 11,
-									color: TEXT_FAINT,
-									fontFamily: "monospace",
-									overflow: "hidden",
-									textOverflow: "ellipsis",
-									whiteSpace: "nowrap"
-								},
-								children: e.dir.split("/").pop()
-							}),
-							/* @__PURE__ */ jsx("div", {
-								style: {
-									fontSize: 15,
-									fontWeight: 700,
-									color,
-									margin: "3px 0 6px"
-								},
-								children: stage
-							}),
-							/* @__PURE__ */ jsx("div", {
-								style: {
-									height: 5,
-									borderRadius: 3,
-									background: CHIP_BG,
-									overflow: "hidden"
-								},
-								children: /* @__PURE__ */ jsx("div", { style: {
-									height: "100%",
-									width: `${pct}%`,
-									background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
-								} })
-							}),
-							/* @__PURE__ */ jsxs("div", {
-								style: {
-									fontSize: 11,
-									color: TEXT_FAINT,
-									marginTop: 5
-								},
-								children: [
-									pct,
-									"% · ",
-									work.length - done,
-									" 张在途 · ",
-									own.filter((t) => ticketKind(t) === "approval" && isPending(t)).length,
-									" 待拍板"
-								]
-							})
-						]
-					}, e.dir);
-				})
-			}),
+						children: [g.items.length, " 张"]
+					})]
+				}), /* @__PURE__ */ jsx("div", {
+					style: {
+						display: "flex",
+						gap: 10,
+						flexWrap: "wrap"
+					},
+					children: g.items.map(({ e }) => {
+						const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
+						const work = own.filter((t) => ticketKind(t) === "ticket" && !t.outOfScope);
+						const done = work.filter((t) => t.resolved).length;
+						const pct = work.length > 0 ? Math.round(done / work.length * 100) : 0;
+						const { stage, color } = effortStage(own);
+						return /* @__PURE__ */ jsxs("div", {
+							style: {
+								flex: "1 1 220px",
+								minWidth: 220,
+								padding: "10px 12px",
+								borderRadius: 10,
+								background: CARD,
+								border: `1px solid ${BORDER}`,
+								borderTop: `3px solid ${color}`
+							},
+							children: [
+								/* @__PURE__ */ jsx("div", {
+									style: {
+										fontSize: 11,
+										color: TEXT_FAINT,
+										fontFamily: "monospace",
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap"
+									},
+									children: e.dir.split("/").pop()
+								}),
+								/* @__PURE__ */ jsx("div", {
+									style: {
+										fontSize: 15,
+										fontWeight: 700,
+										color,
+										margin: "3px 0 6px"
+									},
+									children: stage
+								}),
+								/* @__PURE__ */ jsx("div", {
+									style: {
+										height: 5,
+										borderRadius: 3,
+										background: CHIP_BG,
+										overflow: "hidden"
+									},
+									children: /* @__PURE__ */ jsx("div", { style: {
+										height: "100%",
+										width: `${pct}%`,
+										background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
+									} })
+								}),
+								/* @__PURE__ */ jsxs("div", {
+									style: {
+										fontSize: 11,
+										color: TEXT_FAINT,
+										marginTop: 5
+									},
+									children: [
+										pct,
+										"% · ",
+										work.length - done,
+										" 张在途 · ",
+										own.filter((t) => ticketKind(t) === "approval" && isPending(t)).length,
+										" 待拍板"
+									]
+								})
+							]
+						}, e.dir);
+					})
+				})]
+			}, String(g.kind))),
 			/* @__PURE__ */ jsxs("div", {
 				style: {
 					display: "flex",
@@ -2704,10 +2774,17 @@ function PlanView(props) {
 	const all = data?.tickets ?? [];
 	const routeTickets = useMemo(() => all.filter((t) => classify(t) === "ticket"), [all]);
 	const approvals = useMemo(() => all.filter((t) => classify(t) === "approval"), [all]);
+	const ledgers = useMemo(() => all.filter((t) => classify(t) === "ledger"), [all]);
+	const defects = useMemo(() => all.filter((t) => classify(t) === "defect"), [all]);
 	const mapOwnTickets = routeTickets;
 	const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
 	const mapTickets = useMemo(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
 		mapOwnTickets,
+		effortIdx,
+		selectedDir
+	]);
+	const mapDefects = useMemo(() => effortIdx < 0 ? defects : defects.filter((t) => t.effort === selectedDir), [
+		defects,
 		effortIdx,
 		selectedDir
 	]);
@@ -2804,6 +2881,16 @@ function PlanView(props) {
 			id: "approvals",
 			label: "⏳ 待拍板",
 			count: approvals.length
+		},
+		{
+			id: "ledger",
+			label: "📒 台账",
+			count: ledgers.length
+		},
+		{
+			id: "defects",
+			label: "🐞 缺陷",
+			count: mapDefects.length
 		},
 		{
 			id: "guide",
@@ -2904,59 +2991,100 @@ function PlanView(props) {
 				})]
 			}),
 			top === "route" && /* @__PURE__ */ jsxs(Fragment, { children: [
-				data.efforts.length > 0 && /* @__PURE__ */ jsxs("div", {
-					style: {
-						display: "flex",
-						gap: 6,
-						padding: "8px 10px 6px",
-						flexWrap: "wrap",
-						borderBottom: `1px solid ${BORDER_LIGHT}`
-					},
-					children: [data.efforts.length > 1 && (() => {
-						const on = effortIdx < 0;
-						return /* @__PURE__ */ jsxs("span", {
-							onClick: () => setEffortIdx(-1),
+				data.efforts.length > 0 && (() => {
+					const withIdx = data.efforts.map((e, i) => ({
+						e,
+						i,
+						kind: mapKind(e.dir, all)
+					}));
+					const groups = [
+						"speculation",
+						"impl",
+						void 0
+					].map((kind) => ({
+						kind,
+						items: withIdx.filter((w) => w.kind === kind)
+					})).filter((g) => g.items.length > 0);
+					return /* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							gap: 6,
+							padding: "8px 10px 6px",
+							flexWrap: "wrap",
+							borderBottom: `1px solid ${BORDER_LIGHT}`,
+							alignItems: "center"
+						},
+						children: [data.efforts.length > 1 && (() => {
+							const on = effortIdx < 0;
+							return /* @__PURE__ */ jsxs("span", {
+								onClick: () => setEffortIdx(-1),
+								style: {
+									fontSize: 11,
+									padding: "3px 9px",
+									borderRadius: 999,
+									cursor: "pointer",
+									border: `1px solid ${on ? ACCENT : BORDER}`,
+									color: on ? ACCENT : TEXT_FAINT,
+									background: on ? `${ACCENT}22` : "transparent"
+								},
+								children: ["全部地图 ", /* @__PURE__ */ jsx("span", {
+									style: { opacity: .7 },
+									children: mapOwnTickets.length
+								})]
+							});
+						})(), groups.map((g) => /* @__PURE__ */ jsxs("span", {
 							style: {
-								fontSize: 11,
-								padding: "3px 9px",
-								borderRadius: 999,
-								cursor: "pointer",
-								border: `1px solid ${on ? ACCENT : BORDER}`,
-								color: on ? ACCENT : TEXT_FAINT,
-								background: on ? `${ACCENT}22` : "transparent"
-							},
-							children: ["全部地图 ", /* @__PURE__ */ jsx("span", {
-								style: { opacity: .7 },
-								children: mapOwnTickets.length
-							})]
-						});
-					})(), data.efforts.map((e, i) => {
-						const on = effortIdx === i;
-						const n = mapOwnTickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP).length;
-						return /* @__PURE__ */ jsxs("span", {
-							onClick: () => setEffortIdx(i),
-							title: e.dir,
-							style: {
-								fontSize: 11,
-								padding: "3px 9px",
-								borderRadius: 999,
-								cursor: "pointer",
-								border: `1px solid ${on ? ACCENT : BORDER}`,
-								color: on ? ACCENT : TEXT_FAINT,
-								background: on ? `${ACCENT}22` : "transparent"
+								display: "inline-flex",
+								gap: 6,
+								alignItems: "center",
+								flexWrap: "wrap"
 							},
 							children: [
-								"🗺️ ",
-								e.dir.split("/").pop(),
-								" ",
-								/* @__PURE__ */ jsx("span", {
-									style: { opacity: .7 },
-									children: n
-								})
+								groups.length > 1 && /* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										color: TEXT_FAINT,
+										padding: "3px 2px"
+									},
+									children: g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : "📄 其他"
+								}),
+								g.items.map(({ e, i, kind }) => {
+									const on = effortIdx === i;
+									const n = mapOwnTickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP).length;
+									return /* @__PURE__ */ jsxs("span", {
+										onClick: () => setEffortIdx(i),
+										title: e.dir,
+										style: {
+											fontSize: 11,
+											padding: "3px 9px",
+											borderRadius: 999,
+											cursor: "pointer",
+											border: `1px solid ${on ? ACCENT : BORDER}`,
+											color: on ? ACCENT : TEXT_FAINT,
+											background: on ? `${ACCENT}22` : "transparent"
+										},
+										children: [
+											kind ? MAP_KIND_META[kind].icon : "🗺️",
+											" ",
+											e.dir.split("/").pop(),
+											" ",
+											/* @__PURE__ */ jsx("span", {
+												style: { opacity: .7 },
+												children: n
+											})
+										]
+									}, e.dir);
+								}),
+								g !== groups[groups.length - 1] && /* @__PURE__ */ jsx("span", { style: {
+									width: 1,
+									height: 16,
+									background: BORDER,
+									margin: "0 4px"
+								} })
 							]
-						}, e.dir);
-					})]
-				}),
+						}, String(g.kind)))]
+					});
+				})(),
 				/* @__PURE__ */ jsxs("div", {
 					style: {
 						display: "flex",
@@ -3027,6 +3155,22 @@ function PlanView(props) {
 			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
 			top === "approvals" && /* @__PURE__ */ jsx(ApprovalsView, {
 				approvals,
+				scope,
+				ctx,
+				sessions,
+				onChanged,
+				readOnly
+			}),
+			top === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
+				ledgers,
+				scope,
+				ctx,
+				sessions,
+				onChanged,
+				readOnly
+			}),
+			top === "defects" && /* @__PURE__ */ jsx(DefectView, {
+				defects: mapDefects,
 				scope,
 				ctx,
 				sessions,
@@ -3140,7 +3284,7 @@ function GuideView({ scope }) {
 			children: [
 				/* @__PURE__ */ jsx(H, { children: "这个页面是什么" }),
 				/* @__PURE__ */ jsxs(P, { children: [
-					"路线 / 工单 / 待拍板 三页显示的都是在 ",
+					"总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的都是在 ",
 					/* @__PURE__ */ jsx(Code, { children: ".plan/" }),
 					" 下的 markdown。 本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓",
 					/* @__PURE__ */ jsx(Code, { children: "skills/plan-protocol/SKILL.md" }),
@@ -3670,6 +3814,481 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly })
 							]
 						})]
 					}, t.file);
+				})
+			}),
+			focus && /* @__PURE__ */ jsx(DetailModal, {
+				ticket: focus,
+				planDir: "",
+				scope,
+				ctx,
+				sessions,
+				onChanged,
+				onClose: () => setFocus(null),
+				readOnly
+			})
+		]
+	});
+}
+/** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
+function parseLedgerEntries(body) {
+	const out = [];
+	const sections = body.split(/^### /m).slice(1);
+	for (const sec of sections) {
+		const m = (sec.split("\n")[0]?.trim() ?? "").match(/^(挂账-[\w.-]+)\s+(.+)$/);
+		if (!m?.[1] || !m[2]) continue;
+		const field = (name) => sec.match(new RegExp(`^- ${name}:\\s*(.+)$`, "m"))?.[1]?.trim() ?? "";
+		out.push({
+			id: m[1],
+			title: m[2],
+			state: field("状态") || "在挂",
+			blocker: field("卡点"),
+			startWhen: field("启动条件"),
+			source: field("来源")
+		});
+	}
+	return out;
+}
+function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
+	const [focus, setFocus] = useState(null);
+	if (ledgers.length === 0) return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			color: TEXT_FAINT,
+			padding: 24,
+			textAlign: "center"
+		},
+		children: [
+			"没有台账文档。",
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx("span", {
+				style: {
+					fontSize: 12,
+					color: TEXT_FAINT
+				},
+				children: "`.plan/` 根层写 `type: ledger` 的挂账台账会单列在这里，不再随每张 map 重复。"
+			})
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			flexDirection: "column",
+			overflow: "hidden"
+		},
+		children: [
+			/* @__PURE__ */ jsx("div", {
+				style: {
+					padding: "8px 14px",
+					borderBottom: `1px solid ${BORDER}`,
+					fontSize: 11,
+					color: TEXT_FAINT
+				},
+				children: "挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。"
+			}),
+			/* @__PURE__ */ jsx("div", {
+				style: {
+					flex: 1,
+					overflowY: "auto",
+					padding: 12,
+					display: "flex",
+					flexDirection: "column",
+					gap: 10
+				},
+				children: ledgers.map((t) => {
+					const entries = parseLedgerEntries(t.body);
+					return /* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							flexDirection: "column",
+							gap: 8
+						},
+						children: [
+							/* @__PURE__ */ jsxs("div", {
+								style: {
+									display: "flex",
+									alignItems: "center",
+									gap: 8
+								},
+								children: [
+									/* @__PURE__ */ jsx("span", {
+										style: {
+											fontSize: 13,
+											fontWeight: 700,
+											color: TEXT
+										},
+										children: t.title
+									}),
+									/* @__PURE__ */ jsx("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 6px",
+											borderRadius: 999,
+											background: CHIP_BG,
+											color: "#888"
+										},
+										children: t.file
+									}),
+									/* @__PURE__ */ jsxs("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 6px",
+											borderRadius: 999,
+											background: CHIP_BG,
+											color: "#888"
+										},
+										children: [entries.length, " 笔在账"]
+									})
+								]
+							}),
+							entries.length === 0 && /* @__PURE__ */ jsx("div", {
+								onClick: () => setFocus(t),
+								style: {
+									padding: 12,
+									borderRadius: 10,
+									background: CARD,
+									border: `1px solid ${BORDER}`,
+									cursor: "pointer",
+									fontSize: 12,
+									color: TEXT_FAINT
+								},
+								children: "未解析出台账条目（需要 `### 挂账-NN` 小节格式），点开看全文。"
+							}),
+							entries.map((e) => /* @__PURE__ */ jsxs("div", {
+								onClick: () => setFocus(t),
+								style: {
+									padding: "10px 12px",
+									borderRadius: 10,
+									background: CARD,
+									border: `1px solid ${BORDER}`,
+									cursor: "pointer"
+								},
+								children: [
+									/* @__PURE__ */ jsxs("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: 8
+										},
+										children: [
+											/* @__PURE__ */ jsx("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 8px",
+													borderRadius: 999,
+													background: e.state === "在挂" ? "#ffa94d22" : "#2ecc7122",
+													color: e.state === "在挂" ? "#f7ad31" : "#4ed17e",
+													flexShrink: 0
+												},
+												children: e.state
+											}),
+											/* @__PURE__ */ jsx("span", {
+												style: {
+													flex: 1,
+													fontSize: 13,
+													fontWeight: 700,
+													color: TEXT
+												},
+												children: e.title
+											}),
+											e.source && /* @__PURE__ */ jsx("span", {
+												style: {
+													fontSize: 10,
+													color: TEXT_FAINT,
+													flexShrink: 0
+												},
+												children: e.source
+											})
+										]
+									}),
+									e.blocker && /* @__PURE__ */ jsxs("div", {
+										style: {
+											fontSize: 12,
+											color: TEXT_DIM,
+											marginTop: 6,
+											lineHeight: 1.5
+										},
+										children: ["卡点：", e.blocker]
+									}),
+									e.startWhen && /* @__PURE__ */ jsxs("div", {
+										style: {
+											fontSize: 12,
+											color: "#4ed17e",
+											marginTop: 3,
+											lineHeight: 1.5
+										},
+										children: ["启动条件：", e.startWhen]
+									})
+								]
+							}, e.id))
+						]
+					}, t.file);
+				})
+			}),
+			focus && /* @__PURE__ */ jsx(DetailModal, {
+				ticket: focus,
+				planDir: "",
+				scope,
+				ctx,
+				sessions,
+				onChanged,
+				onClose: () => setFocus(null),
+				readOnly
+			})
+		]
+	});
+}
+function parseDefectEntries(body) {
+	const lines = body.split("\n");
+	for (let i = 0; i < lines.length - 1; i++) {
+		const head = lines[i] ?? "";
+		if (!head.includes("缺陷号") || !isDivider(lines[i + 1] ?? "")) continue;
+		const cols = splitRow(head);
+		const col = (...names) => cols.findIndex((c) => names.some((n) => c.includes(n)));
+		const ix = {
+			id: col("缺陷号"),
+			title: col("标题"),
+			severity: col("严重度", "严重程度"),
+			kind: col("类型", "domain"),
+			state: col("状态"),
+			source: col("发现源")
+		};
+		const cell = (row, k) => k >= 0 ? row[k] ?? "" : "";
+		const out = [];
+		for (let j = i + 2; j < lines.length; j++) {
+			const line = lines[j] ?? "";
+			if (!line.includes("|") || /^\s*$/.test(line)) break;
+			const cells = splitRow(line);
+			const id = cell(cells, ix.id);
+			if (!id) continue;
+			out.push({
+				id,
+				title: cell(cells, ix.title),
+				severity: cell(cells, ix.severity),
+				kind: cell(cells, ix.kind),
+				state: cell(cells, ix.state),
+				source: cell(cells, ix.source)
+			});
+		}
+		return out;
+	}
+	return [];
+}
+const DEFECT_CLOSED = new Set([
+	"已关闭",
+	"关闭",
+	"挂起"
+]);
+const defectStateWord = (s) => s.trim().split(/[\s(（#:：—-]/)[0] ?? "";
+function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
+	const [focus, setFocus] = useState(null);
+	if (defects.length === 0) return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			color: TEXT_FAINT,
+			padding: 24,
+			textAlign: "center"
+		},
+		children: [
+			"当前图没有缺陷台账。",
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx("span", {
+				style: {
+					fontSize: 12,
+					color: TEXT_FAINT
+				},
+				children: "`.plan/<effort>/qa/` 下带 `type: qa-defect` 头的缺陷台账会按图列在这里。"
+			})
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			flexDirection: "column",
+			overflow: "hidden"
+		},
+		children: [
+			/* @__PURE__ */ jsx("div", {
+				style: {
+					padding: "8px 14px",
+					borderBottom: `1px solid ${BORDER}`,
+					fontSize: 11,
+					color: TEXT_FAINT
+				},
+				children: "缺陷挂在具体图下（按当前选中的图过滤，切图联动）；条目来自台账的「清单总览」表，点卡片看全文。"
+			}),
+			/* @__PURE__ */ jsx("div", {
+				style: {
+					flex: 1,
+					overflowY: "auto",
+					padding: 12,
+					display: "flex",
+					flexDirection: "column",
+					gap: 10
+				},
+				children: defects.map((t) => {
+					const entries = parseDefectEntries(t.body);
+					return /* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							flexDirection: "column",
+							gap: 8
+						},
+						children: [
+							/* @__PURE__ */ jsxs("div", {
+								style: {
+									display: "flex",
+									alignItems: "center",
+									gap: 8
+								},
+								children: [
+									/* @__PURE__ */ jsx("span", {
+										style: {
+											fontSize: 13,
+											fontWeight: 700,
+											color: TEXT
+										},
+										children: t.title
+									}),
+									/* @__PURE__ */ jsxs("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 6px",
+											borderRadius: 999,
+											background: CHIP_BG,
+											color: "#888"
+										},
+										children: [
+											t.effort?.split("/").pop(),
+											"/",
+											t.file
+										]
+									}),
+									/* @__PURE__ */ jsxs("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 6px",
+											borderRadius: 999,
+											background: CHIP_BG,
+											color: "#888"
+										},
+										children: [entries.length, " 条"]
+									})
+								]
+							}),
+							entries.length === 0 && /* @__PURE__ */ jsx("div", {
+								onClick: () => setFocus(t),
+								style: {
+									padding: 12,
+									borderRadius: 10,
+									background: CARD,
+									border: `1px solid ${BORDER}`,
+									cursor: "pointer",
+									fontSize: 12,
+									color: TEXT_FAINT
+								},
+								children: "未解析出缺陷条目（需要「清单总览」表格，表头含缺陷号/标题/严重度等列），点开看全文。"
+							}),
+							entries.map((e) => {
+								const closed = DEFECT_CLOSED.has(defectStateWord(e.state));
+								return /* @__PURE__ */ jsxs("div", {
+									onClick: () => setFocus(t),
+									style: {
+										padding: "10px 12px",
+										borderRadius: 10,
+										background: closed ? CARD_DARK : CARD,
+										border: `1px solid ${BORDER}`,
+										cursor: "pointer",
+										opacity: closed ? .75 : 1
+									},
+									children: [/* @__PURE__ */ jsxs("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: 8
+										},
+										children: [
+											/* @__PURE__ */ jsx("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 8px",
+													borderRadius: 999,
+													background: closed ? "#2ecc7122" : "#ffa94d22",
+													color: closed ? "#4ed17e" : "#f7ad31",
+													flexShrink: 0
+												},
+												children: e.state || "新建"
+											}),
+											/* @__PURE__ */ jsx("span", {
+												style: {
+													flex: 1,
+													fontSize: 13,
+													fontWeight: 700,
+													color: TEXT
+												},
+												children: e.title
+											}),
+											/* @__PURE__ */ jsx("span", {
+												style: {
+													fontSize: 10,
+													fontFamily: "monospace",
+													color: TEXT_FAINT,
+													flexShrink: 0
+												},
+												children: e.id
+											})
+										]
+									}), /* @__PURE__ */ jsxs("div", {
+										style: {
+											display: "flex",
+											gap: 6,
+											flexWrap: "wrap",
+											marginTop: 6
+										},
+										children: [
+											e.severity && /* @__PURE__ */ jsxs("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: CHIP_BG,
+													color: "#888"
+												},
+												children: ["严重度 ", e.severity]
+											}),
+											e.kind && /* @__PURE__ */ jsxs("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: CHIP_BG,
+													color: "#888"
+												},
+												children: ["类型 ", e.kind]
+											}),
+											e.source && /* @__PURE__ */ jsxs("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: CHIP_BG,
+													color: "#888"
+												},
+												children: ["发现源 ", e.source]
+											})
+										]
+									})]
+								}, e.id);
+							})
+						]
+					}, `${t.effort}/${t.file}`);
 				})
 			}),
 			focus && /* @__PURE__ */ jsx(DetailModal, {

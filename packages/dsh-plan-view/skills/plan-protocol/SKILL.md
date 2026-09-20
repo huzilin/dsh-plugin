@@ -73,7 +73,9 @@ find-bug → to-approval → plan-approve →（依据）→ to-tickets → impl
   - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
   - `origin`：产生原因（`readability-rescue` / `proactive` / `review` / `retrospective`）。
 - **effort 标志**：目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `tickets/` 目录不被读取。
-- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）。没有 `type` 的文件仍可见，但归「说明 / 杂项」类。
+- **非治理目录**：`.plan/handoffs/`（handoff 交接文档产物区）不属 plan 生态——视图不加载、`plan-lint` 跳过（不查缺 map / 状态头 / 同票双档）。
+- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷台账，`.plan/<effort>/qa/defect.md`，qa 目录内其余文件不加 type、不被视图识别）。没有 `type` 的文件仍可见，但归「说明 / 杂项」类。
+- **挂账台账**（`type: ledger`，`.plan/` 根层单文件正本）：plan 级跨图债务账本，不属于任何 effort/轮，整轮归档时原地不动（轮外全局文档）。条目格式固定（插件与 agent 扫描依赖）：`### 挂账-NN 标题` 小节，内含固定字段行 `- 状态:`（在挂/已销）、`- 卡点:`（为什么现在做不了/不做）、`- 启动条件:`（什么情况可以开展）、`- 来源:`（何时谁挂的）。销账在「销账记录」节回填（日期/项/证据或 commit），不留静默消失。**agent 扫描启动纪律**：开工/收口时扫描台账，逐条对照「启动条件」与当前现状，已满足的项当场启动（按拍板落地协议立票或处理）；启动条件未满足的项不许提前动。**恢复口径**：条目**到达实施阶段**（启动条件满足、要真干活）时**恢复到该条目来源所在的原有 map 立票**——不新开 effort、不另起一张图；恢复后在「来源」字段注记恢复落点，条目移入「已转票/已闭环」并在「销账记录」留痕；原图若已 `status: closed` 随之重开 `active`（收口条件=该图全部票 done，届时再翻 closed）。
 - **轮内互引一律相对路径**：同一轮的文档互相引用，写相对路径（相对当前文件），不写 `.plan/...` 开头的根相对路径、不写绝对路径。轮收尾后 `plan-archive` 把整轮迁入 `.archive/rounds/<round-id>/`，目录结构原样，相对引用随整树搬迁存活；根相对/绝对引用会断。轮内引用轮外正本不受此限（正本不搬）。
 
 ---

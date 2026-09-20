@@ -34,6 +34,8 @@ Five of these — `wayfinder`, `grill-me`, `research`, `prototype`, `domain-mode
 - **[domain-modeling](./domain-modeling/SKILL.md)** — actively build and sharpen the project's domain model (`CONTEXT.md`, `docs/adr/`).
 - **[prototype](./prototype/SKILL.md)** — throwaway code that answers a design question: an interactive terminal app for logic/state questions, or radically different UI variants behind one switcher.
 - **[research](./research/SKILL.md)** — investigate a question against primary sources and capture cited findings as markdown.
+- **[to-qa-testcases](./to-qa-testcases/SKILL.md)** — build an effort's test suite: design-source inventory → case design → executable assets, written to `.plan/<effort>/qa/cases.md` (cases carry no frontmatter; only the defect ledger does).
+- **[run-qa-testcases](./run-qa-testcases/SKILL.md)** — run those cases: acceptance records, the defect ledger (`type: qa-defect`, surfaced by the plan view's 缺陷 tab), and the rework-to-closure loop — scoped to one map or a full regression.
 - **[review-code](./.optional/review-code/SKILL.md)** — two-axis review of a diff: Standards (repo conventions + smell baseline) and Spec (does it implement what was asked?).
 
 ## Divergences from upstream

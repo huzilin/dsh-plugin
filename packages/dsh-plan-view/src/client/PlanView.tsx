@@ -344,17 +344,25 @@ const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'resolved', 'out_of_sco
 // lifecycle (pending → closed) that a ticket does not. The view labels them so
 // a reader knows which one they are looking at without opening it.
 
-type TicketKind = 'ticket' | 'approval' | 'note'
+type TicketKind = 'ticket' | 'approval' | 'ledger' | 'defect' | 'note'
 
 /** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
 function ticketKind(t: ParsedTicket): TicketKind {
   const ty = (t.type ?? '').trim().toLowerCase()
   if (ty === 'approval') return 'approval'
+  // An explicit `type` beats a status inference: a defect/ledger frontmatter may
+  // lawfully carry `status: pending` (plan-protocol five states), which must not
+  // re-route it to approvals — the qa whitelist would then silently drop it.
+  if (ty === 'qa-defect') return 'defect'
+  // A ledger (挂账台账) is the plan's standing debt register. It asks for work
+  // only when its 启动条件 (start condition) is met, so it must not surface as
+  // a ticket or repeat inside every map — it gets its own tab.
+  if (ty === 'ledger') return 'ledger'
   if (isPending(t)) return 'approval'
   // map/spec/index documents describe the effort rather than asking for work.
   if (ty === 'spec' || ty === 'design' || /^(map|readme|index)$/i.test(t.id)) return 'note'
   // A document declaring neither a type nor a status is not claiming to be a
-  // ticket — it is a note (a research record, a ledger, a handoff). Counting it
+  // ticket — it is a note (a research record, a handoff). Counting it
   // as a ticket invented work that did not exist, so it is classified neutral.
   // Both fields are read because either one is a claim of intent; a real ticket
   // states at least one.
@@ -365,7 +373,37 @@ function ticketKind(t: ParsedTicket): TicketKind {
 const KIND_META: Record<TicketKind, { label: string; icon: string; color: string }> = {
   ticket: { label: '工单', icon: '🎫', color: ACCENT_SOFT },
   approval: { label: '待拍板', icon: '⏳', color: '#f7ad31' },
+  ledger: { label: '台账', icon: '📒', color: '#4ed17e' },
+  defect: { label: '缺陷', icon: '🐞', color: '#f2555a' },
   note: { label: '说明', icon: '📄', color: TEXT_FAINT },
+}
+
+// ─── Map kinds: 推演图 vs 实施图 ─────────────────────────────────────────────
+//
+// 一个 effort 是推演图（wayfinder：票型 research/grilling/prototype，终点=决策
+// 清零）还是实施图（票型 task/impl，终点=落码验收），由票型推导——不需要文档
+// 自我声明。两类图工作流不同（推演靠讨论，实施靠派工），展示上分两组。
+type MapKind = 'speculation' | 'impl'
+
+const SPECULATION_TYPES = new Set(['research', 'grilling', 'prototype'])
+const IMPL_TYPES = new Set(['task', 'impl'])
+
+function mapKind(dir: string, tickets: ParsedTicket[]): MapKind | undefined {
+  let speculation = false, impl = false
+  for (const t of tickets) {
+    if (t.effort !== dir) continue
+    const ty = (t.type ?? '').trim().toLowerCase()
+    if (SPECULATION_TYPES.has(ty)) speculation = true
+    if (IMPL_TYPES.has(ty)) impl = true
+  }
+  if (speculation) return 'speculation'
+  if (impl) return 'impl'
+  return undefined
+}
+
+const MAP_KIND_META: Record<MapKind, { label: string; icon: string }> = {
+  speculation: { label: '推演图', icon: '🗺️' },
+  impl: { label: '实施图', icon: '🛠️' },
 }
 
 /** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -477,12 +515,14 @@ async function collectTicketFiles(scope: SessionScope, effortDir: string): Promi
   return all
 }
 
-// ─── Three views, one collection pass ────────────────────────────────────────
+// ─── Four views, one collection pass ─────────────────────────────────────────
 //
-// The tab shows three different things that happen to share a directory:
+// The tab shows the different things that happen to share a directory:
 //   路线 (route)     — the wayfinder map: an effort's destination and its DAG
 //   工单 (tickets)   — work waiting to be done
 //   待拍板 (approvals) — decisions waiting on the human
+//   台账 (ledger)    — standing debts across maps (挂账台账)
+//   缺陷 (defects)   — test-found bugs, scoped to one map (缺陷台账)
 // They are collected together, then split by kind, so each view is one filter
 // over the same data rather than three loaders that can disagree.
 
@@ -534,7 +574,16 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
     picked.push(e)
   }
   const raws = await Promise.all(picked.map(e => fsRead(scope, e.file.path).then(r => r.kind === 'text' ? r.content : '')))
-  const tickets = picked.map((e, i) => ({ ...deriveTicketStatus(e.file.name, raws[i] ?? ''), path: e.file.path, effort: e.from, group: e.group }))
+  // The `qa/` directory is whitelist-only: only files declaring `type: qa-defect`
+  // enter the view at all. cases.md / test.md carry no frontmatter, so they have
+  // no `type` — a headless file classifies as a plain ticket, the ticket board's
+  // default kindSet includes it, and no view-level filter can exclude it. So the
+  // drop happens here, at the data layer, before the tickets array exists.
+  // Side effect by design: any future headless file in `qa/` (README, notes…)
+  // stays invisible too — 加头 = 被看见，不加头 = 不被看见.
+  const tickets = picked
+    .map((e, i) => ({ ...deriveTicketStatus(e.file.name, raws[i] ?? ''), path: e.file.path, effort: e.from, group: e.group }))
+    .filter((t, i) => picked[i]?.group !== 'qa' || ticketKind(t) === 'defect')
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
   return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
@@ -1200,26 +1249,37 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
   )
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* 阶段指示 — one card per effort */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {efforts.map(e => {
-          const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
-          const work = own.filter(t => ticketKind(t) === 'ticket' && !t.outOfScope)
-          const done = work.filter(t => t.resolved).length
-          const pct = work.length > 0 ? Math.round((done / work.length) * 100) : 0
-          const { stage, color } = effortStage(own)
-          return (
-            <div key={e.dir} style={{ flex: '1 1 220px', minWidth: 220, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, borderTop: `3px solid ${color}` }}>
-              <div style={{ fontSize: 11, color: TEXT_FAINT, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.dir.split('/').pop()}</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color, margin: '3px 0 6px' }}>{stage}</div>
-              <div style={{ height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
-              </div>
-              <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>{pct}% · {work.length - done} 张在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板</div>
+      {/* 阶段指示 — one card per effort, 推演图/实施图分两组（2026-09-20 拍板） */}
+      {(['speculation', 'impl', undefined] as const)
+        .map(kind => ({ kind, items: efforts.map((e, i) => ({ e, i })).filter(({ e }) => mapKind(e.dir, tickets) === kind) }))
+        .filter(g => g.items.length > 0)
+        .map(g => (
+          <div key={String(g.kind)} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: TEXT_DIM }}>
+              {g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : '📄 其他地图'}
+              <span style={{ fontWeight: 400, color: TEXT_FAINT, marginLeft: 6 }}>{g.items.length} 张</span>
             </div>
-          )
-        })}
-      </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {g.items.map(({ e }) => {
+                const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
+                const work = own.filter(t => ticketKind(t) === 'ticket' && !t.outOfScope)
+                const done = work.filter(t => t.resolved).length
+                const pct = work.length > 0 ? Math.round((done / work.length) * 100) : 0
+                const { stage, color } = effortStage(own)
+                return (
+                  <div key={e.dir} style={{ flex: '1 1 220px', minWidth: 220, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, borderTop: `3px solid ${color}` }}>
+                    <div style={{ fontSize: 11, color: TEXT_FAINT, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.dir.split('/').pop()}</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color, margin: '3px 0 6px' }}>{stage}</div>
+                    <div style={{ height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>{pct}% · {work.length - done} 张在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       {/* 卡点聚合 */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 320px', minWidth: 300, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
@@ -1254,7 +1314,7 @@ function OverviewView({ tickets, efforts, planDir, scope, ctx, sessions, onChang
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'route' | 'tickets' | 'approvals' | 'overview' | 'guide'
+type TopView = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'overview' | 'guide'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
@@ -1305,6 +1365,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const all = data?.tickets ?? []
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
+  const ledgers = useMemo(() => all.filter(t => classify(t) === 'ledger'), [all])
+  const defects = useMemo(() => all.filter(t => classify(t) === 'defect'), [all])
   // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
   // their own board — their tickets show in the normal ticket view until removed.
   const mapOwnTickets = routeTickets
@@ -1316,6 +1378,13 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const mapTickets = useMemo(
     () => (effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
     [mapOwnTickets, effortIdx, selectedDir],
+  )
+  // 缺陷挂在具体图下（.plan/<effort>/qa/），按当前选中的图过滤——与路线页共用
+  // effortIdx/selectedDir，切图时缺陷跟着切。有意与挂账台账的跨图聚合不同：
+  // 挂账是 plan 级跨图债务，缺陷属于某一张图。
+  const mapDefects = useMemo(
+    () => (effortIdx < 0 ? defects : defects.filter(t => t.effort === selectedDir)),
+    [defects, effortIdx, selectedDir],
   )
 
   const destination = useMemo(() => {
@@ -1362,6 +1431,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     { id: 'route', label: '🗺️ 路线', count: mapOwnTickets.length },
     { id: 'tickets', label: '🎫 工单', count: mapOwnTickets.length },
     { id: 'approvals', label: '⏳ 待拍板', count: approvals.length },
+    { id: 'ledger', label: '📒 台账', count: ledgers.length },
+    { id: 'defects', label: '🐞 缺陷', count: mapDefects.length },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
@@ -1404,27 +1475,44 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       )}
       {top === 'route' && (
         <>
-          {data.efforts.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, padding: '8px 10px 6px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}` }}>
-              {data.efforts.length > 1 && (() => {
-                const on = effortIdx < 0
-                return (
-                  <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
-                    全部地图 <span style={{ opacity: .7 }}>{mapOwnTickets.length}</span>
+          {data.efforts.length > 0 && (() => {
+            // 分开展示：推演图一组、实施图一组，未判型的垫后（2026-09-20 拍板）。
+            const withIdx = data.efforts.map((e, i) => ({ e, i, kind: mapKind(e.dir, all) }))
+            const groups = (['speculation', 'impl', undefined] as const)
+              .map(kind => ({ kind, items: withIdx.filter(w => w.kind === kind) }))
+              .filter(g => g.items.length > 0)
+            return (
+              <div style={{ display: 'flex', gap: 6, padding: '8px 10px 6px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}`, alignItems: 'center' }}>
+                {data.efforts.length > 1 && (() => {
+                  const on = effortIdx < 0
+                  return (
+                    <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
+                      全部地图 <span style={{ opacity: .7 }}>{mapOwnTickets.length}</span>
+                    </span>
+                  )
+                })()}
+                {groups.map(g => (
+                  <span key={String(g.kind)} style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {groups.length > 1 && (
+                      <span style={{ fontSize: 10, color: TEXT_FAINT, padding: '3px 2px' }}>
+                        {g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : '📄 其他'}
+                      </span>
+                    )}
+                    {g.items.map(({ e, i, kind }) => {
+                      const on = effortIdx === i
+                      const n = mapOwnTickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP).length
+                      return (
+                        <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
+                          {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{n}</span>
+                        </span>
+                      )
+                    })}
+                    {g !== groups[groups.length - 1] && <span style={{ width: 1, height: 16, background: BORDER, margin: '0 4px' }} />}
                   </span>
-                )
-              })()}
-              {data.efforts.map((e, i) => {
-                const on = effortIdx === i
-                const n = mapOwnTickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP).length
-                return (
-                  <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
-                    🗺️ {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{n}</span>
-                  </span>
-                )
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+            )
+          })()}
           <div style={{ display: 'flex', gap: 2, padding: '4px 8px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
             <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
             <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
@@ -1438,6 +1526,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       {top === 'tickets' && <ViewC tickets={mapOwnTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
       {top === 'guide' && <GuideView scope={scope} />}
       {top === 'approvals' && <ApprovalsView approvals={approvals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'ledger' && <LedgerView ledgers={ledgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
       {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
@@ -1487,7 +1577,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
 
         <H>这个页面是什么</H>
         <P>
-          路线 / 工单 / 待拍板 三页显示的都是在 <Code>.plan/</Code> 下的 markdown。
+          总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的都是在 <Code>.plan/</Code> 下的 markdown。
           本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓
           <Code>skills/plan-protocol/SKILL.md</Code>，本页是它的可视化速览。
         </P>
@@ -1676,6 +1766,206 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly }:
           })}
         </div>
       )}
+      {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
+    </div>
+  )
+}
+
+// ─── LedgerView（挂账台账）───────────────────────────────────────────────────
+//
+// 台账是 plan 级的跨图债务账本（type: ledger，.plan 根层）。它不属于任何一张
+// map，所以单列一页，不再随每张 map 重复出现。agent 扫描启动的入口也在
+// 这里：每笔条目带「卡点 / 启动条件」，条件满足即可开工销账。
+
+interface LedgerEntry {
+  id: string          // 挂账-NN
+  title: string
+  state: string       // 状态（在挂 / 已销…）
+  blocker: string     // 卡点：为什么现在做不了
+  startWhen: string   // 启动条件：什么情况可以开展
+  source: string      // 来源（何时谁挂的）
+}
+
+/** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
+function parseLedgerEntries(body: string): LedgerEntry[] {
+  const out: LedgerEntry[] = []
+  const sections = body.split(/^### /m).slice(1)
+  for (const sec of sections) {
+    const head = sec.split('\n')[0]?.trim() ?? ''
+    const m = head.match(/^(挂账-[\w.-]+)\s+(.+)$/)
+    if (!m?.[1] || !m[2]) continue
+    const field = (name: string) => sec.match(new RegExp(`^- ${name}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? ''
+    out.push({
+      id: m[1], title: m[2],
+      state: field('状态') || '在挂',
+      blocker: field('卡点'),
+      startWhen: field('启动条件'),
+      source: field('来源'),
+    })
+  }
+  return out
+}
+
+function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { ledgers: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
+  const [focus, setFocus] = useState<ParsedTicket | null>(null)
+
+  if (ledgers.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
+        没有台账文档。
+        <br />
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>`.plan/` 根层写 `type: ledger` 的挂账台账会单列在这里，不再随每张 map 重复。</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
+        挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {ledgers.map(t => {
+          const entries = parseLedgerEntries(t.body)
+          return (
+            <div key={t.file} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{t.title}</span>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{t.file}</span>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{entries.length} 笔在账</span>
+              </div>
+              {entries.length === 0 && (
+                <div onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', fontSize: 12, color: TEXT_FAINT }}>
+                  未解析出台账条目（需要 `### 挂账-NN` 小节格式），点开看全文。
+                </div>
+              )}
+              {entries.map(e => (
+                <div key={e.id} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: e.state === '在挂' ? '#ffa94d22' : '#2ecc7122', color: e.state === '在挂' ? '#f7ad31' : '#4ed17e', flexShrink: 0 }}>{e.state}</span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
+                    {e.source && <span style={{ fontSize: 10, color: TEXT_FAINT, flexShrink: 0 }}>{e.source}</span>}
+                  </div>
+                  {e.blocker && <div style={{ fontSize: 12, color: TEXT_DIM, marginTop: 6, lineHeight: 1.5 }}>卡点：{e.blocker}</div>}
+                  {e.startWhen && <div style={{ fontSize: 12, color: '#4ed17e', marginTop: 3, lineHeight: 1.5 }}>启动条件：{e.startWhen}</div>}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+      {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
+    </div>
+  )
+}
+
+// ─── DefectView（缺陷台账）──────────────────────────────────────────────────
+//
+// 缺陷挂在具体图下的 `.plan/<effort>/qa/`（type: qa-defect，一图一份台账），
+// 作用域细到 map——由调用方按当前选中的图过滤后传入，与挂账台账（plan 级
+// 跨图）有意不同。条目解析走文档里的「清单总览」markdown 表格。
+
+interface DefectEntry {
+  id: string       // 缺陷号
+  title: string
+  severity: string // 严重度（S1~S4 / 严重~建议，原样展示）
+  kind: string     // 类型（rd/fe/arch/docs）
+  state: string    // 状态原文，允许带附注（如「已关闭（复测 PASS）」）
+  source: string   // 发现源（QA 轮 / 用户）
+}
+
+// 按表头「包含」匹配取列，不按列序号——加减列不错位，且老文档表头不统一
+// （「严重程度/优先级」vs「严重度」、「domain（rd/fe/docs）」vs「类型」）
+// 也不至于立刻失效。取首个表头含「缺陷号」的表格。
+function parseDefectEntries(body: string): DefectEntry[] {
+  const lines = body.split('\n')
+  for (let i = 0; i < lines.length - 1; i++) {
+    const head = lines[i] ?? ''
+    if (!head.includes('缺陷号') || !isDivider(lines[i + 1] ?? '')) continue
+    const cols = splitRow(head)
+    const col = (...names: string[]) => cols.findIndex(c => names.some(n => c.includes(n)))
+    const ix = {
+      id: col('缺陷号'), title: col('标题'),
+      severity: col('严重度', '严重程度'),
+      kind: col('类型', 'domain'),
+      state: col('状态'), source: col('发现源'),
+    }
+    const cell = (row: string[], k: number) => (k >= 0 ? row[k] ?? '' : '')
+    const out: DefectEntry[] = []
+    for (let j = i + 2; j < lines.length; j++) {
+      const line = lines[j] ?? ''
+      if (!line.includes('|') || /^\s*$/.test(line)) break
+      const cells = splitRow(line)
+      const id = cell(cells, ix.id)
+      if (!id) continue
+      out.push({
+        id, title: cell(cells, ix.title), severity: cell(cells, ix.severity),
+        kind: cell(cells, ix.kind), state: cell(cells, ix.state), source: cell(cells, ix.source),
+      })
+    }
+    return out
+  }
+  return []
+}
+
+// 状态取首词匹配：骨架允许「已关闭（复测 PASS）」这类带附注的写法。
+const DEFECT_CLOSED = new Set(['已关闭', '关闭', '挂起'])
+const defectStateWord = (s: string) => s.trim().split(/[\s(（#:：—-]/)[0] ?? ''
+
+function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { defects: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
+  const [focus, setFocus] = useState<ParsedTicket | null>(null)
+
+  if (defects.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
+        当前图没有缺陷台账。
+        <br />
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>{'`.plan/<effort>/qa/` 下带 `type: qa-defect` 头的缺陷台账会按图列在这里。'}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
+        缺陷挂在具体图下（按当前选中的图过滤，切图联动）；条目来自台账的「清单总览」表，点卡片看全文。
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {defects.map(t => {
+          const entries = parseDefectEntries(t.body)
+          return (
+            <div key={`${t.effort}/${t.file}`} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{t.title}</span>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{t.effort?.split('/').pop()}/{t.file}</span>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{entries.length} 条</span>
+              </div>
+              {entries.length === 0 && (
+                <div onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', fontSize: 12, color: TEXT_FAINT }}>
+                  未解析出缺陷条目（需要「清单总览」表格，表头含缺陷号/标题/严重度等列），点开看全文。
+                </div>
+              )}
+              {entries.map(e => {
+                const closed = DEFECT_CLOSED.has(defectStateWord(e.state))
+                return (
+                  <div key={e.id} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: closed ? CARD_DARK : CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', opacity: closed ? 0.75 : 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{e.state || '新建'}</span>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
+                      <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, flexShrink: 0 }}>{e.id}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                      {e.severity && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>严重度 {e.severity}</span>}
+                      {e.kind && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>类型 {e.kind}</span>}
+                      {e.source && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>发现源 {e.source}</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+      </div>
       {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
   )
