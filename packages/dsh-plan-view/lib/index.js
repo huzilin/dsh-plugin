@@ -4612,6 +4612,18 @@ function buildChain(tickets, defects, ledgers) {
 			kind: "dep"
 		});
 	}
+	const degree = /* @__PURE__ */ new Map();
+	for (const e of edges) {
+		degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
+		degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
+	}
+	const connected = all.filter((n) => (degree.get(n.key) ?? 0) > 0);
+	const orphanOfKind = {
+		ticket: 0,
+		ledger: 0,
+		defect: 0
+	};
+	for (const n of all) if ((degree.get(n.key) ?? 0) === 0) orphanOfKind[n.kind]++;
 	const parentOf = /* @__PURE__ */ new Map();
 	const childrenOf = /* @__PURE__ */ new Map();
 	const treeEdges = [];
@@ -4633,7 +4645,7 @@ function buildChain(tickets, defects, ledgers) {
 		ledger: 1,
 		defect: 2
 	};
-	const roots = all.filter((n) => !parentOf.has(n.key)).sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.key.localeCompare(b.key));
+	const roots = connected.filter((n) => !parentOf.has(n.key)).sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.key.localeCompare(b.key));
 	let row = 0;
 	const walk = (key, depth) => {
 		const node = byKey.get(key);
@@ -4660,13 +4672,14 @@ function buildChain(tickets, defects, ledgers) {
 		crossEdges,
 		pos,
 		W: maxRight + 40,
-		H
+		H,
+		orphans: orphanOfKind
 	};
 }
 function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	const [active, setActive] = useState(null);
-	const { nodes, treeEdges, crossEdges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [
+	const { nodes, treeEdges, crossEdges, pos, W, H, orphans } = useMemo(() => buildChain(tickets, defects, ledgers), [
 		tickets,
 		defects,
 		ledgers
@@ -4778,6 +4791,24 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 					})
 				]
 			}),
+			orphans.ticket + orphans.ledger + orphans.defect > 0 && /* @__PURE__ */ jsxs("div", {
+				style: {
+					padding: "2px 16px 4px",
+					fontSize: 10.5,
+					color: TEXT_FAINT
+				},
+				children: [
+					"另有 ",
+					orphans.ticket + orphans.ledger + orphans.defect,
+					" 项与其他条目无关联、未画入（工单 ",
+					orphans.ticket,
+					" · 挂账 ",
+					orphans.ledger,
+					" · 缺陷 ",
+					orphans.defect,
+					"）——在对应文档里写上「票 NN」「挂账-NN」即可入链。"
+				]
+			}),
 			nodes.length === 0 ? /* @__PURE__ */ jsx("div", {
 				style: {
 					flex: 1,
@@ -4801,7 +4832,7 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 						height: H,
 						margin: "0 auto"
 					},
-					children: [/* @__PURE__ */ jsx("svg", {
+					children: [/* @__PURE__ */ jsxs("svg", {
 						width: W,
 						height: H,
 						style: {
@@ -4811,26 +4842,34 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 							pointerEvents: "none",
 							zIndex: 1
 						},
-						children: [...treeEdges.map((e) => ({
-							e,
-							cross: false
-						})), ...crossEdges.map((e) => ({
-							e,
-							cross: true
-						}))].map(({ e, cross }, i) => {
+						children: [treeEdges.map((e, i) => {
 							const a = pos.get(e.from), b = pos.get(e.to);
 							if (a === void 0 || b === void 0) return null;
 							const st = CHAIN_EDGE_STYLE[e.kind];
 							const on = isConnected(e);
+							const sx = a.x + NODE_W, sy = a.y + NODE_H / 2;
+							const ex = b.x, ey = b.y + NODE_H / 2;
+							const slotX = ex - 18;
+							return /* @__PURE__ */ jsx("path", {
+								d: ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`,
+								fill: "none",
+								stroke: on ? st.color : "rgba(255,255,255,.16)",
+								strokeWidth: on ? 2.2 : 1.4,
+								opacity: active !== null && !on ? .3 : 1
+							}, `t${i}`);
+						}), crossEdges.map((e, i) => {
+							const a = pos.get(e.from), b = pos.get(e.to);
+							if (a === void 0 || b === void 0) return null;
+							const on = isConnected(e);
 							return /* @__PURE__ */ jsx("path", {
 								d: mk(a.x + NODE_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2),
 								fill: "none",
-								stroke: cross ? "rgba(255,255,255,.14)" : on ? st.color : "rgba(255,255,255,.12)",
-								strokeWidth: on ? 2.4 : 1.3,
-								strokeDasharray: st.dashed ? "5 4" : void 0,
-								opacity: active !== null && !on ? .35 : 1
-							}, i);
-						})
+								stroke: on ? "#609bfa" : "rgba(255,255,255,.14)",
+								strokeWidth: on ? 2 : 1.3,
+								strokeDasharray: "5 4",
+								opacity: active !== null && !on ? .3 : 1
+							}, `x${i}`);
+						})]
 					}), nodes.map(({ node, x, y }) => {
 						const on = active === node.key || edgesRelated(node.key, active, treeEdges, crossEdges);
 						return /* @__PURE__ */ jsxs("div", {

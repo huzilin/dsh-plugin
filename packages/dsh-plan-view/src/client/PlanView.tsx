@@ -2129,6 +2129,7 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
   pos: Map<string, { x: number; y: number }>
   W: number
   H: number
+  orphans: { ticket: number; ledger: number; defect: number }
 } {
   const NODE_W = 250, NODE_H = 56, INDENT = 64, GAP_Y = 12, TOP = 20
   const nodes: { node: ChainNode; x: number; y: number }[] = []
@@ -2210,6 +2211,17 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     }
   }
 
+  // 过滤孤岛：只画与其他条目有关系（出现在任一边中）的节点——「串联」的
+  // 主体是链，无关条目折叠成计数行，否则满屏卡片稀释关系。
+  const degree = new Map<string, number>()
+  for (const e of edges) {
+    degree.set(e.from, (degree.get(e.from) ?? 0) + 1)
+    degree.set(e.to, (degree.get(e.to) ?? 0) + 1)
+  }
+  const connected = all.filter(n => (degree.get(n.key) ?? 0) > 0)
+  const orphanOfKind = { ticket: 0, ledger: 0, defect: 0 }
+  for (const n of all) if ((degree.get(n.key) ?? 0) === 0) orphanOfKind[n.kind]++
+
   // 树布局：每节点只认第一个父（其余边作交叉连线淡画），无父者为根；
   // DFS 先序占行——子节点缩进一档排在父下方，兄弟竖排。
   const parentOf = new Map<string, string>()
@@ -2226,7 +2238,7 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     } else crossEdges.push(e)
   }
   const kindOrder: Record<ChainNode['kind'], number> = { ticket: 0, ledger: 1, defect: 2 }
-  const roots = all.filter(n => !parentOf.has(n.key))
+  const roots = connected.filter(n => !parentOf.has(n.key))
     .sort((a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.key.localeCompare(b.key))
   let row = 0
   const walk = (key: string, depth: number): void => {
@@ -2242,7 +2254,7 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
 
   const maxRight = Math.max(...nodes.map(n => n.x + NODE_W), NODE_W)
   const H = Math.max(TOP + row * (NODE_H + GAP_Y), 120) + 30
-  return { nodes, treeEdges, crossEdges, pos, W: maxRight + 40, H }
+  return { nodes, treeEdges, crossEdges, pos, W: maxRight + 40, H, orphans: orphanOfKind }
 }
 
 function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }: {
@@ -2258,7 +2270,7 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const [active, setActive] = useState<string | null>(null)
-  const { nodes, treeEdges, crossEdges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [tickets, defects, ledgers])
+  const { nodes, treeEdges, crossEdges, pos, W, H, orphans } = useMemo(() => buildChain(tickets, defects, ledgers), [tickets, defects, ledgers])
   const NODE_W = 250
   const connectedEdges = useMemo(() => {
     const m = new Map<string, Set<string>>()
@@ -2293,21 +2305,44 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
         ))}
         <span style={{ fontSize: 11, color: TEXT_FAINT, marginLeft: 'auto' }}>{nodes.length} 节点 · {treeEdges.length + crossEdges.length} 条连线 · 关系自文档文本抽取</span>
       </div>
+      {orphans.ticket + orphans.ledger + orphans.defect > 0 && (
+        <div style={{ padding: '2px 16px 4px', fontSize: 10.5, color: TEXT_FAINT }}>
+          另有 {orphans.ticket + orphans.ledger + orphans.defect} 项与其他条目无关联、未画入（工单 {orphans.ticket} · 挂账 {orphans.ledger} · 缺陷 {orphans.defect}）——在对应文档里写上「票 NN」「挂账-NN」即可入链。
+        </div>
+      )}
       {nodes.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>当前图没有可串联的票 / 挂账 / 缺陷。</div>
       ) : (
         <div style={{ flex: 1, overflow: 'auto', position: 'relative' }} onClick={() => setActive(null)}>
           <div style={{ position: 'relative', width: W, height: H, margin: '0 auto' }}>
             <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 1 }}>
-              {[...treeEdges.map(e => ({ e, cross: false })), ...crossEdges.map(e => ({ e, cross: true }))].map(({ e, cross }, i) => {
+              {/* 树边走肘线：父右缘 → 竖槽 → 子左缘，避免斜穿其他节点 */}
+              {treeEdges.map((e, i) => {
                 const a = pos.get(e.from), b = pos.get(e.to)
                 if (a === undefined || b === undefined) return null
                 const st = CHAIN_EDGE_STYLE[e.kind]
                 const on = isConnected(e)
+                const sx = a.x + NODE_W, sy = a.y + NODE_H / 2
+                const ex = b.x, ey = b.y + NODE_H / 2
+                const slotX = ex - 18
+                const d = ey === sy
+                  ? `M ${sx} ${sy} L ${ex} ${ey}`
+                  : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`
                 return (
-                  <path key={i} d={mk(a.x + NODE_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2)} fill="none"
-                    stroke={cross ? 'rgba(255,255,255,.14)' : on ? st.color : 'rgba(255,255,255,.12)'} strokeWidth={on ? 2.4 : 1.3}
-                    strokeDasharray={st.dashed ? '5 4' : undefined} opacity={active !== null && !on ? 0.35 : 1} />
+                  <path key={`t${i}`} d={d} fill="none"
+                    stroke={on ? st.color : 'rgba(255,255,255,.16)'} strokeWidth={on ? 2.2 : 1.4}
+                    opacity={active !== null && !on ? 0.3 : 1} />
+                )
+              })}
+              {/* 交叉边（多父等非树关系）：贝塞尔淡画 */}
+              {crossEdges.map((e, i) => {
+                const a = pos.get(e.from), b = pos.get(e.to)
+                if (a === undefined || b === undefined) return null
+                const on = isConnected(e)
+                return (
+                  <path key={`x${i}`} d={mk(a.x + NODE_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2)} fill="none"
+                    stroke={on ? '#609bfa' : 'rgba(255,255,255,.14)'} strokeWidth={on ? 2 : 1.3}
+                    strokeDasharray='5 4' opacity={active !== null && !on ? 0.3 : 1} />
                 )
               })}
             </svg>
