@@ -1395,7 +1395,7 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
 type TopView = 'overview' | 'map' | 'ledger' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
-type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects'
+type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
@@ -1581,6 +1581,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               ['approvals', '⏳ 待拍板', mapApprovals.length],
               ['ledger', '📒 台账', mapLedgers.length],
               ['defects', '🐞 缺陷', mapDefects.length],
+              ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={subBtn(mapSub === id)} onClick={() => setMapSub(id)}>
                 {label}<span style={{ marginLeft: 4, opacity: .7 }}>{n}</span>
@@ -1603,6 +1604,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
@@ -2083,6 +2085,211 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
         })}
       </div>
       {focus && <DetailModal ticket={focus} planDir="" scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
+    </div>
+  )
+}
+
+// ─── ChainView（实验）：票 · 挂账 · 缺陷 串联画布 ────────────────────────────
+//
+// 实验性视图（2026-09-21 拍板）：把一张图下的工单、挂账、缺陷在画布上串联——
+// 挂账出自哪张票、转票落到哪张新票、缺陷提到了哪笔挂账，连线可见。
+// 关系全部从文档文本抽取（挂账来源「票 NN」、转票 tickets/NN- 链接、缺陷正文
+// 「挂账-NN」提及、票面 blockedBy 依赖），没有人工维护的映射表；数据侧契约
+// 升级（如缺陷清单加「关联工单」列）后连线自动变稠密。画布为分列泳道：
+// 票 | 挂账 | 缺陷 三列竖排，SVG 贝塞尔连线，hover/点击高亮相关边。
+
+interface ChainNode {
+  key: string
+  kind: 'ticket' | 'ledger' | 'defect'
+  title: string
+  badge: string
+  badgeColor: string
+  sub?: string
+  ticket: ParsedTicket
+}
+
+interface ChainEdge { from: string; to: string; kind: 'source' | 'spawn' | 'mention' | 'dep' }
+
+const CHAIN_EDGE_STYLE: Record<ChainEdge['kind'], { color: string; dashed?: boolean; label: string }> = {
+  source: { color: '#f7ad31', label: '出自票' },
+  spawn: { color: '#609bfa', label: '转票落地' },
+  mention: { color: '#f2555a', label: '提及挂账' },
+  dep: { color: 'rgba(255,255,255,.30)', dashed: true, label: 'blocked' },
+}
+
+const chainTicketByNum = (list: ParsedTicket[], n: number): ParsedTicket | undefined =>
+  list.find(t => { const m = t.file.match(/^(\d+)-/); return m !== null && m !== undefined && parseInt(m[1], 10) === n })
+
+function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: ParsedTicket[]): {
+  nodes: { node: ChainNode; x: number; y: number }[]
+  edges: ChainEdge[]
+  pos: Map<string, { x: number; y: number }>
+  W: number
+  H: number
+} {
+  const COL_W = 250, NODE_H = 56, GAP_X = 90, GAP_Y = 12, TOP = 20
+  const nodes: { node: ChainNode; x: number; y: number }[] = []
+  const pos = new Map<string, { x: number; y: number }>()
+  const edges: ChainEdge[] = []
+
+  const ticketNodes: ChainNode[] = tickets.map(t => ({
+    key: `t:${t.id}`, kind: 'ticket' as const, ticket: t, title: t.title,
+    badge: STATUS_LABELS[displayStatus(t)],
+    badgeColor: DOT[displayStatus(t)],
+    sub: `#${shortId(t)} · ${ticketKind(t) === 'approval' ? '待拍板' : '工单'}`,
+  }))
+  const ledgerNodes: ChainNode[] = ledgers.map(t => {
+    const e = parseLedgerEntries(t.body)[0]
+    return {
+      key: `l:${e?.id ?? t.id}`, kind: 'ledger' as const, ticket: t,
+      title: e?.title ?? t.title, badge: e?.state ?? '在挂',
+      badgeColor: e?.state === '在挂' ? '#f7ad31' : '#4ed17e',
+      sub: e ? `挂账 · ${e.source || '无来源'}` : '挂账',
+    }
+  })
+  const defectNodes: ChainNode[] = []
+  const defectSections: { key: string; text: string; node: ChainNode }[] = []
+  for (const f of defects) {
+    const sections = f.body.split(/^## (DEF-[\w.-]+)/m)
+    for (let i = 1; i < sections.length; i += 2) {
+      const id = sections[i] ?? ''
+      const text = sections[i + 1] ?? ''
+      const table = parseDefectEntries(f.body).find(d => d.id === id)
+      const closed = (table?.state ?? '').startsWith('已关闭')
+      const node: ChainNode = {
+        key: `d:${f.id}/${id}`, kind: 'defect', ticket: f,
+        title: table?.title ?? id, badge: id,
+        badgeColor: closed ? '#4ed17e' : '#f2555a',
+        sub: `${f.effort?.split('/').pop() ?? ''} · ${table?.state ?? ''}`,
+      }
+      defectNodes.push(node)
+      defectSections.push({ key: node.key, text, node })
+    }
+  }
+
+  const cols: ChainNode[][] = [ticketNodes, ledgerNodes, defectNodes]
+  cols.forEach((col, ci) => {
+    const x = ci * (COL_W + GAP_X)
+    col.forEach((node, ri) => {
+      const y = TOP + ri * (NODE_H + GAP_Y)
+      nodes.push({ node, x, y })
+      pos.set(node.key, { x, y })
+    })
+  })
+
+  // 挂账 → 出自票 / 转票落地
+  for (const l of ledgerNodes) {
+    const body = l.ticket.body
+    const src = parseLedgerEntries(body)[0]?.source ?? ''
+    for (const m of src.matchAll(/票\s*(\d+)/g)) {
+      const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
+      if (t !== undefined) edges.push({ from: l.key, to: `t:${t.id}`, kind: 'source' })
+    }
+    for (const m of body.matchAll(/tickets\/(\d+)-/g)) {
+      const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
+      if (t !== undefined && !edges.some(e => e.from === l.key && e.to === `t:${t.id}`)) edges.push({ from: l.key, to: `t:${t.id}`, kind: 'spawn' })
+    }
+  }
+  // 缺陷 → 提及挂账
+  for (const ds of defectSections) {
+    for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
+      const target = `l:挂账-${m[1]}`
+      if (pos.has(target) && !edges.some(e => e.from === ds.key && e.to === target)) edges.push({ from: ds.key, to: target, kind: 'mention' })
+    }
+  }
+  // 票间依赖（blockedBy，虚线）
+  const byId = new Map(tickets.map(t => [t.id, t]))
+  for (const t of tickets) {
+    for (const r of t.blockedBy) {
+      const b = resolveRef(r, byId)
+      if (b !== undefined && byId.has(b)) edges.push({ from: `t:${b}`, to: `t:${t.id}`, kind: 'dep' })
+    }
+  }
+
+  const H = Math.max(...cols.map(c => TOP + c.length * (NODE_H + GAP_Y)), 120) + 40
+  const W = 3 * COL_W + 2 * GAP_X + 60
+  return { nodes, edges, pos, W, H }
+}
+
+function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+  tickets: ParsedTicket[]
+  defects: ParsedTicket[]
+  ledgers: ParsedTicket[]
+  planDir: string
+  scope: SessionScope
+  ctx: any
+  sessions: Map<string, SessionSummary>
+  onChanged: () => void
+  readOnly?: boolean
+}) {
+  const [focus, setFocus] = useState<ParsedTicket | null>(null)
+  const [active, setActive] = useState<string | null>(null)
+  const { nodes, edges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [tickets, defects, ledgers])
+  const connectedEdges = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    if (active === null) return m
+    for (const e of edges) {
+      if (e.from === active || e.to === active) {
+        if (!m.has(active)) m.set(active, new Set())
+        m.get(active)!.add(`${e.from}->${e.to}`)
+      }
+    }
+    return m
+  }, [edges, active])
+  const isConnected = (e: ChainEdge) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false)
+  const mk = (x1: number, y1: number, x2: number, y2: number) => `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`
+  const NODE_H = 56, COL_W = 250
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 16px 6px', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>🧪 串联（实验）</span>
+        {Object.entries(CHAIN_EDGE_STYLE).map(([kind, s]) => (
+          <span key={kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: TEXT_FAINT }}>
+            <span style={{ width: 16, height: 2, background: s.color, display: 'inline-block' }} /> {s.label}
+          </span>
+        ))}
+        <span style={{ fontSize: 11, color: TEXT_FAINT, marginLeft: 'auto' }}>{nodes.length} 节点 · {edges.length} 条连线 · 关系自文档文本抽取</span>
+      </div>
+      {nodes.length === 0 ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>当前图没有可串联的票 / 挂账 / 缺陷。</div>
+      ) : (
+        <div style={{ flex: 1, overflow: 'auto', position: 'relative' }} onClick={() => setActive(null)}>
+          <div style={{ position: 'relative', width: W, height: H, margin: '0 auto' }}>
+            <svg width={W} height={H} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 1 }}>
+              {edges.map((e, i) => {
+                const a = pos.get(e.from), b = pos.get(e.to)
+                if (a === undefined || b === undefined) return null
+                const st = CHAIN_EDGE_STYLE[e.kind]
+                const on = isConnected(e)
+                return (
+                  <path key={i} d={mk(a.x + COL_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2)} fill="none"
+                    stroke={on ? st.color : 'rgba(255,255,255,.12)'} strokeWidth={on ? 2.4 : 1.3}
+                    strokeDasharray={st.dashed ? '5 4' : undefined} opacity={active !== null && !on ? 0.35 : 1} />
+                )
+              })}
+            </svg>
+            {nodes.map(({ node, x, y }) => {
+              const on = active === node.key || edges.some(e => (e.from === node.key || e.to === node.key) && (active === null || isConnected(e)))
+              return (
+                <div key={node.key} onClick={ev => { ev.stopPropagation(); setActive(node.key); setFocus(node.ticket) }}
+                  onMouseEnter={() => setActive(node.key)} onMouseLeave={() => setActive(null)}
+                  style={{ position: 'absolute', left: x, top: y, width: COL_W, height: NODE_H, zIndex: 3, display: 'flex', background: CARD, borderRadius: 10, overflow: 'hidden', cursor: 'pointer', border: `1px solid ${active === node.key ? TEXT : BORDER}`, boxShadow: active === node.key ? '0 4px 18px rgba(0,0,0,.5)' : '0 2px 8px rgba(0,0,0,.3)', opacity: active !== null && !on ? 0.4 : 1, transition: 'opacity .15s' }}>
+                  <span style={{ width: 4, flexShrink: 0, background: node.badgeColor }} />
+                  <div style={{ padding: '7px 9px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 999, flexShrink: 0, background: `${node.badgeColor}22`, color: node.badgeColor }}>{node.badge}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{node.title}</span>
+                    </div>
+                    {node.sub && <div style={{ fontSize: 9, color: TEXT_FAINT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.sub}</div>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
     </div>
   )
 }

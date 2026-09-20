@@ -3150,6 +3150,11 @@ function PlanView(props) {
 							"defects",
 							"🐞 缺陷",
 							mapDefects.length
+						],
+						[
+							"chain",
+							"🧪 串联",
+							mapTickets.length + mapDefects.length + mapLedgers.length
 						]
 					].map(([id, label, n]) => /* @__PURE__ */ jsxs("button", {
 						type: "button",
@@ -3250,6 +3255,17 @@ function PlanView(props) {
 				}),
 				mapSub === "defects" && /* @__PURE__ */ jsx(DefectView, {
 					defects: mapDefects,
+					scope,
+					ctx,
+					sessions,
+					onChanged,
+					readOnly
+				}),
+				mapSub === "chain" && /* @__PURE__ */ jsx(ChainView, {
+					tickets: mapTickets,
+					defects: mapDefects,
+					ledgers: mapLedgers,
+					planDir,
 					scope,
 					ctx,
 					sessions,
@@ -4439,6 +4455,370 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
 			focus && /* @__PURE__ */ jsx(DetailModal, {
 				ticket: focus,
 				planDir: "",
+				scope,
+				ctx,
+				sessions,
+				onChanged,
+				onClose: () => setFocus(null),
+				readOnly
+			})
+		]
+	});
+}
+const CHAIN_EDGE_STYLE = {
+	source: {
+		color: "#f7ad31",
+		label: "出自票"
+	},
+	spawn: {
+		color: "#609bfa",
+		label: "转票落地"
+	},
+	mention: {
+		color: "#f2555a",
+		label: "提及挂账"
+	},
+	dep: {
+		color: "rgba(255,255,255,.30)",
+		dashed: true,
+		label: "blocked"
+	}
+};
+const chainTicketByNum = (list, n) => list.find((t) => {
+	const m = t.file.match(/^(\d+)-/);
+	return m !== null && m !== void 0 && parseInt(m[1], 10) === n;
+});
+function buildChain(tickets, defects, ledgers) {
+	const TOP = 20;
+	const nodes = [];
+	const pos = /* @__PURE__ */ new Map();
+	const edges = [];
+	const ticketNodes = tickets.map((t) => ({
+		key: `t:${t.id}`,
+		kind: "ticket",
+		ticket: t,
+		title: t.title,
+		badge: STATUS_LABELS[displayStatus(t)],
+		badgeColor: DOT[displayStatus(t)],
+		sub: `#${shortId(t)} · ${ticketKind(t) === "approval" ? "待拍板" : "工单"}`
+	}));
+	const ledgerNodes = ledgers.map((t) => {
+		const e = parseLedgerEntries(t.body)[0];
+		return {
+			key: `l:${e?.id ?? t.id}`,
+			kind: "ledger",
+			ticket: t,
+			title: e?.title ?? t.title,
+			badge: e?.state ?? "在挂",
+			badgeColor: e?.state === "在挂" ? "#f7ad31" : "#4ed17e",
+			sub: e ? `挂账 · ${e.source || "无来源"}` : "挂账"
+		};
+	});
+	const defectNodes = [];
+	const defectSections = [];
+	for (const f of defects) {
+		const sections = f.body.split(/^## (DEF-[\w.-]+)/m);
+		for (let i = 1; i < sections.length; i += 2) {
+			const id = sections[i] ?? "";
+			const text = sections[i + 1] ?? "";
+			const table = parseDefectEntries(f.body).find((d) => d.id === id);
+			const closed = (table?.state ?? "").startsWith("已关闭");
+			const node = {
+				key: `d:${f.id}/${id}`,
+				kind: "defect",
+				ticket: f,
+				title: table?.title ?? id,
+				badge: id,
+				badgeColor: closed ? "#4ed17e" : "#f2555a",
+				sub: `${f.effort?.split("/").pop() ?? ""} · ${table?.state ?? ""}`
+			};
+			defectNodes.push(node);
+			defectSections.push({
+				key: node.key,
+				text,
+				node
+			});
+		}
+	}
+	const cols = [
+		ticketNodes,
+		ledgerNodes,
+		defectNodes
+	];
+	cols.forEach((col, ci) => {
+		const x = ci * 340;
+		col.forEach((node, ri) => {
+			const y = TOP + ri * 68;
+			nodes.push({
+				node,
+				x,
+				y
+			});
+			pos.set(node.key, {
+				x,
+				y
+			});
+		});
+	});
+	for (const l of ledgerNodes) {
+		const body = l.ticket.body;
+		const src = parseLedgerEntries(body)[0]?.source ?? "";
+		for (const m of src.matchAll(/票\s*(\d+)/g)) {
+			const t = chainTicketByNum(tickets, parseInt(m[1] ?? "0", 10));
+			if (t !== void 0) edges.push({
+				from: l.key,
+				to: `t:${t.id}`,
+				kind: "source"
+			});
+		}
+		for (const m of body.matchAll(/tickets\/(\d+)-/g)) {
+			const t = chainTicketByNum(tickets, parseInt(m[1] ?? "0", 10));
+			if (t !== void 0 && !edges.some((e) => e.from === l.key && e.to === `t:${t.id}`)) edges.push({
+				from: l.key,
+				to: `t:${t.id}`,
+				kind: "spawn"
+			});
+		}
+	}
+	for (const ds of defectSections) for (const m of ds.text.matchAll(/挂账-(\d+)/g)) {
+		const target = `l:挂账-${m[1]}`;
+		if (pos.has(target) && !edges.some((e) => e.from === ds.key && e.to === target)) edges.push({
+			from: ds.key,
+			to: target,
+			kind: "mention"
+		});
+	}
+	const byId = new Map(tickets.map((t) => [t.id, t]));
+	for (const t of tickets) for (const r of t.blockedBy) {
+		const b = resolveRef(r, byId);
+		if (b !== void 0 && byId.has(b)) edges.push({
+			from: `t:${b}`,
+			to: `t:${t.id}`,
+			kind: "dep"
+		});
+	}
+	return {
+		nodes,
+		edges,
+		pos,
+		W: 990,
+		H: Math.max(...cols.map((c) => TOP + c.length * 68), 120) + 40
+	};
+}
+function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+	const [focus, setFocus] = useState(null);
+	const [active, setActive] = useState(null);
+	const { nodes, edges, pos, W, H } = useMemo(() => buildChain(tickets, defects, ledgers), [
+		tickets,
+		defects,
+		ledgers
+	]);
+	const connectedEdges = useMemo(() => {
+		const m = /* @__PURE__ */ new Map();
+		if (active === null) return m;
+		for (const e of edges) if (e.from === active || e.to === active) {
+			if (!m.has(active)) m.set(active, /* @__PURE__ */ new Set());
+			m.get(active).add(`${e.from}->${e.to}`);
+		}
+		return m;
+	}, [edges, active]);
+	const isConnected = (e) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false);
+	const mk = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`;
+	const NODE_H = 56, COL_W = 250;
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			flexDirection: "column",
+			background: BG,
+			color: TEXT,
+			overflow: "hidden"
+		},
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				style: {
+					padding: "10px 16px 6px",
+					display: "flex",
+					gap: 14,
+					alignItems: "center",
+					flexWrap: "wrap"
+				},
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						style: {
+							fontSize: 13,
+							fontWeight: 700
+						},
+						children: "🧪 串联（实验）"
+					}),
+					Object.entries(CHAIN_EDGE_STYLE).map(([kind, s]) => /* @__PURE__ */ jsxs("span", {
+						style: {
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 4,
+							fontSize: 10,
+							color: TEXT_FAINT
+						},
+						children: [
+							/* @__PURE__ */ jsx("span", { style: {
+								width: 16,
+								height: 2,
+								background: s.color,
+								display: "inline-block"
+							} }),
+							" ",
+							s.label
+						]
+					}, kind)),
+					/* @__PURE__ */ jsxs("span", {
+						style: {
+							fontSize: 11,
+							color: TEXT_FAINT,
+							marginLeft: "auto"
+						},
+						children: [
+							nodes.length,
+							" 节点 · ",
+							edges.length,
+							" 条连线 · 关系自文档文本抽取"
+						]
+					})
+				]
+			}),
+			nodes.length === 0 ? /* @__PURE__ */ jsx("div", {
+				style: {
+					flex: 1,
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					color: TEXT_FAINT
+				},
+				children: "当前图没有可串联的票 / 挂账 / 缺陷。"
+			}) : /* @__PURE__ */ jsx("div", {
+				style: {
+					flex: 1,
+					overflow: "auto",
+					position: "relative"
+				},
+				onClick: () => setActive(null),
+				children: /* @__PURE__ */ jsxs("div", {
+					style: {
+						position: "relative",
+						width: W,
+						height: H,
+						margin: "0 auto"
+					},
+					children: [/* @__PURE__ */ jsx("svg", {
+						width: W,
+						height: H,
+						style: {
+							position: "absolute",
+							left: 0,
+							top: 0,
+							pointerEvents: "none",
+							zIndex: 1
+						},
+						children: edges.map((e, i) => {
+							const a = pos.get(e.from), b = pos.get(e.to);
+							if (a === void 0 || b === void 0) return null;
+							const st = CHAIN_EDGE_STYLE[e.kind];
+							const on = isConnected(e);
+							return /* @__PURE__ */ jsx("path", {
+								d: mk(a.x + COL_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2),
+								fill: "none",
+								stroke: on ? st.color : "rgba(255,255,255,.12)",
+								strokeWidth: on ? 2.4 : 1.3,
+								strokeDasharray: st.dashed ? "5 4" : void 0,
+								opacity: active !== null && !on ? .35 : 1
+							}, i);
+						})
+					}), nodes.map(({ node, x, y }) => {
+						const on = active === node.key || edges.some((e) => (e.from === node.key || e.to === node.key) && (active === null || isConnected(e)));
+						return /* @__PURE__ */ jsxs("div", {
+							onClick: (ev) => {
+								ev.stopPropagation();
+								setActive(node.key);
+								setFocus(node.ticket);
+							},
+							onMouseEnter: () => setActive(node.key),
+							onMouseLeave: () => setActive(null),
+							style: {
+								position: "absolute",
+								left: x,
+								top: y,
+								width: COL_W,
+								height: NODE_H,
+								zIndex: 3,
+								display: "flex",
+								background: CARD,
+								borderRadius: 10,
+								overflow: "hidden",
+								cursor: "pointer",
+								border: `1px solid ${active === node.key ? TEXT : BORDER}`,
+								boxShadow: active === node.key ? "0 4px 18px rgba(0,0,0,.5)" : "0 2px 8px rgba(0,0,0,.3)",
+								opacity: active !== null && !on ? .4 : 1,
+								transition: "opacity .15s"
+							},
+							children: [/* @__PURE__ */ jsx("span", { style: {
+								width: 4,
+								flexShrink: 0,
+								background: node.badgeColor
+							} }), /* @__PURE__ */ jsxs("div", {
+								style: {
+									padding: "7px 9px",
+									flex: 1,
+									minWidth: 0,
+									display: "flex",
+									flexDirection: "column",
+									gap: 3
+								},
+								children: [/* @__PURE__ */ jsxs("div", {
+									style: {
+										display: "flex",
+										alignItems: "center",
+										gap: 6
+									},
+									children: [/* @__PURE__ */ jsx("span", {
+										style: {
+											fontSize: 9,
+											padding: "1px 6px",
+											borderRadius: 999,
+											flexShrink: 0,
+											background: `${node.badgeColor}22`,
+											color: node.badgeColor
+										},
+										children: node.badge
+									}), /* @__PURE__ */ jsx("span", {
+										style: {
+											fontSize: 11,
+											fontWeight: 700,
+											color: TEXT,
+											lineHeight: 1.3,
+											overflow: "hidden",
+											textOverflow: "ellipsis",
+											whiteSpace: "nowrap",
+											flex: 1
+										},
+										children: node.title
+									})]
+								}), node.sub && /* @__PURE__ */ jsx("div", {
+									style: {
+										fontSize: 9,
+										color: TEXT_FAINT,
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap"
+									},
+									children: node.sub
+								})]
+							})]
+						}, node.key);
+					})]
+				})
+			}),
+			focus && /* @__PURE__ */ jsx(DetailModal, {
+				ticket: focus,
+				planDir,
 				scope,
 				ctx,
 				sessions,
