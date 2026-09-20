@@ -1237,9 +1237,9 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
     .filter(g => g.items.length > 0)
   const allOn = effortIdx < 0
   return (
-    <div style={{ display: 'flex', gap: 6, padding: '8px 10px 6px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}`, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 6, padding: '10px 14px 8px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}`, alignItems: 'center' }}>
       {efforts.length > 1 && (
-        <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${allOn ? ACCENT : BORDER}`, color: allOn ? ACCENT : TEXT_FAINT, background: allOn ? `${ACCENT}22` : 'transparent' }}>
+        <span onClick={() => setEffortIdx(-1)} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${allOn ? ACCENT : BORDER}`, color: allOn ? ACCENT : TEXT_FAINT, background: allOn ? `${ACCENT}22` : 'transparent' }}>
           全部地图 <span style={{ opacity: .7 }}>{totalCount}</span>
         </span>
       )}
@@ -1253,7 +1253,7 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
           {g.items.map(({ e, i, kind }) => {
             const on = effortIdx === i
             return (
-              <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
+              <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
                 {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{countFor(e.dir)}</span>
               </span>
             )
@@ -1316,7 +1316,7 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
     </div>
   )
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <EffortChips efforts={efforts} all={tickets} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
         countFor={dir => tickets.filter(t => inEffort(t, dir) && ticketKind(t) === 'ticket').length}
         totalCount={tickets.filter(t => ticketKind(t) === 'ticket').length} />
@@ -1519,8 +1519,10 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 
   const planDir = data.effortDir
   const readOnly = round !== null
-  const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 12px', border: 'none', borderRadius: 6, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
-  const subBtn = (active: boolean): React.CSSProperties => ({ padding: '5px 12px', border: `1px solid ${active ? BORDER : 'transparent'}`, borderRadius: 7, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11, fontWeight: active ? 700 : 400 })
+  const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '8px 14px', border: 'none', borderRadius: 7, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
+  // 子页签用下划线 tab 语言（导航），与 chips 的 pill 语言（筛选）分层。
+  const mapTab = (active: boolean): React.CSSProperties => ({ padding: '8px 14px 9px', border: 'none', borderRadius: 0, cursor: 'pointer', background: 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400, borderBottom: active ? `2px solid ${ACCENT_SOFT}` : '2px solid transparent' })
+  const subBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 14px', border: `1px solid ${active ? BORDER : 'transparent'}`, borderRadius: 7, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11.5, fontWeight: active ? 700 : 400 })
 
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: approvals.filter(t => isPending(t)).length },
@@ -1531,7 +1533,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14 }}>
-      <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4, padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, alignItems: 'center' }}>
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
             {t.label}
@@ -1574,7 +1576,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               totalCount={mapOwnTickets.length} />
           )}
           {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
-          <div style={{ display: 'flex', gap: 4, padding: '5px 10px', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 2, padding: '4px 14px 0', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
             {([
               ['route', '🗺️ 路线', mapTickets.length],
               ['tickets', '🎫 工单', mapTickets.length],
@@ -1583,14 +1585,14 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               ['defects', '🐞 缺陷', mapDefects.length],
               ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
-              <button key={id} type="button" style={subBtn(mapSub === id)} onClick={() => setMapSub(id)}>
-                {label}<span style={{ marginLeft: 4, opacity: .7 }}>{n}</span>
+              <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
+                {label}<span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>
               </button>
             ))}
           </div>
           {mapSub === 'route' && (
             <>
-              <div style={{ display: 'flex', gap: 4, padding: '5px 10px', borderBottom: `1px solid ${BORDER}`, background: BG }}>
+              <div style={{ display: 'flex', gap: 4, padding: '9px 14px', background: BG }}>
                 <button type="button" style={subBtn(variant === 'A')} onClick={() => setVariant('A')}>📋 Kanban</button>
                 <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
                 <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
@@ -1917,7 +1919,7 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
       <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
         挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {ledgers.map(t => {
           const entries = parseLedgerEntries(t.body)
           const single = entries.length === 1 ? entries[0] : undefined

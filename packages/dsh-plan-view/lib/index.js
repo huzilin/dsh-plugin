@@ -2449,7 +2449,7 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
 		style: {
 			display: "flex",
 			gap: 6,
-			padding: "8px 10px 6px",
+			padding: "10px 14px 8px",
 			flexWrap: "wrap",
 			borderBottom: `1px solid ${BORDER_LIGHT}`,
 			alignItems: "center"
@@ -2457,8 +2457,8 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
 		children: [efforts.length > 1 && /* @__PURE__ */ jsxs("span", {
 			onClick: () => setEffortIdx(-1),
 			style: {
-				fontSize: 11,
-				padding: "3px 9px",
+				fontSize: 11.5,
+				padding: "4px 12px",
 				borderRadius: 999,
 				cursor: "pointer",
 				border: `1px solid ${allOn ? ACCENT : BORDER}`,
@@ -2491,8 +2491,8 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
 						onClick: () => setEffortIdx(i),
 						title: e.dir,
 						style: {
-							fontSize: 11,
-							padding: "3px 9px",
+							fontSize: 11.5,
+							padding: "4px 12px",
 							borderRadius: 999,
 							cursor: "pointer",
 							border: `1px solid ${on ? ACCENT : BORDER}`,
@@ -2580,10 +2580,10 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
 		style: {
 			flex: 1,
 			overflowY: "auto",
-			padding: 14,
+			padding: 16,
 			display: "flex",
 			flexDirection: "column",
-			gap: 12
+			gap: 14
 		},
 		children: [
 			/* @__PURE__ */ jsx(EffortChips, {
@@ -2974,23 +2974,34 @@ function PlanView(props) {
 	const planDir = data.effortDir;
 	const readOnly = round !== null;
 	const tabBtn = (active) => ({
-		padding: "6px 12px",
+		padding: "8px 14px",
 		border: "none",
-		borderRadius: 6,
+		borderRadius: 7,
 		cursor: "pointer",
 		background: active ? CARD : "transparent",
 		color: active ? TEXT : "#888",
 		fontSize: 12,
 		fontWeight: active ? 700 : 400
 	});
+	const mapTab = (active) => ({
+		padding: "8px 14px 9px",
+		border: "none",
+		borderRadius: 0,
+		cursor: "pointer",
+		background: "transparent",
+		color: active ? TEXT : "#888",
+		fontSize: 12,
+		fontWeight: active ? 700 : 400,
+		borderBottom: active ? `2px solid ${ACCENT_SOFT}` : "2px solid transparent"
+	});
 	const subBtn = (active) => ({
-		padding: "5px 12px",
+		padding: "6px 14px",
 		border: `1px solid ${active ? BORDER : "transparent"}`,
 		borderRadius: 7,
 		cursor: "pointer",
 		background: active ? HEADER_BG : "transparent",
 		color: active ? TEXT : "#888",
-		fontSize: 11,
+		fontSize: 11.5,
 		fontWeight: active ? 700 : 400
 	});
 	const tabs = [
@@ -3030,7 +3041,7 @@ function PlanView(props) {
 				style: {
 					display: "flex",
 					gap: 4,
-					padding: "6px 8px",
+					padding: "8px 12px",
 					borderBottom: `1px solid ${BORDER}`,
 					background: HEADER_BG,
 					alignItems: "center"
@@ -3119,8 +3130,8 @@ function PlanView(props) {
 				/* @__PURE__ */ jsx("div", {
 					style: {
 						display: "flex",
-						gap: 4,
-						padding: "5px 10px",
+						gap: 2,
+						padding: "4px 14px 0",
 						borderBottom: `1px solid ${BORDER}`,
 						background: BG,
 						alignItems: "center"
@@ -3158,12 +3169,13 @@ function PlanView(props) {
 						]
 					].map(([id, label, n]) => /* @__PURE__ */ jsxs("button", {
 						type: "button",
-						style: subBtn(mapSub === id),
+						style: { ...mapTab(mapSub === id) },
 						onClick: () => setMapSub(id),
 						children: [label, /* @__PURE__ */ jsx("span", {
 							style: {
-								marginLeft: 4,
-								opacity: .7
+								marginLeft: 5,
+								fontSize: 11,
+								color: mapSub === id ? ACCENT_SOFT : "#777"
 							},
 							children: n
 						})]
@@ -3174,8 +3186,7 @@ function PlanView(props) {
 						style: {
 							display: "flex",
 							gap: 4,
-							padding: "5px 10px",
-							borderBottom: `1px solid ${BORDER}`,
+							padding: "9px 14px",
 							background: BG
 						},
 						children: [
@@ -4010,10 +4021,10 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 				style: {
 					flex: 1,
 					overflowY: "auto",
-					padding: 12,
+					padding: 14,
 					display: "flex",
 					flexDirection: "column",
-					gap: 10
+					gap: 12
 				},
 				children: ledgers.map((t) => {
 					const entries = parseLedgerEntries(t.body);
