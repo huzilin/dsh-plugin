@@ -32,7 +32,8 @@ if (!existsSync(planDir)) {
 }
 
 // ── collect every .md under .plan/, skipping archives ────────────────────────
-const SKIP = new Set(['.archive', 'node_modules', 'assets', 'qa'])
+// handoffs/ 是 handoff 交接文档产物区，不属 plan 生态（plan-protocol §三「非治理目录」）。
+const SKIP = new Set(['.archive', 'node_modules', 'assets', 'qa', 'handoffs'])
 
 const violations = []
 const files = [] // { path (repo-relative), abs, dir, frontmatter, body }
@@ -92,6 +93,9 @@ walk(planDir)
 const byId = new Map()
 for (const f of files) {
   if (/^(map|readme)\.md$/i.test(f.name)) continue
+  // 台账是登记簿不是票（两级台账：.plan/挂账台账.md 全局 + .plan/<effort>/挂账台账.md
+  // 图内，2026-09-21 拍板）——同名是设计内，不按「同票双档」查重。
+  if (f.fm.type === 'ledger') continue
   const id = f.name.replace(/\.md$/i, '')
   if (!byId.has(id)) byId.set(id, [])
   byId.get(id).push(f)
