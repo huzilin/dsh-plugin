@@ -1361,9 +1361,9 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
   }), [defects])
   const activeLedgers = useMemo(() => ledgers.flatMap(f => {
     const e = parseLedgerEntries(f.body)[0]
-    if (e === undefined || !e.state.startsWith('在挂')) return []
+    if (e === undefined || ledgerStage(e, f.effort, tickets) !== '可启动') return []
     return [{ ticket: f, label: `${e.id} ${e.title}`, sub: e.source || f.effort?.split('/').pop() || '' }]
-  }), [ledgers])
+  }), [ledgers, tickets])
   const row = (t: ParsedTicket, right?: React.ReactNode) => (
     <div key={`${t.effort}/${t.file}`} onClick={() => setFocus(t)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', background: 'transparent' }}
       onMouseEnter={e => { e.currentTarget.style.background = RAISED }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
@@ -1624,7 +1624,12 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // tab 计数语义（2026-09-21 拍板）：数字 = 未关单数量，不是总量——
   // 票=open/claimed、待拍板=pending、挂账=在挂、缺陷=未关闭。
   const openTickets = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')).length
-  const openLedgerCount = (list: ParsedTicket[]) => list.filter(t => { const s = parseLedgerEntries(t.body)[0]?.state ?? '在挂'; return s.startsWith('在挂') }).length
+  const openLedgerCount = (list: ParsedTicket[]) => list.filter(t => {
+    const e = parseLedgerEntries(t.body)[0]
+    if (e === undefined) return false
+    const stage = ledgerStage(e, t.effort, mapTickets)
+    return stage === '可启动' || stage === '阻塞中'
+  }).length
   const openDefectCount = (list: ParsedTicket[]) => list.reduce((n, f) => {
     const single = parseDefectFile(f)
     if (single !== undefined) return n + (DEFECT_CLOSED.has(defectStateWord(single.state)) ? 0 : 1)
@@ -1713,14 +1718,14 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           )}
           {mapSub === 'tickets' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'cases' && <CasesView cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} scope={scope} readOnly={readOnly} />}
         </>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
-      {top === 'ledger' && <LedgerView ledgers={globalLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'ledger' && <LedgerView ledgers={globalLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
       {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} ledgers={ledgers} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
@@ -1973,14 +1978,28 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly }:
 interface LedgerEntry {
   id: string          // 挂账-NN
   title: string
-  state: string       // 核心状态词（在挂 / 已销 / 已转票）
+  state: string       // 核心状态词（阻塞中 / 可启动 / 在挂[旧] / 已销 / 已转票）
   stateNote: string   // 状态附注（括号内的补充说明，如「卡点已解除，2026-09-21」）
   blocker: string     // 卡点：为什么现在做不了
+  blocked: string[]   // 阻塞依赖的本图票号（`- 阻塞: 07, 14`；图内挂账专用）
   startWhen: string   // 启动条件：什么情况可以开展
   source: string      // 来源（何时谁挂的）
 }
 
-const LEDGER_STATES = ['在挂', '已销', '已转票']
+const LEDGER_STATES = ['阻塞中', '可启动', '在挂', '已销', '已转票']
+
+/** 挂账阶段实时计算（2026-09-21 拍板）：带 `- 阻塞:` 的条目按依赖票的当前状态
+ *  即时判定「阻塞中 / 可启动」——即使文件状态词还没被 implement 写回，页面
+ *  也永远显示正确阶段。销账态原样保留。 */
+function ledgerStage(e: LedgerEntry, mapTickets: ParsedTicket[]): string {
+  if (e.state === '已销' || e.state === '已转票') return e.state
+  const unmet = e.blocked.filter(n => {
+    const t = mapTickets.find(x => { const m = x.file.match(/^(\d+)-/); return m !== null && m !== undefined && parseInt(m[1], 10) === parseInt(n, 10) })
+    return t === undefined || (displayStatus(t) !== 'resolved' && !t.outOfScope)
+  })
+  if (e.state === '阻塞中') return unmet.length > 0 ? '阻塞中' : '可启动'
+  return unmet.length > 0 ? '阻塞中' : (e.state === '可启动' ? '可启动' : '可启动')
+}
 
 /** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
 function parseLedgerEntries(body: string): LedgerEntry[] {
@@ -2000,10 +2019,13 @@ function parseLedgerEntries(body: string): LedgerEntry[] {
     const rawState = field('状态') || '在挂'
     const core = LEDGER_STATES.find(s => rawState.startsWith(s)) ?? rawState
     const note = core === rawState ? '' : rawState.slice(core.length).replace(/^[（(]\s*/, '').replace(/[)）]\s*$/, '')
+    const blocked: string[] = []
+    for (const bm of field('阻塞').matchAll(/#?(\d+)/g)) blocked.push(bm[1] ?? '')
     out.push({
       id: m[1], title: m[2],
       state: core, stateNote: note,
       blocker: field('卡点'),
+      blocked: blocked.filter(Boolean),
       startWhen: field('启动条件'),
       source: field('来源'),
     })
@@ -2011,23 +2033,26 @@ function parseLedgerEntries(body: string): LedgerEntry[] {
   return out
 }
 
-function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { ledgers: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
+function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, readOnly }: { ledgers: ParsedTicket[]; mapTickets: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
-  // 台账筛选（2026-09-21 拍板）：默认只显未销账（在挂）的活债；已转票/已销
-  // 是留痕态，按需查看。一账一文件，文件即条目，按核心状态词过滤。
-  const [filter, setFilter] = useState<'open' | 'spawned' | 'closed' | 'all'>('open')
-  const coreState = (t: ParsedTicket): string => {
-    const s = parseLedgerEntries(t.body)[0]?.state ?? '在挂'
-    return LEDGER_STATES.find(x => s.startsWith(x)) ?? s
+  // 台账筛选（2026-09-21 拍板）：默认只显未销（可启动 + 阻塞中）的活债；
+  // 已转票/已销是留痕态，按需查看。阶段由 ledgerStage 依赖票实时计算。
+  const [filter, setFilter] = useState<'unsold' | 'ready' | 'blocked' | 'spawned' | 'closed' | 'all'>('unsold')
+  const stageOf = (t: ParsedTicket): string => {
+    const e = parseLedgerEntries(t.body)[0]
+    return e === undefined ? '可启动' : ledgerStage(e, t.effort, mapTickets)
   }
   const shown = filter === 'all' ? ledgers : ledgers.filter(t => {
-    const s = coreState(t)
-    return filter === 'open' ? s === '在挂' : filter === 'spawned' ? s === '已转票' : s === '已销'
+    const s = stageOf(t)
+    if (filter === 'unsold') return s === '可启动' || s === '阻塞中'
+    return s === filter
   })
+  const stageCount = (s: string) => ledgers.filter(t => stageOf(t) === s).length
   const counts = {
-    open: ledgers.filter(t => coreState(t) === '在挂').length,
-    spawned: ledgers.filter(t => coreState(t) === '已转票').length,
-    closed: ledgers.filter(t => coreState(t) === '已销').length,
+    ready: stageCount('可启动'),
+    blocked: stageCount('阻塞中'),
+    spawned: ledgers.filter(t => (parseLedgerEntries(t.body)[0]?.state ?? '').startsWith('已转票')).length,
+    closed: ledgers.filter(t => (parseLedgerEntries(t.body)[0]?.state ?? '').startsWith('已销')).length,
   }
   const chip = (active: boolean): React.CSSProperties => ({ fontSize: 11, padding: '3px 10px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${active ? ACCENT : BORDER}`, color: active ? ACCENT : TEXT_FAINT, background: active ? `${ACCENT}22` : 'transparent' })
 
@@ -2044,9 +2069,11 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '10px 14px 0', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ paddingBottom: 8 }}>挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。</span>
+        <span style={{ paddingBottom: 8 }}>挂账 = 发现但当下不做/做不了的项；带 `- 阻塞: 票NN` 的条目由 implement 落地后自动重算阶段。一账一文件。</span>
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center', paddingBottom: 8 }}>
-          <span style={chip(filter === 'open')} onClick={() => setFilter('open')}>在挂 {counts.open}</span>
+          <span style={chip(filter === 'unsold')} onClick={() => setFilter('unsold')}>未销 {counts.ready + counts.blocked}</span>
+          <span style={chip(filter === 'ready')} onClick={() => setFilter('ready')}>🚀 可启动 {counts.ready}</span>
+          <span style={chip(filter === 'blocked')} onClick={() => setFilter('blocked')}>⛔ 阻塞中 {counts.blocked}</span>
           <span style={chip(filter === 'spawned')} onClick={() => setFilter('spawned')}>已转票 {counts.spawned}</span>
           <span style={chip(filter === 'closed')} onClick={() => setFilter('closed')}>已销 {counts.closed}</span>
           <span style={chip(filter === 'all')} onClick={() => setFilter('all')}>全部 {ledgers.length}</span>
@@ -2055,7 +2082,7 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
         {shown.length === 0 && (
           <div style={{ padding: 24, textAlign: 'center', color: TEXT_FAINT, fontSize: 12 }}>
-            {filter === 'open' ? '没有在挂的挂账——该销的都销了。' : '没有符合筛选的条目。'}
+            {filter === 'unsold' ? '没有未销的挂账——该销的都销了。' : '没有符合筛选的条目。'}
           </div>
         )}
         {shown.map(t => {
@@ -2096,6 +2123,8 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
 }
 
 const LEDGER_STATE_COLOR: Record<string, { bg: string; fg: string }> = {
+  '阻塞中': { bg: '#ff6b6b22', fg: '#f2555a' },
+  '可启动': { bg: '#ffa94d22', fg: '#f7ad31' },
   '在挂': { bg: '#ffa94d22', fg: '#f7ad31' },
   '已销': { bg: '#2ecc7122', fg: '#4ed17e' },
   '已转票': { bg: '#609bfa22', fg: '#609bfa' },
@@ -2329,7 +2358,7 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     return {
       key: `l:${e?.id ?? t.id}`, kind: 'ledger' as const, ticket: t,
       title: e?.title ?? t.title, badge: e?.state ?? '在挂',
-      badgeColor: e?.state === '在挂' ? '#f7ad31' : '#4ed17e',
+      badgeColor: (e?.state ?? '在挂').startsWith('阻塞中') ? '#f2555a' : (e?.state ?? '在挂').startsWith('可启动') || (e?.state ?? '').startsWith('在挂') ? '#f7ad31' : '#4ed17e',
       sub: e ? `挂账 · ${e.source || '无来源'}` : '挂账',
     }
   })

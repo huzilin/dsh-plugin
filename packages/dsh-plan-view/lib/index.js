@@ -2651,13 +2651,13 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 	}), [defects]);
 	const activeLedgers = useMemo(() => ledgers.flatMap((f) => {
 		const e = parseLedgerEntries(f.body)[0];
-		if (e === void 0 || !e.state.startsWith("在挂")) return [];
+		if (e === void 0 || ledgerStage(e, f.effort, tickets) !== "可启动") return [];
 		return [{
 			ticket: f,
 			label: `${e.id} ${e.title}`,
 			sub: e.source || f.effort?.split("/").pop() || ""
 		}];
-	}), [ledgers]);
+	}), [ledgers, tickets]);
 	const row = (t, right) => /* @__PURE__ */ jsxs("div", {
 		onClick: () => setFocus(t),
 		style: {
@@ -3236,7 +3236,10 @@ function PlanView(props) {
 	});
 	const openTickets = (list) => list.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed")).length;
 	const openLedgerCount = (list) => list.filter((t) => {
-		return (parseLedgerEntries(t.body)[0]?.state ?? "在挂").startsWith("在挂");
+		const e = parseLedgerEntries(t.body)[0];
+		if (e === void 0) return false;
+		const stage = ledgerStage(e, t.effort, mapTickets);
+		return stage === "可启动" || stage === "阻塞中";
 	}).length;
 	const openDefectCount = (list) => list.reduce((n, f) => {
 		const single = parseDefectFile(f);
@@ -3503,6 +3506,7 @@ function PlanView(props) {
 				}),
 				mapSub === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
 					ledgers: mapLedgers,
+					mapTickets,
 					scope,
 					ctx,
 					sessions,
@@ -3538,6 +3542,7 @@ function PlanView(props) {
 			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
 			top === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
 				ledgers: globalLedgers,
+				mapTickets,
 				scope,
 				ctx,
 				sessions,
@@ -4201,10 +4206,27 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly })
 	});
 }
 const LEDGER_STATES = [
+	"阻塞中",
+	"可启动",
 	"在挂",
 	"已销",
 	"已转票"
 ];
+/** 挂账阶段实时计算（2026-09-21 拍板）：带 `- 阻塞:` 的条目按依赖票的当前状态
+*  即时判定「阻塞中 / 可启动」——即使文件状态词还没被 implement 写回，页面
+*  也永远显示正确阶段。销账态原样保留。 */
+function ledgerStage(e, mapTickets) {
+	if (e.state === "已销" || e.state === "已转票") return e.state;
+	const unmet = e.blocked.filter((n) => {
+		const t = mapTickets.find((x) => {
+			const m = x.file.match(/^(\d+)-/);
+			return m !== null && m !== void 0 && parseInt(m[1], 10) === parseInt(n, 10);
+		});
+		return t === void 0 || displayStatus(t) !== "resolved" && !t.outOfScope;
+	});
+	if (e.state === "阻塞中") return unmet.length > 0 ? "阻塞中" : "可启动";
+	return unmet.length > 0 ? "阻塞中" : e.state === "可启动" ? "可启动" : "可启动";
+}
 /** 解析台账条目：`### 挂账-NN 标题` 小节 + `- 状态/卡点/启动条件/来源:` 固定字段。 */
 function parseLedgerEntries(body) {
 	const out = [];
@@ -4216,33 +4238,39 @@ function parseLedgerEntries(body) {
 		const rawState = field("状态") || "在挂";
 		const core = LEDGER_STATES.find((s) => rawState.startsWith(s)) ?? rawState;
 		const note = core === rawState ? "" : rawState.slice(core.length).replace(/^[（(]\s*/, "").replace(/[)）]\s*$/, "");
+		const blocked = [];
+		for (const bm of field("阻塞").matchAll(/#?(\d+)/g)) blocked.push(bm[1] ?? "");
 		out.push({
 			id: m[1],
 			title: m[2],
 			state: core,
 			stateNote: note,
 			blocker: field("卡点"),
+			blocked: blocked.filter(Boolean),
 			startWhen: field("启动条件"),
 			source: field("来源")
 		});
 	}
 	return out;
 }
-function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
+function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
-	const [filter, setFilter] = useState("open");
-	const coreState = (t) => {
-		const s = parseLedgerEntries(t.body)[0]?.state ?? "在挂";
-		return LEDGER_STATES.find((x) => s.startsWith(x)) ?? s;
+	const [filter, setFilter] = useState("unsold");
+	const stageOf = (t) => {
+		const e = parseLedgerEntries(t.body)[0];
+		return e === void 0 ? "可启动" : ledgerStage(e, t.effort, mapTickets);
 	};
 	const shown = filter === "all" ? ledgers : ledgers.filter((t) => {
-		const s = coreState(t);
-		return filter === "open" ? s === "在挂" : filter === "spawned" ? s === "已转票" : s === "已销";
+		const s = stageOf(t);
+		if (filter === "unsold") return s === "可启动" || s === "阻塞中";
+		return s === filter;
 	});
+	const stageCount = (s) => ledgers.filter((t) => stageOf(t) === s).length;
 	const counts = {
-		open: ledgers.filter((t) => coreState(t) === "在挂").length,
-		spawned: ledgers.filter((t) => coreState(t) === "已转票").length,
-		closed: ledgers.filter((t) => coreState(t) === "已销").length
+		ready: stageCount("可启动"),
+		blocked: stageCount("阻塞中"),
+		spawned: ledgers.filter((t) => (parseLedgerEntries(t.body)[0]?.state ?? "").startsWith("已转票")).length,
+		closed: ledgers.filter((t) => (parseLedgerEntries(t.body)[0]?.state ?? "").startsWith("已销")).length
 	};
 	const chip = (active) => ({
 		fontSize: 11,
@@ -4296,7 +4324,7 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 				},
 				children: [/* @__PURE__ */ jsx("span", {
 					style: { paddingBottom: 8 },
-					children: "挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。"
+					children: "挂账 = 发现但当下不做/做不了的项；带 `- 阻塞: 票NN` 的条目由 implement 落地后自动重算阶段。一账一文件。"
 				}), /* @__PURE__ */ jsxs("span", {
 					style: {
 						marginLeft: "auto",
@@ -4307,9 +4335,19 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 					},
 					children: [
 						/* @__PURE__ */ jsxs("span", {
-							style: chip(filter === "open"),
-							onClick: () => setFilter("open"),
-							children: ["在挂 ", counts.open]
+							style: chip(filter === "unsold"),
+							onClick: () => setFilter("unsold"),
+							children: ["未销 ", counts.ready + counts.blocked]
+						}),
+						/* @__PURE__ */ jsxs("span", {
+							style: chip(filter === "ready"),
+							onClick: () => setFilter("ready"),
+							children: ["🚀 可启动 ", counts.ready]
+						}),
+						/* @__PURE__ */ jsxs("span", {
+							style: chip(filter === "blocked"),
+							onClick: () => setFilter("blocked"),
+							children: ["⛔ 阻塞中 ", counts.blocked]
 						}),
 						/* @__PURE__ */ jsxs("span", {
 							style: chip(filter === "spawned"),
@@ -4345,7 +4383,7 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 						color: TEXT_FAINT,
 						fontSize: 12
 					},
-					children: filter === "open" ? "没有在挂的挂账——该销的都销了。" : "没有符合筛选的条目。"
+					children: filter === "unsold" ? "没有未销的挂账——该销的都销了。" : "没有符合筛选的条目。"
 				}), shown.map((t) => {
 					const entries = parseLedgerEntries(t.body);
 					const single = entries.length === 1 ? entries[0] : void 0;
@@ -4446,6 +4484,14 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 	});
 }
 const LEDGER_STATE_COLOR = {
+	"阻塞中": {
+		bg: "#ff6b6b22",
+		fg: "#f2555a"
+	},
+	"可启动": {
+		bg: "#ffa94d22",
+		fg: "#f7ad31"
+	},
 	"在挂": {
 		bg: "#ffa94d22",
 		fg: "#f7ad31"
@@ -4989,7 +5035,7 @@ function buildChain(tickets, defects, ledgers, cases) {
 			ticket: t,
 			title: e?.title ?? t.title,
 			badge: e?.state ?? "在挂",
-			badgeColor: e?.state === "在挂" ? "#f7ad31" : "#4ed17e",
+			badgeColor: (e?.state ?? "在挂").startsWith("阻塞中") ? "#f2555a" : (e?.state ?? "在挂").startsWith("可启动") || (e?.state ?? "").startsWith("在挂") ? "#f7ad31" : "#4ed17e",
 			sub: e ? `挂账 · ${e.source || "无来源"}` : "挂账"
 		};
 	});

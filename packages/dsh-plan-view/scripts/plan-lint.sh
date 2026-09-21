@@ -45,7 +45,8 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 # 全量清单：basename<TAB>path（供第 1、2 节复用）
-find "$PLAN_DIR" -name '*.md' -not -path '*/.archive/*' -print | sort > "$TMP/files.txt"
+# handoffs/ 是 handoff 交接文档产物区，不属 plan 生态（plan-protocol §三「非治理目录」）。
+find "$PLAN_DIR" -name '*.md' -not -path '*/.archive/*' -not -path '*/handoffs/*' -print | sort > "$TMP/files.txt"
 
 # ── 1. 同票双档 ──────────────────────────────────────────────────────────────
 echo "[1] 同票双档（同一票 id 多处落点，且多于一处未标 superseded-by）"
@@ -86,7 +87,7 @@ while IFS= read -r td; do
     n=$(find "$td" -name '*.md' | wc -l | tr -d ' ')
     printf '%s\t%s\n' "$n" "$d" >> "$TMP/nomap.txt"
   fi
-done < <(find "$PLAN_DIR" -type d -name tickets -not -path '*/.archive/*' -print | sort)
+done < <(find "$PLAN_DIR" -type d -name tickets -not -path '*/.archive/*' -not -path '*/handoffs/*' -print | sort)
 
 missing=0
 if [ -s "$TMP/nomap.txt" ]; then
