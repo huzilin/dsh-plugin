@@ -3132,11 +3132,6 @@ function PlanView(props) {
 	const ledgers = useMemo(() => all.filter((t) => classify(t) === "ledger"), [all]);
 	const defects = useMemo(() => all.filter((t) => classify(t) === "defect"), [all]);
 	const cases = useMemo(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
-	const mapCases = useMemo(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
-		cases,
-		effortIdx,
-		selectedDir
-	]);
 	const rootCases = useMemo(() => cases.filter((t) => t.effort === ROOT_GROUP), [cases]);
 	const rootDefects = useMemo(() => defects.filter((t) => t.effort === ROOT_GROUP), [defects]);
 	const mapOwnTickets = routeTickets;
@@ -3159,6 +3154,11 @@ function PlanView(props) {
 	const globalLedgers = useMemo(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
 	const mapLedgers = useMemo(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
 		ledgers,
+		effortIdx,
+		selectedDir
+	]);
+	const mapCases = useMemo(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
+		cases,
 		effortIdx,
 		selectedDir
 	]);

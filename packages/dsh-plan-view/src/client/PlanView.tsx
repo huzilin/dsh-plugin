@@ -1552,10 +1552,6 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // 测例设计文档（qa/cases.md，一图一份）：单列在地图「🧪 测例」子页，
   // 并作为测例节点进入串联画布（按「票 NN」引用挂到被测票下）。
   const cases = useMemo(() => all.filter(t => ticketKind(t) === 'cases'), [all])
-  const mapCases = useMemo(
-    () => (effortIdx < 0 ? cases : cases.filter(t => t.effort === selectedDir)),
-    [cases, effortIdx, selectedDir],
-  )
   // 根层 qa/（无图归属）：SOP 回测、整页回测等测例 + 独立缺陷，进第一层「测例&缺陷」tab
   const rootCases = useMemo(() => cases.filter(t => t.effort === ROOT_GROUP), [cases])
   const rootDefects = useMemo(() => defects.filter(t => t.effort === ROOT_GROUP), [defects])
@@ -1566,6 +1562,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // Route view: one map at a time, showing only that map's tickets. `effortIdx`
   // of -1 means "all maps". Files read from .plan's own top level stay visible
   // under any map, since a ticket loose there belongs to the plan, not a map.
+  // ⚠️ 声明顺序契约：所有引用 selectedDir 的派生状态（mapTickets/mapDefects/
+  // mapApprovals/mapLedgers/mapCases…）必须声明在本行之后——useMemo 依赖数组
+  // 会在渲染时立即求值，提前引用就是 TDZ 崩溃（已两次踩坑）。
   const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : undefined
   const mapTickets = useMemo(
     () => (effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
@@ -1591,6 +1590,10 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const mapLedgers = useMemo(
     () => (effortIdx < 0 ? ledgers : ledgers.filter(t => t.effort === selectedDir)),
     [ledgers, effortIdx, selectedDir],
+  )
+  const mapCases = useMemo(
+    () => (effortIdx < 0 ? cases : cases.filter(t => t.effort === selectedDir)),
+    [cases, effortIdx, selectedDir],
   )
 
   const destination = useMemo(() => {

@@ -3138,11 +3138,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
 			const defects = (0, react.useMemo)(() => all.filter((t) => classify(t) === "defect"), [all]);
 			const cases = (0, react.useMemo)(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
-			const mapCases = (0, react.useMemo)(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
-				cases,
-				effortIdx,
-				selectedDir
-			]);
 			const rootCases = (0, react.useMemo)(() => cases.filter((t) => t.effort === ROOT_GROUP), [cases]);
 			const rootDefects = (0, react.useMemo)(() => defects.filter((t) => t.effort === ROOT_GROUP), [defects]);
 			const mapOwnTickets = routeTickets;
@@ -3165,6 +3160,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const globalLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
 			const mapLedgers = (0, react.useMemo)(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
 				ledgers,
+				effortIdx,
+				selectedDir
+			]);
+			const mapCases = (0, react.useMemo)(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
+				cases,
 				effortIdx,
 				selectedDir
 			]);
