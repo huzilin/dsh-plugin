@@ -3008,7 +3008,11 @@ function PlanView(props) {
 	const openLedgerCount = (list) => list.filter((t) => {
 		return (parseLedgerEntries(t.body)[0]?.state ?? "在挂").startsWith("在挂");
 	}).length;
-	const openDefectCount = (list) => list.reduce((n, f) => n + parseDefectEntries(f.body).filter((d) => !DEFECT_CLOSED.has(defectStateWord(d.state))).length, 0);
+	const openDefectCount = (list) => list.reduce((n, f) => {
+		const single = parseDefectFile(f);
+		if (single !== void 0) return n + (DEFECT_CLOSED.has(defectStateWord(single.state)) ? 0 : 1);
+		return n + parseDefectEntries(f.body).filter((d) => !DEFECT_CLOSED.has(defectStateWord(d.state))).length;
+	}, 0);
 	const pendingApprovals = (list) => list.filter((t) => ticketKind(t) === "approval" && isPending(t)).length;
 	const tabs = [
 		{
@@ -4340,7 +4344,7 @@ function parseDefectFile(t) {
 		title: (m[2] ?? "").trim() || field("标题"),
 		severity: field("严重度"),
 		kind: field("类型"),
-		state: field("状态") || "新建",
+		state: field("状态") || "待修复",
 		source: field("发现源"),
 		assignee: field("Assignee"),
 		cases: field("关联用例"),
@@ -4386,7 +4390,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
 					fontSize: 11,
 					color: TEXT_FAINT
 				},
-				children: "缺陷挂在具体图下（按当前选中的图过滤，切图联动）；条目来自台账的「清单总览」表，点卡片看全文。"
+				children: "缺陷挂在具体图下（按当前选中的图过滤，切图联动）；一缺陷一文件（`qa/DEF-NN-*.md`），点卡片看全文。"
 			}),
 			/* @__PURE__ */ jsx("div", {
 				style: {
@@ -4614,7 +4618,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
 													color: closed ? "#4ed17e" : "#f7ad31",
 													flexShrink: 0
 												},
-												children: e.state || "新建"
+												children: e.state || "待修复"
 											}),
 											/* @__PURE__ */ jsx("span", {
 												style: {

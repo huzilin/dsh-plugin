@@ -1528,7 +1528,11 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // 票=open/claimed、待拍板=pending、挂账=在挂、缺陷=未关闭。
   const openTickets = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')).length
   const openLedgerCount = (list: ParsedTicket[]) => list.filter(t => { const s = parseLedgerEntries(t.body)[0]?.state ?? '在挂'; return s.startsWith('在挂') }).length
-  const openDefectCount = (list: ParsedTicket[]) => list.reduce((n, f) => n + parseDefectEntries(f.body).filter(d => !DEFECT_CLOSED.has(defectStateWord(d.state))).length, 0)
+  const openDefectCount = (list: ParsedTicket[]) => list.reduce((n, f) => {
+    const single = parseDefectFile(f)
+    if (single !== undefined) return n + (DEFECT_CLOSED.has(defectStateWord(single.state)) ? 0 : 1)
+    return n + parseDefectEntries(f.body).filter(d => !DEFECT_CLOSED.has(defectStateWord(d.state))).length
+  }, 0)
   const pendingApprovals = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'approval' && isPending(t)).length
 
   const tabs: { id: TopView; label: string; count: number }[] = [
@@ -2078,7 +2082,7 @@ function parseDefectFile(t: ParsedTicket): (DefectEntry & { assignee: string; ca
     title: (m[2] ?? '').trim() || field('标题'),
     severity: field('严重度'),
     kind: field('类型'),
-    state: field('状态') || '新建',
+    state: field('状态') || '待修复',
     source: field('发现源'),
     assignee: field('Assignee'),
     cases: field('关联用例'),
@@ -2102,7 +2106,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
-        缺陷挂在具体图下（按当前选中的图过滤，切图联动）；条目来自台账的「清单总览」表，点卡片看全文。
+        缺陷挂在具体图下（按当前选中的图过滤，切图联动）；一缺陷一文件（`qa/DEF-NN-*.md`），点卡片看全文。
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {defects.map(t => {
@@ -2148,7 +2152,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
                 return (
                   <div key={e.id} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: closed ? CARD_DARK : CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', opacity: closed ? 0.75 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{e.state || '新建'}</span>
+                      <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{e.state || '待修复'}</span>
                       <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
                       <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, flexShrink: 0 }}>{e.id}</span>
                     </div>
