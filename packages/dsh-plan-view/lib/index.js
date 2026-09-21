@@ -123,7 +123,10 @@ function deriveTicketStatus(file, raw) {
 		origin: fm.origin,
 		session: fm.session,
 		originSession: fm["origin_session"],
-		body
+		body,
+		qaCases: fm.qa_cases === "true",
+		qaTested: fm.qa_tested === "true",
+		qaAccepted: fm.qa_accepted === "true"
 	};
 }
 /**
@@ -415,6 +418,7 @@ function ticketKind(t) {
 	if (ty === "approval") return "approval";
 	if (ty === "qa-defect") return "defect";
 	if (ty === "ledger") return "ledger";
+	if (t.group === "qa" && t.file === "cases.md") return "cases";
 	if (isPending(t)) return "approval";
 	if (ty === "spec" || ty === "design" || /^(map|readme|index)$/i.test(t.id)) return "note";
 	if (!ty && !t.status) return "note";
@@ -440,6 +444,11 @@ const KIND_META = {
 		label: "缺陷",
 		icon: "🐞",
 		color: "#f2555a"
+	},
+	cases: {
+		label: "测例",
+		icon: "🧪",
+		color: "#609bfa"
 	},
 	note: {
 		label: "说明",
@@ -606,7 +615,7 @@ async function loadPlan(scope, planDir) {
 		path: e.file.path,
 		effort: e.from,
 		group: e.group
-	})).filter((t, i) => picked[i]?.group !== "qa" || ticketKind(t) === "defect");
+	})).filter((t, i) => picked[i]?.group !== "qa" || ticketKind(t) === "defect" || picked[i]?.file.name === "cases.md");
 	const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 	return {
 		tickets,
@@ -943,6 +952,36 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 								color: "#f7ad31"
 							},
 							children: ["👤 ", ticket.claimedBy]
+						}),
+						ticket.qaCases && /* @__PURE__ */ jsx("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: "#609bfa22",
+								color: "#609bfa"
+							},
+							children: "🧪 测例已构建"
+						}),
+						ticket.qaTested && /* @__PURE__ */ jsx("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: "#4ed17e22",
+								color: "#4ed17e"
+							},
+							children: "🧪 已测试"
+						}),
+						ticket.qaAccepted && /* @__PURE__ */ jsx("span", {
+							style: {
+								fontSize: 11,
+								padding: "2px 9px",
+								borderRadius: 999,
+								background: "#2ecc7122",
+								color: "#4ed17e"
+							},
+							children: "🏁 已验收"
 						}),
 						ticket.status && /* @__PURE__ */ jsxs("span", {
 							style: {
@@ -1363,6 +1402,39 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
 											color: "#f2555a"
 										},
 										children: [" ", t.blockedBy.map((n) => `#${n}`).join(",")]
+									}),
+									t.qaCases && /* @__PURE__ */ jsx("span", {
+										title: "测例已构建（qa_cases）",
+										style: {
+											fontSize: 10,
+											padding: "1px 5px",
+											borderRadius: 999,
+											background: "#609bfa22",
+											color: "#609bfa"
+										},
+										children: "🧪 测例"
+									}),
+									t.qaTested && /* @__PURE__ */ jsx("span", {
+										title: "测例已执行（qa_tested）",
+										style: {
+											fontSize: 10,
+											padding: "1px 5px",
+											borderRadius: 999,
+											background: "#4ed17e22",
+											color: "#4ed17e"
+										},
+										children: "🧪 已测试"
+									}),
+									t.qaAccepted && /* @__PURE__ */ jsx("span", {
+										title: "验收通过（qa_accepted）",
+										style: {
+											fontSize: 10,
+											padding: "1px 5px",
+											borderRadius: 999,
+											background: "#2ecc7122",
+											color: "#4ed17e"
+										},
+										children: "🏁 已验收"
 									})
 								]
 							})]
@@ -3054,6 +3126,7 @@ function PlanView(props) {
 	const approvals = useMemo(() => all.filter((t) => classify(t) === "approval"), [all]);
 	const ledgers = useMemo(() => all.filter((t) => classify(t) === "ledger"), [all]);
 	const defects = useMemo(() => all.filter((t) => classify(t) === "defect"), [all]);
+	const cases = useMemo(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
 	const mapOwnTickets = routeTickets;
 	const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
 	const mapTickets = useMemo(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
@@ -3330,9 +3403,14 @@ function PlanView(props) {
 							openDefectCount(mapDefects)
 						],
 						[
+							"cases",
+							"🧪 测例",
+							cases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)
+						],
+						[
 							"chain",
 							"🧪 串联",
-							mapTickets.length + mapDefects.length + mapLedgers.length
+							mapTickets.length + mapDefects.length + mapLedgers.length + cases.length
 						]
 					].map(([id, label, n]) => /* @__PURE__ */ jsxs("button", {
 						type: "button",
@@ -3443,11 +3521,17 @@ function PlanView(props) {
 					tickets: mapTickets,
 					defects: mapDefects,
 					ledgers: mapLedgers,
+					cases: cases.filter((c) => c.effort === selectedDir || effortIdx < 0),
 					planDir,
 					scope,
 					ctx,
 					sessions,
 					onChanged,
+					readOnly
+				}),
+				mapSub === "cases" && /* @__PURE__ */ jsx(CasesView, {
+					cases: cases.filter((c) => c.effort === selectedDir || effortIdx < 0),
+					scope,
 					readOnly
 				})
 			] }),
@@ -4869,6 +4953,10 @@ const CHAIN_EDGE_STYLE = {
 		color: "#f2555a",
 		label: "提及关联"
 	},
+	cover: {
+		color: "#4ed17e",
+		label: "测例覆盖"
+	},
 	dep: {
 		color: "rgba(255,255,255,.30)",
 		dashed: true,
@@ -4879,7 +4967,7 @@ const chainTicketByNum = (list, n) => list.find((t) => {
 	const m = t.file.match(/^(\d+)-/);
 	return m !== null && m !== void 0 && parseInt(m[1], 10) === n;
 });
-function buildChain(tickets, defects, ledgers) {
+function buildChain(tickets, defects, ledgers, cases) {
 	const NODE_W = 250, INDENT = 64, TOP = 20;
 	const nodes = [];
 	const pos = /* @__PURE__ */ new Map();
@@ -4951,10 +5039,20 @@ function buildChain(tickets, defects, ledgers) {
 			});
 		}
 	}
+	const casesNodes = cases.map((f) => ({
+		key: `c:${f.id}`,
+		kind: "cases",
+		ticket: f,
+		title: f.title,
+		badge: "🧪 测例",
+		badgeColor: "#4ed17e",
+		sub: `${f.effort?.split("/").pop() ?? ""} · 覆盖被测票`
+	}));
 	const all = [
 		...ticketNodes,
 		...ledgerNodes,
-		...defectNodes
+		...defectNodes,
+		...casesNodes
 	];
 	const byKey = new Map(all.map((n) => [n.key, n]));
 	for (const l of ledgerNodes) {
@@ -5002,6 +5100,14 @@ function buildChain(tickets, defects, ledgers) {
 				kind: "mention"
 			});
 		}
+	}
+	for (const c of casesNodes) for (const m of c.ticket.body.matchAll(/票\s*(\d+)/g)) {
+		const t = chainTicketByNum(tickets, parseInt(m[1] ?? "0", 10));
+		if (t !== void 0 && !edges.some((e) => e.to === c.key && e.from === `t:${t.id}`)) edges.push({
+			from: `t:${t.id}`,
+			to: c.key,
+			kind: "cover"
+		});
 	}
 	const depById = new Map(tickets.map((t) => [t.id, t]));
 	for (const t of tickets) for (const r of t.blockedBy) {
@@ -5076,13 +5182,14 @@ function buildChain(tickets, defects, ledgers) {
 		orphans: orphanOfKind
 	};
 }
-function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+function ChainView({ tickets, defects, ledgers, cases, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	const [active, setActive] = useState(null);
-	const { nodes, treeEdges, crossEdges, pos, W, H, orphans } = useMemo(() => buildChain(tickets, defects, ledgers), [
+	const { nodes, treeEdges, crossEdges, pos, W, H, orphans } = useMemo(() => buildChain(tickets, defects, ledgers, cases), [
 		tickets,
 		defects,
-		ledgers
+		ledgers,
+		cases
 	]);
 	const NODE_W = 250;
 	const connectedEdges = useMemo(() => {
@@ -5104,12 +5211,14 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 	const KIND_COLOR = {
 		ticket: "#609bfa",
 		ledger: "#f7ad31",
-		defect: "#f2555a"
+		defect: "#f2555a",
+		cases: "#4ed17e"
 	};
 	const KIND_LABEL = {
 		ticket: "工单/拍板",
 		ledger: "挂账",
-		defect: "缺陷"
+		defect: "缺陷",
+		cases: "测例"
 	};
 	return /* @__PURE__ */ jsxs("div", {
 		style: {
@@ -5388,6 +5497,86 @@ function edgesRelated(key, active, treeEdges, crossEdges) {
 	if (active === null) return true;
 	for (const e of [...treeEdges, ...crossEdges]) if (e.from === key && e.to === active || e.from === active && e.to === key) return true;
 	return false;
+}
+function CasesView({ cases, scope, readOnly }) {
+	if (cases.length === 0) return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			display: "flex",
+			alignItems: "center",
+			justifyContent: "center",
+			color: TEXT_FAINT,
+			padding: 24,
+			textAlign: "center"
+		},
+		children: [
+			"当前图没有测例文档。",
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx("span", {
+				style: {
+					fontSize: 12,
+					color: TEXT_FAINT
+				},
+				children: "`to-qa-testcases` 产出的 `.plan/<effort>/qa/cases.md` 会按图列在这里（一图一份，不拆文件）。"
+			})
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			flex: 1,
+			overflowY: "auto",
+			padding: 12,
+			display: "flex",
+			flexDirection: "column",
+			gap: 12
+		},
+		children: [/* @__PURE__ */ jsx("style", { children: MD_CSS }), cases.map((c) => /* @__PURE__ */ jsxs("div", {
+			style: {
+				border: `1px solid ${BORDER}`,
+				borderRadius: 10,
+				background: CARD,
+				overflow: "hidden"
+			},
+			children: [/* @__PURE__ */ jsxs("div", {
+				style: {
+					padding: "10px 14px",
+					borderBottom: `1px solid ${BORDER}`,
+					display: "flex",
+					alignItems: "center",
+					gap: 8,
+					background: HEADER_BG
+				},
+				children: [/* @__PURE__ */ jsxs("span", {
+					style: {
+						fontSize: 13,
+						fontWeight: 700,
+						color: TEXT
+					},
+					children: ["🧪 ", c.title]
+				}), /* @__PURE__ */ jsxs("span", {
+					style: {
+						fontSize: 10,
+						padding: "1px 6px",
+						borderRadius: 999,
+						background: CHIP_BG,
+						color: "#888"
+					},
+					children: [
+						c.effort?.split("/").pop(),
+						"/",
+						c.file
+					]
+				})]
+			}), /* @__PURE__ */ jsx("div", {
+				style: {
+					padding: "10px 14px 14px",
+					fontSize: 13,
+					color: TEXT_DIM
+				},
+				dangerouslySetInnerHTML: { __html: md(c.body) }
+			})]
+		}, `${c.effort}/${c.file}`))]
+	});
 }
 //#endregion
 //#region src/client/index.tsx

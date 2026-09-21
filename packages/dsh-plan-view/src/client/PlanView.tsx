@@ -26,6 +26,9 @@ interface ParsedTicket {
   origin: string | undefined  // frontmatter `origin` — why an approval doc exists
   session: string | undefined       // frontmatter `session` — the session bound to this ticket (B1)
   originSession: string | undefined // frontmatter `origin_session` — the session that produced an approval (B1)
+  qaCases: boolean            // frontmatter `qa_cases: true` — 测例已构建（to-qa-testcases 回写）
+  qaTested: boolean           // frontmatter `qa_tested: true` — 测例已执行（run-qa-testcases 回写）
+  qaAccepted: boolean         // frontmatter `qa_accepted: true` — 验收通过（AC 全过 + 无未关闭缺陷）
   path?: string               // resolved fs path, since tickets are not always under tickets/
   effort?: string             // which effort dir this came from; ROOT_GROUP for .plan's own top level
   group?: string              // subdirectory within the effort: 'tickets' | 'impl' | 'impl-fe' | …
@@ -60,6 +63,7 @@ function deriveTicketStatus(file: string, raw: string): ParsedTicket {
     resolved: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
     status: fm.status, date: fm.date, origin: fm.origin,
     session: fm.session, originSession: fm['origin_session'], body,
+    qaCases: fm.qa_cases === 'true', qaTested: fm.qa_tested === 'true', qaAccepted: fm.qa_accepted === 'true',
   }
 }
 
@@ -344,7 +348,7 @@ const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'resolved', 'out_of_sco
 // lifecycle (pending → closed) that a ticket does not. The view labels them so
 // a reader knows which one they are looking at without opening it.
 
-type TicketKind = 'ticket' | 'approval' | 'ledger' | 'defect' | 'note'
+type TicketKind = 'ticket' | 'approval' | 'ledger' | 'defect' | 'cases' | 'note'
 
 /** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
 function ticketKind(t: ParsedTicket): TicketKind {
@@ -358,6 +362,9 @@ function ticketKind(t: ParsedTicket): TicketKind {
   // only when its 启动条件 (start condition) is met, so it must not surface as
   // a ticket or repeat inside every map — it gets its own tab.
   if (ty === 'ledger') return 'ledger'
+  // 测试用例设计文档：一图一份 `qa/cases.md`，由路径识别（不加 frontmatter，
+  // qa 白名单对其放行），单列在地图的「🧪 测例」子页。
+  if (t.group === 'qa' && t.file === 'cases.md') return 'cases'
   if (isPending(t)) return 'approval'
   // map/spec/index documents describe the effort rather than asking for work.
   if (ty === 'spec' || ty === 'design' || /^(map|readme|index)$/i.test(t.id)) return 'note'
@@ -375,6 +382,7 @@ const KIND_META: Record<TicketKind, { label: string; icon: string; color: string
   approval: { label: '待拍板', icon: '⏳', color: '#f7ad31' },
   ledger: { label: '台账', icon: '📒', color: '#4ed17e' },
   defect: { label: '缺陷', icon: '🐞', color: '#f2555a' },
+  cases: { label: '测例', icon: '🧪', color: '#609bfa' },
   note: { label: '说明', icon: '📄', color: TEXT_FAINT },
 }
 
@@ -587,7 +595,7 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   // stays invisible too — 加头 = 被看见，不加头 = 不被看见.
   const tickets = picked
     .map((e, i) => ({ ...deriveTicketStatus(e.file.name, raws[i] ?? ''), path: e.file.path, effort: e.from, group: e.group }))
-    .filter((t, i) => picked[i]?.group !== 'qa' || ticketKind(t) === 'defect')
+    .filter((t, i) => picked[i]?.group !== 'qa' || ticketKind(t) === 'defect' || picked[i]?.file.name === 'cases.md')
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
   return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
@@ -776,6 +784,9 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
           {ticket.type && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${typeTheme(ticket.type).color}22`, color: typeTheme(ticket.type).color }}>{ticket.type}</span>}
           <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: DOT[displayStatus(ticket)], border: `1px solid ${BORDER}` }}>{STATUS_LABELS[displayStatus(ticket)]}</span>
           {ticket.claimedBy && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#f0a50022', color: '#f7ad31' }}>👤 {ticket.claimedBy}</span>}
+          {ticket.qaCases && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#609bfa22', color: '#609bfa' }}>🧪 测例已构建</span>}
+          {ticket.qaTested && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#4ed17e22', color: '#4ed17e' }}>🧪 已测试</span>}
+          {ticket.qaAccepted && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#2ecc7122', color: '#4ed17e' }}>🏁 已验收</span>}
           {ticket.status && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: '#aaa', border: `1px solid ${BORDER}` }}>status: {ticket.status}</span>}
           {ageLabel(ticket) && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ffa94d22', color: '#f7ad31' }}>{ageLabel(ticket)}</span>}
           {ticket.origin && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: '#888', border: `1px solid ${BORDER}` }}>origin: {ticket.origin}</span>}
@@ -862,6 +873,9 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
                     {isPending(t) && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#ffa94d33', color: '#f7ad31' }}>{ageLabel(t) ?? '待拍板'}</span>}
                     {t.claimedBy && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#f0a50022', color: '#f7ad31' }}>👤 {t.claimedBy}</span>}
                     {t.blockedBy.length > 0 && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#ff6b6b22', color: '#f2555a' }}> {t.blockedBy.map(n => `#${n}`).join(',')}</span>}
+                    {t.qaCases && <span title="测例已构建（qa_cases）" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#609bfa22', color: '#609bfa' }}>🧪 测例</span>}
+                    {t.qaTested && <span title="测例已执行（qa_tested）" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#4ed17e22', color: '#4ed17e' }}>🧪 已测试</span>}
+                    {t.qaAccepted && <span title="验收通过（qa_accepted）" style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#2ecc7122', color: '#4ed17e' }}>🏁 已验收</span>}
                   </div>
                 </div>
               ))}
@@ -1475,7 +1489,7 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 type TopView = 'overview' | 'map' | 'ledger' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
-type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain'
+type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
@@ -1529,6 +1543,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
   const ledgers = useMemo(() => all.filter(t => classify(t) === 'ledger'), [all])
   const defects = useMemo(() => all.filter(t => classify(t) === 'defect'), [all])
+  // 测例设计文档（qa/cases.md，一图一份）：单列在地图「🧪 测例」子页，
+  // 并作为测例节点进入串联画布（按「票 NN」引用挂到被测票下）。
+  const cases = useMemo(() => all.filter(t => ticketKind(t) === 'cases'), [all])
   // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
   // their own board — their tickets show in the normal ticket view until removed.
   const mapOwnTickets = routeTickets
@@ -1674,7 +1691,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
               ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
-              ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length],
+              ['cases', '🧪 测例', cases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)],
+              ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length + cases.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
                 {label}<span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>
@@ -1697,7 +1715,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'cases' && <CasesView cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} scope={scope} readOnly={readOnly} />}
         </>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
@@ -2264,7 +2283,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
 
 interface ChainNode {
   key: string
-  kind: 'ticket' | 'ledger' | 'defect'
+  kind: 'ticket' | 'ledger' | 'defect' | 'cases'
   title: string
   badge: string
   badgeColor: string
@@ -2272,19 +2291,20 @@ interface ChainNode {
   ticket: ParsedTicket
 }
 
-interface ChainEdge { from: string; to: string; kind: 'source' | 'spawn' | 'mention' | 'dep' }
+interface ChainEdge { from: string; to: string; kind: 'source' | 'spawn' | 'mention' | 'dep' | 'cover' }
 
 const CHAIN_EDGE_STYLE: Record<ChainEdge['kind'], { color: string; dashed?: boolean; label: string }> = {
   source: { color: '#f7ad31', label: '出自票' },
   spawn: { color: '#609bfa', label: '转票落地' },
   mention: { color: '#f2555a', label: '提及关联' },
+  cover: { color: '#4ed17e', label: '测例覆盖' },
   dep: { color: 'rgba(255,255,255,.30)', dashed: true, label: 'blocked' },
 }
 
 const chainTicketByNum = (list: ParsedTicket[], n: number): ParsedTicket | undefined =>
   list.find(t => { const m = t.file.match(/^(\d+)-/); return m !== null && m !== undefined && parseInt(m[1], 10) === n })
 
-function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: ParsedTicket[]): {
+function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: ParsedTicket[], cases: ParsedTicket[]): {
   nodes: { node: ChainNode; x: number; y: number }[]
   treeEdges: ChainEdge[]
   crossEdges: ChainEdge[]
@@ -2347,7 +2367,13 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     }
   }
 
-  const all: ChainNode[] = [...ticketNodes, ...ledgerNodes, ...defectNodes]
+  const casesNodes: ChainNode[] = cases.map(f => ({
+    key: `c:${f.id}`, kind: 'cases' as const, ticket: f,
+    title: f.title, badge: '🧪 测例', badgeColor: '#4ed17e',
+    sub: `${f.effort?.split('/').pop() ?? ''} · 覆盖被测票`,
+  }))
+
+  const all: ChainNode[] = [...ticketNodes, ...ledgerNodes, ...defectNodes, ...casesNodes]
   const byKey = new Map(all.map(n => [n.key, n]))
 
   // 关系统一为「父 → 子」树方向（用户示例：ticket1→ticket2→挂账1→ticket3，
@@ -2377,6 +2403,12 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     for (const m of ds.text.matchAll(/tickets\/(\d+)-/g)) {
       const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
       if (t !== undefined && !edges.some(e => e.to === ds.key && e.from === `t:${t.id}`)) edges.push({ from: `t:${t.id}`, to: ds.key, kind: 'mention' })
+    }
+  }
+  for (const c of casesNodes) {
+    for (const m of c.ticket.body.matchAll(/票\s*(\d+)/g)) {
+      const t = chainTicketByNum(tickets, parseInt(m[1] ?? '0', 10))
+      if (t !== undefined && !edges.some(e => e.to === c.key && e.from === `t:${t.id}`)) edges.push({ from: `t:${t.id}`, to: c.key, kind: 'cover' })
     }
   }
   const depById = new Map(tickets.map(t => [t.id, t]))
@@ -2433,10 +2465,11 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
   return { nodes, treeEdges, crossEdges, pos, W: maxRight + 40, H, orphans: orphanOfKind }
 }
 
-function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+function ChainView({ tickets, defects, ledgers, cases, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
   defects: ParsedTicket[]
   ledgers: ParsedTicket[]
+  cases: ParsedTicket[]
   planDir: string
   scope: SessionScope
   ctx: any
@@ -2446,7 +2479,7 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
 }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const [active, setActive] = useState<string | null>(null)
-  const { nodes, treeEdges, crossEdges, pos, W, H, orphans } = useMemo(() => buildChain(tickets, defects, ledgers), [tickets, defects, ledgers])
+  const { nodes, treeEdges, crossEdges, pos, W, H, orphans } = useMemo(() => buildChain(tickets, defects, ledgers, cases), [tickets, defects, ledgers, cases])
   const NODE_W = 250
   const connectedEdges = useMemo(() => {
     const m = new Map<string, Set<string>>()
@@ -2462,8 +2495,8 @@ function ChainView({ tickets, defects, ledgers, planDir, scope, ctx, sessions, o
   const isConnected = (e: ChainEdge) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false)
   const mk = (x1: number, y1: number, x2: number, y2: number) => `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`
   const NODE_H = 56
-  const KIND_COLOR: Record<ChainNode['kind'], string> = { ticket: '#609bfa', ledger: '#f7ad31', defect: '#f2555a' }
-  const KIND_LABEL: Record<ChainNode['kind'], string> = { ticket: '工单/拍板', ledger: '挂账', defect: '缺陷' }
+  const KIND_COLOR: Record<ChainNode['kind'], string> = { ticket: '#609bfa', ledger: '#f7ad31', defect: '#f2555a', cases: '#4ed17e' }
+  const KIND_LABEL: Record<ChainNode['kind'], string> = { ticket: '工单/拍板', ledger: '挂账', defect: '缺陷', cases: '测例' }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, overflow: 'hidden' }}>
@@ -2554,4 +2587,36 @@ function edgesRelated(key: string, active: string | null, treeEdges: ChainEdge[]
     if ((e.from === key && e.to === active) || (e.from === active && e.to === key)) return true
   }
   return false
+}
+
+// ─── CasesView（测例）────────────────────────────────────────────────────────
+//
+// 一图一份 `qa/cases.md`（to-qa-testcases 产出），单列在地图「🧪 测例」子页。
+// 不拆文件：测例是批量设计文档，§0-§2 的被测对象/七源盘点/覆盖矩阵是共享
+// 上下文；单用例需要独立跟踪时它已升级为缺陷（拆出去的是缺陷不是测例）。
+
+function CasesView({ cases, scope, readOnly }: { cases: ParsedTicket[]; scope: SessionScope; readOnly?: boolean }) {
+  if (cases.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
+        当前图没有测例文档。
+        <br />
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>{'`to-qa-testcases` 产出的 `.plan/<effort>/qa/cases.md` 会按图列在这里（一图一份，不拆文件）。'}</span>
+      </div>
+    )
+  }
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <style>{MD_CSS}</style>
+      {cases.map(c => (
+        <div key={`${c.effort}/${c.file}`} style={{ border: `1px solid ${BORDER}`, borderRadius: 10, background: CARD, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8, background: HEADER_BG }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>🧪 {c.title}</span>
+            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{c.effort?.split('/').pop()}/{c.file}</span>
+          </div>
+          <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(c.body) }} />
+        </div>
+      ))}
+    </div>
+  )
 }
