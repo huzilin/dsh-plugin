@@ -3010,21 +3010,27 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				fontSize: 11.5,
 				fontWeight: active ? 700 : 400
 			});
+			const openTickets = (list) => list.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed")).length;
+			const openLedgerCount = (list) => list.filter((t) => {
+				return (parseLedgerEntries(t.body)[0]?.state ?? "在挂").startsWith("在挂");
+			}).length;
+			const openDefectCount = (list) => list.reduce((n, f) => n + parseDefectEntries(f.body).filter((d) => !DEFECT_CLOSED.has(defectStateWord(d.state))).length, 0);
+			const pendingApprovals = (list) => list.filter((t) => ticketKind(t) === "approval" && isPending(t)).length;
 			const tabs = [
 				{
 					id: "overview",
 					label: "🧭 总览",
-					count: approvals.filter((t) => isPending(t)).length
+					count: pendingApprovals(approvals)
 				},
 				{
 					id: "map",
 					label: "🗺️ 地图",
-					count: mapTickets.length
+					count: openTickets(mapTickets)
 				},
 				{
 					id: "ledger",
 					label: "📒 台账",
-					count: globalLedgers.length
+					count: openLedgerCount(globalLedgers)
 				},
 				{
 					id: "guide",
@@ -3056,11 +3062,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							type: "button",
 							style: tabBtn(top === t.id),
 							onClick: () => setTop(t.id),
-							children: [t.label, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							children: [t.label, t.id !== "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								style: {
 									marginLeft: 5,
 									fontSize: 11,
-									color: t.id === "overview" && t.count > 0 ? "#f7ad31" : "#777"
+									color: (t.id === "approvals" || t.id === "overview") && t.count > 0 ? "#f7ad31" : "#777"
 								},
 								children: t.count
 							})]
@@ -3146,27 +3152,27 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								[
 									"route",
 									"🗺️ 路线",
-									mapTickets.length
+									openTickets(mapTickets)
 								],
 								[
 									"tickets",
 									"🎫 工单",
-									mapTickets.length
+									openTickets(mapTickets)
 								],
 								[
 									"approvals",
 									"⏳ 待拍板",
-									mapApprovals.length
+									pendingApprovals(mapApprovals)
 								],
 								[
 									"ledger",
 									"📒 台账",
-									mapLedgers.length
+									openLedgerCount(mapLedgers)
 								],
 								[
 									"defects",
 									"🐞 缺陷",
-									mapDefects.length
+									openDefectCount(mapDefects)
 								],
 								[
 									"chain",
@@ -3984,6 +3990,29 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		}
 		function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }) {
 			const [focus, setFocus] = (0, react.useState)(null);
+			const [filter, setFilter] = (0, react.useState)("open");
+			const coreState = (t) => {
+				const s = parseLedgerEntries(t.body)[0]?.state ?? "在挂";
+				return LEDGER_STATES.find((x) => s.startsWith(x)) ?? s;
+			};
+			const shown = filter === "all" ? ledgers : ledgers.filter((t) => {
+				const s = coreState(t);
+				return filter === "open" ? s === "在挂" : filter === "spawned" ? s === "已转票" : s === "已销";
+			});
+			const counts = {
+				open: ledgers.filter((t) => coreState(t) === "在挂").length,
+				spawned: ledgers.filter((t) => coreState(t) === "已转票").length,
+				closed: ledgers.filter((t) => coreState(t) === "已销").length
+			};
+			const chip = (active) => ({
+				fontSize: 11,
+				padding: "3px 10px",
+				borderRadius: 999,
+				cursor: "pointer",
+				border: `1px solid ${active ? ACCENT : BORDER}`,
+				color: active ? ACCENT : TEXT_FAINT,
+				background: active ? `${ACCENT}22` : "transparent"
+			});
 			if (ledgers.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
@@ -4014,16 +4043,53 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					overflow: "hidden"
 				},
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
-							padding: "8px 14px",
+							padding: "10px 14px 0",
 							borderBottom: `1px solid ${BORDER}`,
 							fontSize: 11,
-							color: TEXT_FAINT
+							color: TEXT_FAINT,
+							display: "flex",
+							gap: 12,
+							alignItems: "center",
+							flexWrap: "wrap"
 						},
-						children: "挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。"
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							style: { paddingBottom: 8 },
+							children: "挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							style: {
+								marginLeft: "auto",
+								display: "inline-flex",
+								gap: 6,
+								alignItems: "center",
+								paddingBottom: 8
+							},
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: chip(filter === "open"),
+									onClick: () => setFilter("open"),
+									children: ["在挂 ", counts.open]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: chip(filter === "spawned"),
+									onClick: () => setFilter("spawned"),
+									children: ["已转票 ", counts.spawned]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: chip(filter === "closed"),
+									onClick: () => setFilter("closed"),
+									children: ["已销 ", counts.closed]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: chip(filter === "all"),
+									onClick: () => setFilter("all"),
+									children: ["全部 ", ledgers.length]
+								})
+							]
+						})]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							flex: 1,
 							overflowY: "auto",
@@ -4032,7 +4098,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							flexDirection: "column",
 							gap: 12
 						},
-						children: ledgers.map((t) => {
+						children: [shown.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								padding: 24,
+								textAlign: "center",
+								color: TEXT_FAINT,
+								fontSize: 12
+							},
+							children: filter === "open" ? "没有在挂的挂账——该销的都销了。" : "没有符合筛选的条目。"
+						}), shown.map((t) => {
 							const entries = parseLedgerEntries(t.body);
 							const single = entries.length === 1 ? entries[0] : void 0;
 							if (single !== void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -4116,7 +4190,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									}, e.id))
 								]
 							}, t.file);
-						})
+						})]
 					}),
 					focus && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
 						ticket: focus,

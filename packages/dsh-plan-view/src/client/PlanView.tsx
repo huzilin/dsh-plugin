@@ -1524,10 +1524,17 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const mapTab = (active: boolean): React.CSSProperties => ({ padding: '8px 14px 9px', border: 'none', borderRadius: 0, cursor: 'pointer', background: 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400, borderBottom: active ? `2px solid ${ACCENT_SOFT}` : '2px solid transparent' })
   const subBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 14px', border: `1px solid ${active ? BORDER : 'transparent'}`, borderRadius: 7, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11.5, fontWeight: active ? 700 : 400 })
 
+  // tab 计数语义（2026-09-21 拍板）：数字 = 未关单数量，不是总量——
+  // 票=open/claimed、待拍板=pending、挂账=在挂、缺陷=未关闭。
+  const openTickets = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'ticket' && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')).length
+  const openLedgerCount = (list: ParsedTicket[]) => list.filter(t => { const s = parseLedgerEntries(t.body)[0]?.state ?? '在挂'; return s.startsWith('在挂') }).length
+  const openDefectCount = (list: ParsedTicket[]) => list.reduce((n, f) => n + parseDefectEntries(f.body).filter(d => !DEFECT_CLOSED.has(defectStateWord(d.state))).length, 0)
+  const pendingApprovals = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'approval' && isPending(t)).length
+
   const tabs: { id: TopView; label: string; count: number }[] = [
-    { id: 'overview', label: '🧭 总览', count: approvals.filter(t => isPending(t)).length },
-    { id: 'map', label: '🗺️ 地图', count: mapTickets.length },
-    { id: 'ledger', label: '📒 台账', count: globalLedgers.length },
+    { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
+    { id: 'map', label: '🗺️ 地图', count: openTickets(mapTickets) },
+    { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
@@ -1537,7 +1544,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
             {t.label}
-            <span style={{ marginLeft: 5, fontSize: 11, color: t.id === 'overview' && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>
+            {t.id !== 'guide' && <span style={{ marginLeft: 5, fontSize: 11, color: (t.id === 'approvals' || t.id === 'overview') && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>}
           </button>
         ))}
         {/* The files change outside this view — another session writes them, or
@@ -1578,11 +1585,11 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
           <div style={{ display: 'flex', gap: 2, padding: '4px 14px 0', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
             {([
-              ['route', '🗺️ 路线', mapTickets.length],
-              ['tickets', '🎫 工单', mapTickets.length],
-              ['approvals', '⏳ 待拍板', mapApprovals.length],
-              ['ledger', '📒 台账', mapLedgers.length],
-              ['defects', '🐞 缺陷', mapDefects.length],
+              ['route', '🗺️ 路线', openTickets(mapTickets)],
+              ['tickets', '🎫 工单', openTickets(mapTickets)],
+              ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
+              ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
+              ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
               ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
@@ -1903,6 +1910,23 @@ function parseLedgerEntries(body: string): LedgerEntry[] {
 
 function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { ledgers: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
+  // 台账筛选（2026-09-21 拍板）：默认只显未销账（在挂）的活债；已转票/已销
+  // 是留痕态，按需查看。一账一文件，文件即条目，按核心状态词过滤。
+  const [filter, setFilter] = useState<'open' | 'spawned' | 'closed' | 'all'>('open')
+  const coreState = (t: ParsedTicket): string => {
+    const s = parseLedgerEntries(t.body)[0]?.state ?? '在挂'
+    return LEDGER_STATES.find(x => s.startsWith(x)) ?? s
+  }
+  const shown = filter === 'all' ? ledgers : ledgers.filter(t => {
+    const s = coreState(t)
+    return filter === 'open' ? s === '在挂' : filter === 'spawned' ? s === '已转票' : s === '已销'
+  })
+  const counts = {
+    open: ledgers.filter(t => coreState(t) === '在挂').length,
+    spawned: ledgers.filter(t => coreState(t) === '已转票').length,
+    closed: ledgers.filter(t => coreState(t) === '已销').length,
+  }
+  const chip = (active: boolean): React.CSSProperties => ({ fontSize: 11, padding: '3px 10px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${active ? ACCENT : BORDER}`, color: active ? ACCENT : TEXT_FAINT, background: active ? `${ACCENT}22` : 'transparent' })
 
   if (ledgers.length === 0) {
     return (
@@ -1916,11 +1940,22 @@ function LedgerView({ ledgers, scope, ctx, sessions, onChanged, readOnly }: { le
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
-        挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。
+      <div style={{ padding: '10px 14px 0', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span style={{ paddingBottom: 8 }}>挂账 = 发现但当下不做/做不了的项，条件成熟开工销账；agent 扫描「启动条件」已满足的项即可启动。一账一文件。</span>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, alignItems: 'center', paddingBottom: 8 }}>
+          <span style={chip(filter === 'open')} onClick={() => setFilter('open')}>在挂 {counts.open}</span>
+          <span style={chip(filter === 'spawned')} onClick={() => setFilter('spawned')}>已转票 {counts.spawned}</span>
+          <span style={chip(filter === 'closed')} onClick={() => setFilter('closed')}>已销 {counts.closed}</span>
+          <span style={chip(filter === 'all')} onClick={() => setFilter('all')}>全部 {ledgers.length}</span>
+        </span>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {ledgers.map(t => {
+        {shown.length === 0 && (
+          <div style={{ padding: 24, textAlign: 'center', color: TEXT_FAINT, fontSize: 12 }}>
+            {filter === 'open' ? '没有在挂的挂账——该销的都销了。' : '没有符合筛选的条目。'}
+          </div>
+        )}
+        {shown.map(t => {
           const entries = parseLedgerEntries(t.body)
           const single = entries.length === 1 ? entries[0] : undefined
           if (single !== undefined) {
