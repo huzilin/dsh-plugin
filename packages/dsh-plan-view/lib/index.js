@@ -3430,7 +3430,7 @@ function PlanView(props) {
 						[
 							"chain",
 							"🧪 串联",
-							mapTickets.length + mapDefects.length + mapLedgers.length + cases.length
+							buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length
 						]
 					].map(([id, label, n]) => /* @__PURE__ */ jsxs("button", {
 						type: "button",

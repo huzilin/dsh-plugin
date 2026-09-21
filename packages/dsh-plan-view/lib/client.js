@@ -3436,7 +3436,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								[
 									"chain",
 									"🧪 串联",
-									mapTickets.length + mapDefects.length + mapLedgers.length + cases.length
+									buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length
 								]
 							].map(([id, label, n]) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",

@@ -1714,7 +1714,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
               ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
               ['cases', '🧪 测例', mapCases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)],
-              ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length + cases.length],
+              // 串联计数 = 实际入画的连通节点数（孤岛被折叠，不计入），与画布一致
+              ['chain', '🧪 串联', buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
                 {label}<span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>
