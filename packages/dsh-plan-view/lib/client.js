@@ -5269,13 +5269,13 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				degree.set(e.from, (degree.get(e.from) ?? 0) + 1);
 				degree.set(e.to, (degree.get(e.to) ?? 0) + 1);
 			}
-			const connected = all.filter((n) => (degree.get(n.key) ?? 0) > 0);
+			const connected = all.filter((n) => (degree.get(n.key) ?? 0) > 0 || n.kind !== "ticket");
 			const orphanOfKind = {
 				ticket: 0,
 				ledger: 0,
 				defect: 0
 			};
-			for (const n of all) if ((degree.get(n.key) ?? 0) === 0) orphanOfKind[n.kind]++;
+			for (const n of all) if ((degree.get(n.key) ?? 0) === 0 && n.kind === "ticket") orphanOfKind.ticket++;
 			const parentOf = /* @__PURE__ */ new Map();
 			const childrenOf = /* @__PURE__ */ new Map();
 			const treeEdges = [];
@@ -5454,14 +5454,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						},
 						children: [
 							"另有 ",
-							orphans.ticket + orphans.ledger + orphans.defect,
-							" 项与其他条目无关联、未画入（工单 ",
 							orphans.ticket,
-							" · 挂账 ",
-							orphans.ledger,
-							" · 缺陷 ",
-							orphans.defect,
-							"）——在对应文档里写上「票 NN」「挂账-NN」即可入链。"
+							" 张工单与其他条目无关联、未画入——在票面对应文档里写上「票 NN」「挂账-NN」即可入链。"
 						]
 					}),
 					nodes.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
