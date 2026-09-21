@@ -1,4 +1,15 @@
+---
+type: approval
+date: 2026-09-10
+status: closed
+origin: proactive
+---
+
 # 汇报规范 hook 插件 — 待拍板项审批文档
+
+> **状态头 2026-09-22 补录**（plan-approve lint 发现缺头，按实况回填，非当日原始头）：五项待拍板已全部落地——走②桥接方案已挂 web profile（`~/.dsh/profiles/web/cordis.patch.yml` 挂 `dsh-hooks-claude-code`），实现落 `packages/dsh-report-hook/`（触发策略先正则粗筛 + 注入内容给处理方法，均按用户后续确认升级）。**残留挂账：该目录 git untracked，待显式 commit 入库。**
+
+
 
 > 日期：2026-09-10 ｜ 需求来源：`/Users/huzilin/workdir/novel/.plan/dsh-ai-backend/交接-汇报规范hook插件需求.md`
 > 本文件只列**需要你拍板**的项目。每一项都给了「是什么 / 从哪来 / 选项 / 影响」。

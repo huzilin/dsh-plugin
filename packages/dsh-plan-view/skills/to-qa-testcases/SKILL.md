@@ -11,7 +11,7 @@ disable-model-invocation: false
 
 # to-qa-testcases（构建测例）
 
-本 skill 只做**构建测例**一件事：设计依据盘点 → 用例设计（六组）→ 可执行资产三原则。产物 = `.plan/<effort>/qa/cases.md`（无 effort 的项目按其 docs 惯例放 `qa/cases.md`）+ 仓库 `qa/` 下可执行资产（环境一键重建 + 驱动一键复跑 + 结果可对比）。**不执行测例、不出验收结论、不登缺陷**——那半截在 `run-qa-testcases`（跑测例 → 验收记录 → 缺陷台账 → 返工闭环）。
+本 skill 只做**构建测例**一件事：设计依据盘点 → 用例设计（六组）→ 可执行资产三原则。产物 = `.plan/<effort>/qa/cases.md`（无 effort 的项目按其 docs 惯例放 `qa/cases.md`）+ 仓库 `qa/` 下可执行资产（环境一键重建 + 驱动一键复跑 + 结果可对比）。 无图归属的回测测例（SOP 回测 / 整页回测，挂不到具体工单/图）落 `.plan/qa/cases-<主题>.md`，进 plan 第一层「测例&缺陷」tab。 cases.md 落盘后给**被测票** frontmatter 回写 `qa_cases: true`（2026-09-21 拍板——票卡「🧪 测例」徽标的数据源；后续 `qa_tested`/`qa_accepted` 由 run-qa-testcases 写）。**不执行测例、不出验收结论、不登缺陷**——那半截在 `run-qa-testcases`（跑测例 → 验收记录 → 缺陷台账 → 返工闭环）。
 
 > **标准权威说明**：本 skill 承载《用例设计》cases.md 章节骨架与资产三原则的**权威版本**（正文见 `references/testsuite-skeleton.md`）。项目内若有同名模板（如 `qa-acceptance-template.md`），以本 skill 为准，模板退役或改为指针。成品示例见 `references/demo-wbflow.md`。
 > **分工**：`run-qa-testcases` 管执行与缺陷（本 skill 产出的测例集与资产就是它的执行武器，验收记录/缺陷台账骨架也在它的 references/）；`diagnosing-bugs` 管失败用例根因定位；测试场景协议层（造数禁令/验收五维 DoD/真模型 E2E/替身语义）5 个正本在 `run-qa-testcases/references/`，造数前必读 `run-qa-testcases/references/data-construction.md`。
@@ -79,6 +79,7 @@ disable-model-invocation: false
 ## 参考材料
 
 - **骨架正本**：`references/testsuite-skeleton.md`（cases.md 必填节 + 资产三原则）
+- **呈现通道资产形态正本**：`references/playwright-assets.md`（Playwright 六项形态 + DOM 探针清单 + 无视觉降级口径 + VLM 位置表；有 UI 项目必读）
 - **成品示例**：`references/demo-wbflow.md`（一个真实完整测例项目的索引与可复用模式）
 - **盲区案例库**：`references/case-library.md`（设计前读一遍已知盲区类型；新教训只往这里追加）
 
@@ -103,6 +104,7 @@ disable-model-invocation: false
    - **脚本可一键复跑**：驱动脚本**软失败收全**（单条断言失败不中断，一轮收齐全部缺陷）、结果落 json、退出码 FAIL>0 非 0 可接 CI；
    - **结果可对比**：定义基线口径 `PASS / FAIL / SKIP`，SKIP 必附因。
    资产随需求入库；**下一轮不重写数据与脚本**。
+   > 有 UI 的项目：呈现通道可执行资产以 **Playwright 形态**为标准（spec 落 `qa/e2e/`、用例编号 grep 绑定、薄壳驱动、截图/登录约定 + 无视觉降级口径），正本见 [references/playwright-assets.md](references/playwright-assets.md)；P 组设计时按其探针口径把呈现层断言写成可判定的文本断言。
 
 4. **落盘 + 自检**：cases.md 与资产落盘（`.plan/<effort>/qa/cases.md` + 仓库 `qa/`）→ 按本 skill「自检」逐条过 → 登记产物（wbflow：`wb_add_artifact` cases.md + 资产 link，nodeId=当前节点）。执行、验收记录、缺陷登记交 `run-qa-testcases`。
 

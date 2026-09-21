@@ -1,4 +1,15 @@
+---
+type: approval
+date: 2026-09-15
+status: closed
+origin: proactive
+---
+
 # ponytail 为什么没被触发：诊断与最佳实践
+
+> **状态头 2026-09-22 补录**（plan-approve lint 发现缺头，按实况回填）：方案一「红线进常驻注入」已采纳落地（`~/.zcode/AGENTS.md` 与 `~/.dsh/AGENTS.md` SKILLS 加载节，2026-09-21 起默认 caveman、写代码前加载 ponytail 即此路线）；方案二「描述触发词前移」未实施，由方案一取代——常驻注入已使描述截断问题失去意义；方案三 hook 文档本就不推荐。本文归档为诊断记录。
+
+
 
 > 编制日期：2026-09-15
 > 证据来源：skill-doctor 本次 DSH 报告运行（11 份会话样本）+ ponytail 技能原文 + DSH 技能注入机制源码/实测

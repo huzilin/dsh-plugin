@@ -76,7 +76,7 @@ B 组每步额外列「写读联动」：本步写了什么 → 哪些读方必�
 | 资产 | 要求 |
 |---|---|
 | `env_up` / `env_down` | scratch 隔离（独立库/命名空间，绝不触联调库）；迁移 + seed；凭据环境变量注入零落地；down 幂等清理。**造数纪律**（真实接口链路构造、禁 SQL 直插业务表、造不到=SKIP）见 `run-qa-testcases/references/data-construction.md`，建 seed 前必读 |
-| 驱动脚本 | 软失败收全（单断言失败不中断）；用例编号可过滤单跑；结果 json；退出码 FAIL>0 非 0 |
+| 驱动脚本 | 软失败收全（单断言失败不中断）；用例编号可过滤单跑；结果 json；退出码 FAIL>0 非 0。有 UI 项目呈现通道用 Playwright 形态，正本 `to-qa-testcases/references/playwright-assets.md` |
 | 诊断最小环 | 逐缺陷独立可跑（秒级），作为 defect.md E 节 cmd 的载体（E 节契约见 run-qa-testcases 缺陷台账骨架） |
 | 基线记录 | PASS / FAIL / SKIP + SKIP 附因；写进 `qa/README` |
 | `qa/README.md` | 资产清单 + 复跑三步 + 扩展约定（新增用例/剧本怎么加） |
