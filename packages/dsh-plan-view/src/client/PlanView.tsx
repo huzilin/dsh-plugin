@@ -737,6 +737,18 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
   if (ticket.originSession !== undefined) jumps.push([ticket.originSession, '来源 session'])
   const body = fullBody ?? ticket.body
   const chipRow: React.ReactNode[] = jumps.map(([id, label]) => {
+    if (!isDshSession(id)) {
+      return (
+        <span
+          key={id}
+          title={`外部 agent session: ${id}——点击复制恢复命令`}
+          onClick={() => { const cmd = `zcode --resume ${id}`; void navigator.clipboard?.writeText(cmd); setMsg(`已复制恢复命令：${cmd}（粘贴到终端执行）`) }}
+          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#609bfa18', color: '#609bfa', border: `1px solid ${BORDER}`, cursor: 'pointer' }}
+        >
+          📎 {label} {id}
+        </span>
+      )
+    }
     const live = sessions.get(id)
     return (
       <span
@@ -1223,6 +1235,11 @@ function inEffort(t: ParsedTicket, dir: string): boolean {
   return t.effort === dir || t.effort === ROOT_GROUP
 }
 
+// session 字段双格式：DSH 会话是 `session-<uuid>`，可跳转、可查存活；
+// 其他值（如 zcode 的 sess_xxx）视为外部 agent session——展示名字、
+// 点击复制恢复命令（zcode --resume），不做 DSH 跳转。
+const isDshSession = (id: string): boolean => id.startsWith('session-')
+
 function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }: {
   efforts: { dir: string; mapRaw: string }[]
   all: ParsedTicket[]
@@ -1265,10 +1282,11 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
   )
 }
 
-function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
   efforts: { dir: string; mapRaw: string }[]
   defects: ParsedTicket[]
+  ledgers: ParsedTicket[]
   effortIdx: number
   setEffortIdx: (i: number) => void
   planDir: string
@@ -1307,6 +1325,31 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
     () => visible.filter(t => t.session !== undefined && (displayStatus(t) === 'open' || displayStatus(t) === 'claimed')),
     [visible],
   )
+  // 待推进聚合（2026-09-21 拍板）：四类「当下可动 / 需要注意」的事——
+  // 可开工票（无未满足前置的 open）、待处理缺陷、可启动挂账、卡在执行中的票。
+  const readyTickets = useMemo(
+    () => visible.filter(t => ticketKind(t) === 'ticket' && displayStatus(t) === 'open' && !unmetBlocker(t)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visible],
+  )
+  const stuckTickets = useMemo(
+    () => visible.filter(t => displayStatus(t) === 'claimed' && (() => {
+      const s = t.session !== undefined ? sessions.get(t.session) : undefined
+      return s === undefined || !s.running || (ageDays(t) ?? 0) >= 2
+    })()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visible, sessions],
+  )
+  const openDefects = useMemo(() => defects.flatMap(f => {
+    const single = parseDefectFile(f)
+    if (single !== undefined) return DEFECT_CLOSED.has(defectStateWord(single.state)) ? [] : [{ ticket: f, label: `${single.id} ${single.title}`, sub: single.state }]
+    return parseDefectEntries(f.body).filter(d => !DEFECT_CLOSED.has(defectStateWord(d.state))).map(d => ({ ticket: f, label: `${d.id} ${d.title}`, sub: d.state }))
+  }), [defects])
+  const activeLedgers = useMemo(() => ledgers.flatMap(f => {
+    const e = parseLedgerEntries(f.body)[0]
+    if (e === undefined || !e.state.startsWith('在挂')) return []
+    return [{ ticket: f, label: `${e.id} ${e.title}`, sub: e.source || f.effort?.split('/').pop() || '' }]
+  }), [ledgers])
   const row = (t: ParsedTicket, right?: React.ReactNode) => (
     <div key={`${t.effort}/${t.file}`} onClick={() => setFocus(t)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', background: 'transparent' }}
       onMouseEnter={e => { e.currentTarget.style.background = RAISED }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
@@ -1358,6 +1401,42 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
             </div>
           </div>
         ))}
+      {/* 待推进（2026-09-21 拍板）：当下可动 / 需要注意的事，一屏聚合 */}
+      {(() => {
+        const groups: { title: string; color: string; rows: { ticket: ParsedTicket; label: string; sub: string }[] }[] = [
+          { title: '🚀 可开工（前置已满足）', color: ACCENT_SOFT, rows: readyTickets.map(t => ({ ticket: t, label: t.title, sub: `#${shortId(t)} · ${t.effort?.split('/').pop() ?? ''}` })) },
+          { title: '🐞 待处理缺陷', color: '#f2555a', rows: openDefects },
+          { title: '📒 可启动挂账', color: '#f7ad31', rows: activeLedgers },
+          {
+            title: '⏱ 卡在执行中（session 未运行 / 丢失 / 超 2 天）', color: '#e8894a',
+            rows: stuckTickets.map(t => {
+              const s = t.session !== undefined ? sessions.get(t.session) : undefined
+              const ext = t.session !== undefined && !isDshSession(t.session)
+              return { ticket: t, label: t.title, sub: ext ? `📎 zcode session：${t.session}` : s === undefined ? 'session 已丢失' : !s.running ? 'session 空闲中' : `已 ${ageLabel(t) ?? '多日'}` }
+            }),
+          },
+        ]
+        const total = groups.reduce((n, g) => n + g.rows.length, 0)
+        return (
+          <div style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: TEXT, marginBottom: 8 }}>🚀 待推进 <span style={{ fontWeight: 400, color: TEXT_FAINT }}>{total} 项</span></div>
+            {total === 0 ? (
+              <div style={{ fontSize: 12, color: TEXT_FAINT }}>当前没有待推进项——开工的都在轨，挂账无活债，缺陷无未关闭。</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10 }}>
+                {groups.map(g => g.rows.length === 0 ? null : (
+                  <div key={g.title} style={{ border: `1px solid ${BORDER_LIGHT}`, borderRadius: 8, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: g.color, marginBottom: 4 }}>{g.title} <span style={{ fontWeight: 400, color: TEXT_FAINT }}>{g.rows.length}</span></div>
+                    {g.rows.map(r => row(r.ticket,
+                      <span style={{ fontSize: 10, color: TEXT_FAINT, flexShrink: 0 }}>{r.sub}</span>,
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
       {/* 卡点聚合 */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 320px', minWidth: 300, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
@@ -1377,10 +1456,11 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
       <div style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}` }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: ACCENT_SOFT, marginBottom: 6 }}>🔗 后台任务（绑 session 的在途票）</div>
         {running.length === 0 ? <div style={{ fontSize: 12, color: TEXT_FAINT }}>没有。从工单详情里「开始推演 / 推进」会在这里出现。</div> : running.map(t => {
+          const ext = t.session !== undefined && !isDshSession(t.session)
           const s = t.session !== undefined ? sessions.get(t.session) : undefined
           return row(t, (
-            <span style={{ fontSize: 11, fontFamily: 'monospace', flexShrink: 0, color: s === undefined ? '#666' : s.running ? '#4ed17e' : TEXT_FAINT }}>
-              {s === undefined ? '⚪ 已回收' : s.running ? '🟢 运行中' : '⚪ 空闲'} {shortSession(t.session!)}
+            <span style={{ fontSize: 11, fontFamily: 'monospace', flexShrink: 0, color: ext ? '#609bfa' : s === undefined ? '#666' : s.running ? '#4ed17e' : TEXT_FAINT }}>
+              {ext ? `📎 zcode：${t.session}` : s === undefined ? '⚪ 已回收' : s.running ? '🟢 运行中' : '⚪ 空闲'} {t.session !== undefined && isDshSession(t.session) && shortSession(t.session)}
             </span>
           ))
         })}
@@ -1622,7 +1702,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       )}
       {top === 'guide' && <GuideView scope={scope} />}
       {top === 'ledger' && <LedgerView ledgers={globalLedgers} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} ledgers={ledgers} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
 }

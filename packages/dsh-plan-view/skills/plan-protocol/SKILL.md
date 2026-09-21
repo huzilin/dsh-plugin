@@ -60,8 +60,9 @@ find-bug → to-approval → plan-approve →（依据）→ to-tickets → impl
 
 1. **`to-tickets` 的输入必须是 spec / 待拍板文档 / 推演地图**，不能是裸结论。票的格式由它独占——任何 skill 都不得手搓 ticket 文件（包括 `to-approval` / `plan-approve` 调 `to-tickets` 时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件）。
 2. **回写发生在两处，是同一件事的两种时机**：`implement*` 在每张票合并落地时**当场**翻状态；`plan-sync` 事后对账补齐。两者不是两条流程。
+3. **执行登记（2026-09-21 拍板，多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——`status: claimed` + `claimed_by: <agent 名>` + `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
 3. **`plan-approve` 是唯一的「决策 → 票」转化点**：拍板结论是「做 X」时，必须调 `to-tickets` 落票，否则结论只是聊天记录，下次会话丢失。
-4. **架构正本（`docs/architecture.md`，novel 项目）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，也在末步更新。它不新建——已存在就维护。
+5. **架构正本（`docs/architecture.md`，novel 项目）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，也在末步更新。它不新建——已存在就维护。
 
 ---
 

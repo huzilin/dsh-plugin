@@ -771,6 +771,29 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 	if (ticket.originSession !== void 0) jumps.push([ticket.originSession, "来源 session"]);
 	const body = fullBody ?? ticket.body;
 	const chipRow = jumps.map(([id, label]) => {
+		if (!isDshSession(id)) return /* @__PURE__ */ jsxs("span", {
+			title: `外部 agent session: ${id}——点击复制恢复命令`,
+			onClick: () => {
+				const cmd = `zcode --resume ${id}`;
+				navigator.clipboard?.writeText(cmd);
+				setMsg(`已复制恢复命令：${cmd}（粘贴到终端执行）`);
+			},
+			style: {
+				fontSize: 11,
+				padding: "2px 9px",
+				borderRadius: 999,
+				background: "#609bfa18",
+				color: "#609bfa",
+				border: `1px solid ${BORDER}`,
+				cursor: "pointer"
+			},
+			children: [
+				"📎 ",
+				label,
+				" ",
+				id
+			]
+		}, id);
 		const live = sessions.get(id);
 		return /* @__PURE__ */ jsxs("span", {
 			title: `${label}: ${id}${live === void 0 ? "（已不可用）" : live.running ? "（运行中）" : "（空闲）"}`,
@@ -2431,6 +2454,7 @@ function effortStage(own) {
 function inEffort(t, dir) {
 	return t.effort === dir || t.effort === ROOT_GROUP;
 }
+const isDshSession = (id) => id.startsWith("session-");
 function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }) {
 	const groups = [
 		"speculation",
@@ -2521,7 +2545,7 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
 		}, String(g.kind)))]
 	});
 }
-function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	const byId = new Map(tickets.map((t) => [t.id, t]));
 	const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : void 0;
@@ -2535,6 +2559,33 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
 	const oldestPending = useMemo(() => visible.filter((t) => ticketKind(t) === "approval" && isPending(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [visible]);
 	const longestBlocked = useMemo(() => visible.filter((t) => ticketKind(t) === "ticket" && (displayStatus(t) === "open" || displayStatus(t) === "claimed") && unmetBlocker(t)).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)).slice(0, 5), [visible]);
 	const running = useMemo(() => visible.filter((t) => t.session !== void 0 && (displayStatus(t) === "open" || displayStatus(t) === "claimed")), [visible]);
+	const readyTickets = useMemo(() => visible.filter((t) => ticketKind(t) === "ticket" && displayStatus(t) === "open" && !unmetBlocker(t)), [visible]);
+	const stuckTickets = useMemo(() => visible.filter((t) => displayStatus(t) === "claimed" && (() => {
+		const s = t.session !== void 0 ? sessions.get(t.session) : void 0;
+		return s === void 0 || !s.running || (ageDays(t) ?? 0) >= 2;
+	})()), [visible, sessions]);
+	const openDefects = useMemo(() => defects.flatMap((f) => {
+		const single = parseDefectFile(f);
+		if (single !== void 0) return DEFECT_CLOSED.has(defectStateWord(single.state)) ? [] : [{
+			ticket: f,
+			label: `${single.id} ${single.title}`,
+			sub: single.state
+		}];
+		return parseDefectEntries(f.body).filter((d) => !DEFECT_CLOSED.has(defectStateWord(d.state))).map((d) => ({
+			ticket: f,
+			label: `${d.id} ${d.title}`,
+			sub: d.state
+		}));
+	}), [defects]);
+	const activeLedgers = useMemo(() => ledgers.flatMap((f) => {
+		const e = parseLedgerEntries(f.body)[0];
+		if (e === void 0 || !e.state.startsWith("在挂")) return [];
+		return [{
+			ticket: f,
+			label: `${e.id} ${e.title}`,
+			sub: e.source || f.effort?.split("/").pop() || ""
+		}];
+	}), [ledgers]);
 	const row = (t, right) => /* @__PURE__ */ jsxs("div", {
 		onClick: () => setFocus(t),
 		style: {
@@ -2711,6 +2762,111 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
 					})
 				})]
 			}, String(g.kind))),
+			(() => {
+				const groups = [
+					{
+						title: "🚀 可开工（前置已满足）",
+						color: ACCENT_SOFT,
+						rows: readyTickets.map((t) => ({
+							ticket: t,
+							label: t.title,
+							sub: `#${shortId(t)} · ${t.effort?.split("/").pop() ?? ""}`
+						}))
+					},
+					{
+						title: "🐞 待处理缺陷",
+						color: "#f2555a",
+						rows: openDefects
+					},
+					{
+						title: "📒 可启动挂账",
+						color: "#f7ad31",
+						rows: activeLedgers
+					},
+					{
+						title: "⏱ 卡在执行中（session 未运行 / 丢失 / 超 2 天）",
+						color: "#e8894a",
+						rows: stuckTickets.map((t) => {
+							const s = t.session !== void 0 ? sessions.get(t.session) : void 0;
+							const ext = t.session !== void 0 && !isDshSession(t.session);
+							return {
+								ticket: t,
+								label: t.title,
+								sub: ext ? `📎 zcode session：${t.session}` : s === void 0 ? "session 已丢失" : !s.running ? "session 空闲中" : `已 ${ageLabel(t) ?? "多日"}`
+							};
+						})
+					}
+				];
+				const total = groups.reduce((n, g) => n + g.rows.length, 0);
+				return /* @__PURE__ */ jsxs("div", {
+					style: {
+						padding: "10px 12px",
+						borderRadius: 10,
+						background: CARD,
+						border: `1px solid ${BORDER}`
+					},
+					children: [/* @__PURE__ */ jsxs("div", {
+						style: {
+							fontSize: 12,
+							fontWeight: 700,
+							color: TEXT,
+							marginBottom: 8
+						},
+						children: ["🚀 待推进 ", /* @__PURE__ */ jsxs("span", {
+							style: {
+								fontWeight: 400,
+								color: TEXT_FAINT
+							},
+							children: [total, " 项"]
+						})]
+					}), total === 0 ? /* @__PURE__ */ jsx("div", {
+						style: {
+							fontSize: 12,
+							color: TEXT_FAINT
+						},
+						children: "当前没有待推进项——开工的都在轨，挂账无活债，缺陷无未关闭。"
+					}) : /* @__PURE__ */ jsx("div", {
+						style: {
+							display: "grid",
+							gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+							gap: 10
+						},
+						children: groups.map((g) => g.rows.length === 0 ? null : /* @__PURE__ */ jsxs("div", {
+							style: {
+								border: `1px solid ${BORDER_LIGHT}`,
+								borderRadius: 8,
+								padding: "8px 10px"
+							},
+							children: [/* @__PURE__ */ jsxs("div", {
+								style: {
+									fontSize: 11,
+									fontWeight: 700,
+									color: g.color,
+									marginBottom: 4
+								},
+								children: [
+									g.title,
+									" ",
+									/* @__PURE__ */ jsx("span", {
+										style: {
+											fontWeight: 400,
+											color: TEXT_FAINT
+										},
+										children: g.rows.length
+									})
+								]
+							}), g.rows.map((r) => row(r.ticket, /* @__PURE__ */ jsx("span", {
+								style: {
+									fontSize: 10,
+									color: TEXT_FAINT,
+									flexShrink: 0
+								},
+								children: r.sub
+							})))]
+						}, g.title))
+					})]
+				});
+			})(),
 			/* @__PURE__ */ jsxs("div", {
 				style: {
 					display: "flex",
@@ -2804,18 +2960,19 @@ function OverviewView({ tickets, efforts, defects, effortIdx, setEffortIdx, plan
 					},
 					children: "没有。从工单详情里「开始推演 / 推进」会在这里出现。"
 				}) : running.map((t) => {
+					const ext = t.session !== void 0 && !isDshSession(t.session);
 					const s = t.session !== void 0 ? sessions.get(t.session) : void 0;
 					return row(t, /* @__PURE__ */ jsxs("span", {
 						style: {
 							fontSize: 11,
 							fontFamily: "monospace",
 							flexShrink: 0,
-							color: s === void 0 ? "#666" : s.running ? "#4ed17e" : TEXT_FAINT
+							color: ext ? "#609bfa" : s === void 0 ? "#666" : s.running ? "#4ed17e" : TEXT_FAINT
 						},
 						children: [
-							s === void 0 ? "⚪ 已回收" : s.running ? "🟢 运行中" : "⚪ 空闲",
+							ext ? `📎 zcode：${t.session}` : s === void 0 ? "⚪ 已回收" : s.running ? "🟢 运行中" : "⚪ 空闲",
 							" ",
-							shortSession(t.session)
+							t.session !== void 0 && isDshSession(t.session) && shortSession(t.session)
 						]
 					}));
 				})]
@@ -3307,6 +3464,7 @@ function PlanView(props) {
 				tickets: all,
 				efforts: data.efforts,
 				defects,
+				ledgers,
 				effortIdx,
 				setEffortIdx,
 				planDir,
