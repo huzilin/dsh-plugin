@@ -3138,6 +3138,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
 			const defects = (0, react.useMemo)(() => all.filter((t) => classify(t) === "defect"), [all]);
 			const cases = (0, react.useMemo)(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
+			const mapCases = (0, react.useMemo)(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
+				cases,
+				effortIdx,
+				selectedDir
+			]);
 			const rootCases = (0, react.useMemo)(() => cases.filter((t) => t.effort === ROOT_GROUP), [cases]);
 			const rootDefects = (0, react.useMemo)(() => defects.filter((t) => t.effort === ROOT_GROUP), [defects]);
 			const mapOwnTickets = routeTickets;
@@ -3426,7 +3431,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								[
 									"cases",
 									"🧪 测例",
-									cases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)
+									mapCases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)
 								],
 								[
 									"chain",
@@ -3543,7 +3548,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							tickets: mapTickets,
 							defects: mapDefects,
 							ledgers: mapLedgers,
-							cases: cases.filter((c) => c.effort === selectedDir || effortIdx < 0),
+							cases: mapCases,
 							planDir,
 							scope,
 							ctx,
@@ -3552,7 +3557,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							readOnly
 						}),
 						mapSub === "cases" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CasesView, {
-							cases: cases.filter((c) => c.effort === selectedDir || effortIdx < 0),
+							cases: mapCases,
 							scope,
 							readOnly
 						})

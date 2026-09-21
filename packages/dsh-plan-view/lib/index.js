@@ -3132,6 +3132,11 @@ function PlanView(props) {
 	const ledgers = useMemo(() => all.filter((t) => classify(t) === "ledger"), [all]);
 	const defects = useMemo(() => all.filter((t) => classify(t) === "defect"), [all]);
 	const cases = useMemo(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
+	const mapCases = useMemo(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
+		cases,
+		effortIdx,
+		selectedDir
+	]);
 	const rootCases = useMemo(() => cases.filter((t) => t.effort === ROOT_GROUP), [cases]);
 	const rootDefects = useMemo(() => defects.filter((t) => t.effort === ROOT_GROUP), [defects]);
 	const mapOwnTickets = routeTickets;
@@ -3420,7 +3425,7 @@ function PlanView(props) {
 						[
 							"cases",
 							"🧪 测例",
-							cases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)
+							mapCases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)
 						],
 						[
 							"chain",
@@ -3537,7 +3542,7 @@ function PlanView(props) {
 					tickets: mapTickets,
 					defects: mapDefects,
 					ledgers: mapLedgers,
-					cases: cases.filter((c) => c.effort === selectedDir || effortIdx < 0),
+					cases: mapCases,
 					planDir,
 					scope,
 					ctx,
@@ -3546,7 +3551,7 @@ function PlanView(props) {
 					readOnly
 				}),
 				mapSub === "cases" && /* @__PURE__ */ jsx(CasesView, {
-					cases: cases.filter((c) => c.effort === selectedDir || effortIdx < 0),
+					cases: mapCases,
 					scope,
 					readOnly
 				})

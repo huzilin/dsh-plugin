@@ -1552,6 +1552,10 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // 测例设计文档（qa/cases.md，一图一份）：单列在地图「🧪 测例」子页，
   // 并作为测例节点进入串联画布（按「票 NN」引用挂到被测票下）。
   const cases = useMemo(() => all.filter(t => ticketKind(t) === 'cases'), [all])
+  const mapCases = useMemo(
+    () => (effortIdx < 0 ? cases : cases.filter(t => t.effort === selectedDir)),
+    [cases, effortIdx, selectedDir],
+  )
   // 根层 qa/（无图归属）：SOP 回测、整页回测等测例 + 独立缺陷，进第一层「测例&缺陷」tab
   const rootCases = useMemo(() => cases.filter(t => t.effort === ROOT_GROUP), [cases])
   const rootDefects = useMemo(() => defects.filter(t => t.effort === ROOT_GROUP), [defects])
@@ -1706,7 +1710,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
               ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
-              ['cases', '🧪 测例', cases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)],
+              ['cases', '🧪 测例', mapCases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)],
               ['chain', '🧪 串联', mapTickets.length + mapDefects.length + mapLedgers.length + cases.length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
@@ -1730,8 +1734,8 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'cases' && <CasesView cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} scope={scope} readOnly={readOnly} />}
+          {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={mapCases} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} readOnly={readOnly} />}
         </>
       )}
       {top === 'qa' && (
