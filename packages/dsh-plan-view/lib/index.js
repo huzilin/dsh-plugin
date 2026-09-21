@@ -5713,53 +5713,128 @@ function CasesView({ cases, scope, readOnly }) {
 	});
 }
 //#endregion
+//#region src/client/plan-icon.tsx
+/**
+* Plan 的共用标识：标签页类型 id 与图标。
+*
+* 右侧栏的 Plan 标签页（`index.tsx` 注册）与会话头部的一键入口
+* （`entry-button.tsx`）指向同一处定义——避免 id 字符串或图标形状两处各写一份
+* 而漂移。
+*/
+/** Plan 标签页的类型 id（注册描述符与入口按钮共用）。 */
+const PLAN_TAB_ID = "dsh-plan-view:plan";
+/**
+* Plan 图标：方框叠三条横线。
+* @param props - `size` 为图标边长（像素）。
+* @returns 一个随文字色着色的 SVG。
+*/
+function PlanIcon({ size }) {
+	return /* @__PURE__ */ jsxs("svg", {
+		width: size,
+		height: size,
+		viewBox: "0 0 16 16",
+		fill: "none",
+		children: [
+			/* @__PURE__ */ jsx("rect", {
+				x: "1",
+				y: "1",
+				width: "14",
+				height: "14",
+				rx: "3",
+				stroke: "currentColor",
+				strokeWidth: "1.5"
+			}),
+			/* @__PURE__ */ jsx("line", {
+				x1: "4",
+				y1: "5",
+				x2: "12",
+				y2: "5",
+				stroke: "currentColor",
+				strokeWidth: "1.2"
+			}),
+			/* @__PURE__ */ jsx("line", {
+				x1: "4",
+				y1: "8",
+				x2: "12",
+				y2: "8",
+				stroke: "currentColor",
+				strokeWidth: "1.2"
+			}),
+			/* @__PURE__ */ jsx("line", {
+				x1: "4",
+				y1: "11",
+				x2: "9",
+				y2: "11",
+				stroke: "currentColor",
+				strokeWidth: "1.2"
+			})
+		]
+	});
+}
+//#endregion
+//#region src/client/entry-button.tsx
+/** 本入口在会话头部那一排里的位置：排在底部面板开关（10）之后、状态类控件之前。 */
+const ENTRY_ORDER = 50;
+/** 按钮样式：跟随头部其它图标控件的观感（继承文字色、无边框、悬停给一点底色）。 */
+const buttonStyle = {
+	display: "inline-flex",
+	alignItems: "center",
+	justifyContent: "center",
+	padding: 4,
+	border: "none",
+	borderRadius: 6,
+	background: "transparent",
+	color: "inherit",
+	cursor: "pointer",
+	lineHeight: 0
+};
+/**
+* 入口按钮本体。
+* @param props - 该位为会话作用域；`open` 由注册项的 inject 面提供。
+* @returns 一个 Plan 图标按钮。
+*/
+function PlanEntryButton({ open }) {
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		style: buttonStyle,
+		title: "打开 Plan",
+		"aria-label": "打开 Plan",
+		"data-plan-entry": "header",
+		onClick: open,
+		onMouseEnter: (event) => {
+			event.currentTarget.style.background = "rgba(255,255,255,.08)";
+		},
+		onMouseLeave: (event) => {
+			event.currentTarget.style.background = "transparent";
+		},
+		children: /* @__PURE__ */ jsx(PlanIcon, { size: 16 })
+	});
+}
+/**
+* 注册入口按钮。
+* @param ctx - 客户端根上下文（需已注入 `slots` 与 `betterSidebar`）。
+* @returns 注销函数。
+*/
+function registerPlanEntry(ctx) {
+	return ctx.slots.inject("conversation.session.header.utilities", () => ctx.slots.register({
+		name: "conversation.session.header.utilities",
+		id: "dsh-plan-view:header-entry",
+		order: ENTRY_ORDER,
+		registrant: "dsh-plan-view",
+		inject: () => ({ open: () => {
+			ctx.betterSidebar.openTab({ type: PLAN_TAB_ID });
+		} })
+	}, PlanEntryButton));
+}
+//#endregion
 //#region src/client/index.tsx
 const inject = ["betterSidebar", "slots"];
 function apply(ctx) {
+	ctx.effect(() => registerPlanEntry(ctx));
 	ctx.effect(() => ctx.betterSidebar.registerTab({
-		id: "dsh-plan-view:plan",
+		id: PLAN_TAB_ID,
 		title: () => "Plan",
-		icon: (size) => /* @__PURE__ */ jsxs("svg", {
-			width: size,
-			height: size,
-			viewBox: "0 0 16 16",
-			fill: "none",
-			children: [
-				/* @__PURE__ */ jsx("rect", {
-					x: "1",
-					y: "1",
-					width: "14",
-					height: "14",
-					rx: "3",
-					stroke: "currentColor",
-					strokeWidth: "1.5"
-				}),
-				/* @__PURE__ */ jsx("line", {
-					x1: "4",
-					y1: "5",
-					x2: "12",
-					y2: "5",
-					stroke: "currentColor",
-					strokeWidth: "1.2"
-				}),
-				/* @__PURE__ */ jsx("line", {
-					x1: "4",
-					y1: "8",
-					x2: "12",
-					y2: "8",
-					stroke: "currentColor",
-					strokeWidth: "1.2"
-				}),
-				/* @__PURE__ */ jsx("line", {
-					x1: "4",
-					y1: "11",
-					x2: "9",
-					y2: "11",
-					stroke: "currentColor",
-					strokeWidth: "1.2"
-				})
-			]
-		}),
+		icon: (size) => /* @__PURE__ */ jsx(PlanIcon, { size }),
 		order: 46,
 		single: true,
 		component: (props) => /* @__PURE__ */ jsx(PlanView, { ...props })

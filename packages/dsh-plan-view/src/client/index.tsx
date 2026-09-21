@@ -1,5 +1,6 @@
 /**
- * dsh-plan-view client half: registers a plan tab in the better-sidebar.
+ * dsh-plan-view client half: registers a plan tab in the better-sidebar, plus a
+ * one-click entry button in the conversation header.
  *
  * Reads `.plan/` wayfinder maps via the sidebar fs.read API, derives ticket
  * status per the TRACKER-MARKDOWN contract, and renders a grouped list +
@@ -8,22 +9,21 @@
 import type {} from 'dsh-better-sidebar/lib/types/context-types'
 import type { Context } from 'cordis'
 import { PlanView } from './PlanView'
+import { registerPlanEntry } from './entry-button'
+import { PLAN_TAB_ID, PlanIcon } from './plan-icon'
 
 export const inject = ['betterSidebar', 'slots']
 
 export function apply(ctx: Context): void {
+  // 会话头部右上角的一键入口（2026-09-21 拍板）：点一下直接打开 Plan 标签页，
+  // 省掉「展开右侧栏 → 点 + → 挑 Plan」三步。
+  ctx.effect(() => registerPlanEntry(ctx))
+
   ctx.effect(() =>
     ctx.betterSidebar.registerTab({
-      id: 'dsh-plan-view:plan',
+      id: PLAN_TAB_ID,
       title: () => 'Plan',
-      icon: (size) => (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <rect x="1" y="1" width="14" height="14" rx="3" stroke="currentColor" strokeWidth="1.5" />
-          <line x1="4" y1="5" x2="12" y2="5" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="4" y1="8" x2="12" y2="8" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="4" y1="11" x2="9" y2="11" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      ),
+      icon: (size) => <PlanIcon size={size} />,
       order: 46,
       single: true,
       component: (props) => <PlanView {...props} />,
