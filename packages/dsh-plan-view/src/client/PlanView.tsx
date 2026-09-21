@@ -2067,6 +2067,25 @@ function parseDefectEntries(body: string): DefectEntry[] {
 const DEFECT_CLOSED = new Set(['已关闭', '关闭', '挂起'])
 const defectStateWord = (s: string) => s.trim().split(/[\s(（#:：—-]/)[0] ?? ''
 
+/** 一缺陷一文件形态（2026-09-21 拍板）：`# DEF-NN 标题` + 字段行；旧单文件「清单总览」多条目形态返回 undefined。 */
+function parseDefectFile(t: ParsedTicket): (DefectEntry & { assignee: string; cases: string; gap: string }) | undefined {
+  if (/^## 清单总览/m.test(t.body) || /\|\s*缺陷号/.test(t.body)) return undefined
+  const m = t.body.match(/^# (DEF-[\w.-]+)\s*(.*)$/m)
+  if (m === null) return undefined
+  const field = (name: string) => t.body.match(new RegExp(`^- ${name}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? ''
+  return {
+    id: m[1] ?? '',
+    title: (m[2] ?? '').trim() || field('标题'),
+    severity: field('严重度'),
+    kind: field('类型'),
+    state: field('状态') || '新建',
+    source: field('发现源'),
+    assignee: field('Assignee'),
+    cases: field('关联用例'),
+    gap: field('测试设计缺口'),
+  }
+}
+
 function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { defects: ParsedTicket[]; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
 
@@ -2087,6 +2106,30 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {defects.map(t => {
+          const single = parseDefectFile(t)
+          if (single !== undefined) {
+            const closed = DEFECT_CLOSED.has(defectStateWord(single.state))
+            return (
+              <div key={`${t.effort}/${t.file}`} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{t.effort?.split('/').pop()}/{t.file}</span>
+                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>一缺陷一文件</span>
+                </div>
+                <div onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: closed ? CARD_DARK : CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', opacity: closed ? 0.75 : 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{single.state}</span>
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{single.title}</span>
+                    <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, flexShrink: 0 }}>{single.id}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                    {single.severity && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>严重度 {single.severity}</span>}
+                    {single.kind && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>类型 {single.kind}</span>}
+                    {single.source && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>发现源 {single.source}</span>}
+                  </div>
+                </div>
+              </div>
+            )
+          }
           const entries = parseDefectEntries(t.body)
           return (
             <div key={`${t.effort}/${t.file}`} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2189,6 +2232,20 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
   const defectNodes: ChainNode[] = []
   const defectSections: { key: string; text: string; node: ChainNode }[] = []
   for (const f of defects) {
+    // 一缺陷一文件：整文件一条；旧单文件「清单总览 + ## DEF-」多小节仍兼容。
+    const single = parseDefectFile(f)
+    if (single !== undefined) {
+      const closed = DEFECT_CLOSED.has(defectStateWord(single.state))
+      const node: ChainNode = {
+        key: `d:${f.id}/${single.id}`, kind: 'defect', ticket: f,
+        title: single.title, badge: single.id,
+        badgeColor: closed ? '#4ed17e' : '#f2555a',
+        sub: `${f.effort?.split('/').pop() ?? ''} · ${single.state}`,
+      }
+      defectNodes.push(node)
+      defectSections.push({ key: node.key, text: f.body, node })
+      continue
+    }
     const sections = f.body.split(/^## (DEF-[\w.-]+)/m)
     for (let i = 1; i < sections.length; i += 2) {
       const id = sections[i] ?? ''

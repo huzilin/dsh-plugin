@@ -4329,6 +4329,24 @@ const DEFECT_CLOSED = new Set([
 	"挂起"
 ]);
 const defectStateWord = (s) => s.trim().split(/[\s(（#:：—-]/)[0] ?? "";
+/** 一缺陷一文件形态（2026-09-21 拍板）：`# DEF-NN 标题` + 字段行；旧单文件「清单总览」多条目形态返回 undefined。 */
+function parseDefectFile(t) {
+	if (/^## 清单总览/m.test(t.body) || /\|\s*缺陷号/.test(t.body)) return void 0;
+	const m = t.body.match(/^# (DEF-[\w.-]+)\s*(.*)$/m);
+	if (m === null) return void 0;
+	const field = (name) => t.body.match(new RegExp(`^- ${name}:\\s*(.+)$`, "m"))?.[1]?.trim() ?? "";
+	return {
+		id: m[1] ?? "",
+		title: (m[2] ?? "").trim() || field("标题"),
+		severity: field("严重度"),
+		kind: field("类型"),
+		state: field("状态") || "新建",
+		source: field("发现源"),
+		assignee: field("Assignee"),
+		cases: field("关联用例"),
+		gap: field("测试设计缺口")
+	};
+}
 function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
 	const [focus, setFocus] = useState(null);
 	if (defects.length === 0) return /* @__PURE__ */ jsxs("div", {
@@ -4380,6 +4398,132 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
 					gap: 10
 				},
 				children: defects.map((t) => {
+					const single = parseDefectFile(t);
+					if (single !== void 0) {
+						const closed = DEFECT_CLOSED.has(defectStateWord(single.state));
+						return /* @__PURE__ */ jsxs("div", {
+							style: {
+								display: "flex",
+								flexDirection: "column",
+								gap: 8
+							},
+							children: [/* @__PURE__ */ jsxs("div", {
+								style: {
+									display: "flex",
+									alignItems: "center",
+									gap: 8
+								},
+								children: [/* @__PURE__ */ jsxs("span", {
+									style: {
+										fontSize: 13,
+										fontWeight: 700,
+										color: TEXT
+									},
+									children: [
+										t.effort?.split("/").pop(),
+										"/",
+										t.file
+									]
+								}), /* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										padding: "1px 6px",
+										borderRadius: 999,
+										background: CHIP_BG,
+										color: "#888"
+									},
+									children: "一缺陷一文件"
+								})]
+							}), /* @__PURE__ */ jsxs("div", {
+								onClick: () => setFocus(t),
+								style: {
+									padding: "10px 12px",
+									borderRadius: 10,
+									background: closed ? CARD_DARK : CARD,
+									border: `1px solid ${BORDER}`,
+									cursor: "pointer",
+									opacity: closed ? .75 : 1
+								},
+								children: [/* @__PURE__ */ jsxs("div", {
+									style: {
+										display: "flex",
+										alignItems: "center",
+										gap: 8
+									},
+									children: [
+										/* @__PURE__ */ jsx("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 8px",
+												borderRadius: 999,
+												background: closed ? "#2ecc7122" : "#ffa94d22",
+												color: closed ? "#4ed17e" : "#f7ad31",
+												flexShrink: 0
+											},
+											children: single.state
+										}),
+										/* @__PURE__ */ jsx("span", {
+											style: {
+												flex: 1,
+												fontSize: 13,
+												fontWeight: 700,
+												color: TEXT
+											},
+											children: single.title
+										}),
+										/* @__PURE__ */ jsx("span", {
+											style: {
+												fontSize: 10,
+												fontFamily: "monospace",
+												color: TEXT_FAINT,
+												flexShrink: 0
+											},
+											children: single.id
+										})
+									]
+								}), /* @__PURE__ */ jsxs("div", {
+									style: {
+										display: "flex",
+										gap: 6,
+										flexWrap: "wrap",
+										marginTop: 6
+									},
+									children: [
+										single.severity && /* @__PURE__ */ jsxs("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 6px",
+												borderRadius: 999,
+												background: CHIP_BG,
+												color: "#888"
+											},
+											children: ["严重度 ", single.severity]
+										}),
+										single.kind && /* @__PURE__ */ jsxs("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 6px",
+												borderRadius: 999,
+												background: CHIP_BG,
+												color: "#888"
+											},
+											children: ["类型 ", single.kind]
+										}),
+										single.source && /* @__PURE__ */ jsxs("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 6px",
+												borderRadius: 999,
+												background: CHIP_BG,
+												color: "#888"
+											},
+											children: ["发现源 ", single.source]
+										})
+									]
+								})]
+							})]
+						}, `${t.effort}/${t.file}`);
+					}
 					const entries = parseDefectEntries(t.body);
 					return /* @__PURE__ */ jsxs("div", {
 						style: {
@@ -4602,6 +4746,26 @@ function buildChain(tickets, defects, ledgers) {
 	const defectNodes = [];
 	const defectSections = [];
 	for (const f of defects) {
+		const single = parseDefectFile(f);
+		if (single !== void 0) {
+			const closed = DEFECT_CLOSED.has(defectStateWord(single.state));
+			const node = {
+				key: `d:${f.id}/${single.id}`,
+				kind: "defect",
+				ticket: f,
+				title: single.title,
+				badge: single.id,
+				badgeColor: closed ? "#4ed17e" : "#f2555a",
+				sub: `${f.effort?.split("/").pop() ?? ""} · ${single.state}`
+			};
+			defectNodes.push(node);
+			defectSections.push({
+				key: node.key,
+				text: f.body,
+				node
+			});
+			continue;
+		}
 		const sections = f.body.split(/^## (DEF-[\w.-]+)/m);
 		for (let i = 1; i < sections.length; i += 2) {
 			const id = sections[i] ?? "";
