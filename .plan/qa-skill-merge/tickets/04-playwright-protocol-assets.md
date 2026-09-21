@@ -21,7 +21,7 @@ status: done
 - [x] **qa-records-skeleton.md §3**：P 组记录口径补视觉维「未覆盖 + 附注（留证待审）」用法说明（另：E 节 cmd 示例补 fe 形态 `npx playwright test -g P-12`）
 - [x] **术语 sweep**：五词（协议通道/呈现通道/固化回归/探索走查/DOM 探针）在本批协议文本中与 `CONTEXT.md` 口径逐字一致；avoid 词（回归腿/探索腿/页面腿/接口腿/前后端通道/人工走查）扫描零残留（既有拍板措辞「呈现腿/协议腿」不在 avoid 清单，未动）
 - [x] **装态回补**：两 skill 改动同步 `~/.zcode/skills/` 与 `~/.dsh/.agent-presets/full/skills/`（手动同步——QA 两 skill 不在 install-skills.sh 具名清单），`diff -rq` 三侧逐字一致已留痕
-- [ ] **commit 待显式指令**：本票改动 + 审批文档 + CONTEXT.md + .plan 档案同批，完工后等用户指令
+- [x] **commit 待显式指令**：本票改动 + 审批文档 + CONTEXT.md + .plan 档案同批——已执行：commit `204bf70` 推送 origin/main（2026-09-22 用户指令「push，并部署」）
 
 ## 落地记录
 
@@ -30,4 +30,4 @@ status: done
 - **附带修正**：run SKILL.md Process 步骤编号 6/6 重复（票面标记回写与落盘自检同为 6）→ 改为 6/7
 - **落点**（全部在 `packages/dsh-plan-view/skills/`）：`to-qa-testcases/references/playwright-assets.md`（新增，形态正本）；`to-qa-testcases/SKILL.md`（参考材料 + 资产三原则节各一句指针）；`to-qa-testcases/references/testsuite-skeleton.md`（§二驱动脚本行）；`run-qa-testcases/SKILL.md`（呈现通道 bullet / 红线 bullet / 第 4 步 E 节 / 第 5 步复测句 + 编号修正）；`run-qa-testcases/references/qa-records-skeleton.md`（§3 视觉维口径 + E 节 cmd 示例）
 - **验证方式**：`diff -rq` 三侧一致；`rg` avoid 词零残留；五词计数 24 处命中（正本 7 / run SKILL 7 / to SKILL 5 / skeleton 5）
-- **仍开口**：①commit 待指令（含 .plan/CONTEXT.md 同批）；②装态生效需新开会话（skill 会话启动扫描）
+- **仍开口**：①~~commit 待指令~~ 已销号（`204bf70` 已推送，部署副本 skills 同步一致）；②装态生效需新开会话（skill 会话启动扫描）；③novel 脚手架待立项（跨仓）
