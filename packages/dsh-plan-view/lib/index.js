@@ -418,7 +418,7 @@ function ticketKind(t) {
 	if (ty === "approval") return "approval";
 	if (ty === "qa-defect") return "defect";
 	if (ty === "ledger") return "ledger";
-	if (t.group === "qa" && t.file === "cases.md") return "cases";
+	if (t.group === "qa" && (t.file === "cases.md" || /^cases-/.test(t.file))) return "cases";
 	if (isPending(t)) return "approval";
 	if (ty === "spec" || ty === "design" || /^(map|readme|index)$/i.test(t.id)) return "note";
 	if (!ty && !t.status) return "note";
@@ -591,6 +591,11 @@ async function loadPlan(scope, planDir) {
 			file: f,
 			from: ROOT_GROUP,
 			group: "ledger"
+		}))) : Promise.resolve([]),
+		rootTree.entries.some((e) => e.isDir && e.name === "qa") ? fsTree(scope, `${planDir}/qa`).then((t) => mdEntries(t).map((f) => ({
+			file: f,
+			from: ROOT_GROUP,
+			group: "qa"
 		}))) : Promise.resolve([]),
 		...effortDirs.map(async (d) => await collectTicketFiles(scope, d).then((gs) => gs.map((g) => ({
 			file: g.file,
@@ -3127,6 +3132,8 @@ function PlanView(props) {
 	const ledgers = useMemo(() => all.filter((t) => classify(t) === "ledger"), [all]);
 	const defects = useMemo(() => all.filter((t) => classify(t) === "defect"), [all]);
 	const cases = useMemo(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
+	const rootCases = useMemo(() => cases.filter((t) => t.effort === ROOT_GROUP), [cases]);
+	const rootDefects = useMemo(() => defects.filter((t) => t.effort === ROOT_GROUP), [defects]);
 	const mapOwnTickets = routeTickets;
 	const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
 	const mapTickets = useMemo(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
@@ -3257,6 +3264,11 @@ function PlanView(props) {
 			id: "map",
 			label: "🗺️ 地图",
 			count: openTickets(mapTickets)
+		},
+		{
+			id: "qa",
+			label: "🧪 测例&缺陷",
+			count: openDefectCount(rootDefects) + rootCases.length
 		},
 		{
 			id: "ledger",
@@ -3539,6 +3551,83 @@ function PlanView(props) {
 					readOnly
 				})
 			] }),
+			top === "qa" && /* @__PURE__ */ jsxs("div", {
+				style: {
+					flex: 1,
+					display: "flex",
+					flexDirection: "column",
+					overflow: "hidden"
+				},
+				children: [
+					/* @__PURE__ */ jsx("div", {
+						style: {
+							padding: "8px 14px",
+							borderBottom: `1px solid ${BORDER}`,
+							fontSize: 11,
+							color: TEXT_FAINT
+						},
+						children: "无图归属的测例与缺陷（SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。"
+					}),
+					rootDefects.length > 0 && /* @__PURE__ */ jsxs("div", {
+						style: {
+							flex: 1,
+							minHeight: 120,
+							display: "flex",
+							flexDirection: "column",
+							overflow: "hidden",
+							borderBottom: `1px solid ${BORDER}`
+						},
+						children: [/* @__PURE__ */ jsx("div", {
+							style: {
+								padding: "6px 14px",
+								fontSize: 11,
+								fontWeight: 700,
+								color: "#f2555a"
+							},
+							children: "🐞 缺陷"
+						}), /* @__PURE__ */ jsx(DefectView, {
+							defects: rootDefects,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
+						})]
+					}),
+					rootCases.length > 0 && /* @__PURE__ */ jsxs("div", {
+						style: {
+							flex: 1,
+							minHeight: 120,
+							display: "flex",
+							flexDirection: "column",
+							overflow: "hidden"
+						},
+						children: [/* @__PURE__ */ jsx("div", {
+							style: {
+								padding: "6px 14px",
+								fontSize: 11,
+								fontWeight: 700,
+								color: "#609bfa"
+							},
+							children: "🧪 测例"
+						}), /* @__PURE__ */ jsx(CasesView, {
+							cases: rootCases,
+							scope,
+							readOnly
+						})]
+					}),
+					rootDefects.length === 0 && rootCases.length === 0 && /* @__PURE__ */ jsx("div", {
+						style: {
+							flex: 1,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							color: TEXT_FAINT
+						},
+						children: "`.plan/qa/` 下暂无无图归属的测例 / 缺陷文档。"
+					})
+				]
+			}),
 			top === "guide" && /* @__PURE__ */ jsx(GuideView, { scope }),
 			top === "ledger" && /* @__PURE__ */ jsx(LedgerView, {
 				ledgers: globalLedgers,

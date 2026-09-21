@@ -362,9 +362,10 @@ function ticketKind(t: ParsedTicket): TicketKind {
   // only when its 启动条件 (start condition) is met, so it must not surface as
   // a ticket or repeat inside every map — it gets its own tab.
   if (ty === 'ledger') return 'ledger'
-  // 测试用例设计文档：一图一份 `qa/cases.md`，由路径识别（不加 frontmatter，
-  // qa 白名单对其放行），单列在地图的「🧪 测例」子页。
-  if (t.group === 'qa' && t.file === 'cases.md') return 'cases'
+  // 测试用例设计文档：图内一图一份 `qa/cases.md`（地图「🧪 测例」子页）；
+  // 根层 `qa/cases-*.md` 是无图归属的回测测例（SOP/整页回测），进第一层
+  // 「🧪 测例&缺陷」tab。均由路径识别，不加 frontmatter。
+  if (t.group === 'qa' && (t.file === 'cases.md' || /^cases-/.test(t.file))) return 'cases'
   if (isPending(t)) return 'approval'
   // map/spec/index documents describe the effort rather than asking for work.
   if (ty === 'spec' || ty === 'design' || /^(map|readme|index)$/i.test(t.id)) return 'note'
@@ -572,6 +573,11 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
     // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
     rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'ledger')
       ? fsTree(scope, `${planDir}/ledger`).then(t => mdEntries(t).map(f => ({ file: f, from: ROOT_GROUP, group: 'ledger' })))
+      : Promise.resolve([]),
+    // 根层 qa/（2026-09-21 拍板）：无图归属的测例/缺陷（SOP 回测、整页回测）——
+    // `cases-*.md` 与 `DEF-*.md`（type: qa-defect），from=ROOT_GROUP，进第一层「测例&缺陷」tab。
+    rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'qa')
+      ? fsTree(scope, `${planDir}/qa`).then(t => mdEntries(t).map(f => ({ file: f, from: ROOT_GROUP, group: 'qa' })))
       : Promise.resolve([]),
     ...effortDirs.map(async (d: string) => await collectTicketFiles(scope, d).then(gs => gs.map(g => ({ file: g.file, from: d, group: g.group })))),
   ])
@@ -1486,7 +1492,7 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'overview' | 'map' | 'ledger' | 'guide'
+type TopView = 'overview' | 'map' | 'qa' | 'ledger' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
 type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases'
@@ -1546,6 +1552,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // 测例设计文档（qa/cases.md，一图一份）：单列在地图「🧪 测例」子页，
   // 并作为测例节点进入串联画布（按「票 NN」引用挂到被测票下）。
   const cases = useMemo(() => all.filter(t => ticketKind(t) === 'cases'), [all])
+  // 根层 qa/（无图归属）：SOP 回测、整页回测等测例 + 独立缺陷，进第一层「测例&缺陷」tab
+  const rootCases = useMemo(() => cases.filter(t => t.effort === ROOT_GROUP), [cases])
+  const rootDefects = useMemo(() => defects.filter(t => t.effort === ROOT_GROUP), [defects])
   // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
   // their own board — their tickets show in the normal ticket view until removed.
   const mapOwnTickets = routeTickets
@@ -1640,6 +1649,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
     { id: 'map', label: '🗺️ 地图', count: openTickets(mapTickets) },
+    { id: 'qa', label: '🧪 测例&缺陷', count: openDefectCount(rootDefects) + rootCases.length },
     { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
@@ -1723,6 +1733,30 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'cases' && <CasesView cases={cases.filter(c => c.effort === selectedDir || effortIdx < 0)} scope={scope} readOnly={readOnly} />}
         </>
+      )}
+      {top === 'qa' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
+            无图归属的测例与缺陷（SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。
+          </div>
+          {rootDefects.length > 0 && (
+            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderBottom: `1px solid ${BORDER}` }}>
+              <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#f2555a' }}>🐞 缺陷</div>
+              <DefectView defects={rootDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+            </div>
+          )}
+          {rootCases.length > 0 && (
+            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#609bfa' }}>🧪 测例</div>
+              <CasesView cases={rootCases} scope={scope} readOnly={readOnly} />
+            </div>
+          )}
+          {rootDefects.length === 0 && rootCases.length === 0 && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>
+              `.plan/qa/` 下暂无无图归属的测例 / 缺陷文档。
+            </div>
+          )}
+        </div>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
       {top === 'ledger' && <LedgerView ledgers={globalLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
