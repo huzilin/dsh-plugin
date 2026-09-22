@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Install wayfinder-maps skills into ~/.dsh/skills/
+# Install plan-view skills into the DSH agent-presets install state.
 # Called by postinstall or manually: bash scripts/install-skills.sh
+#
+# Destination is ~/.dsh/.agent-presets/full/skills (ticket 04): the live install
+# state that ~/.zcode/skills symlinks point at. The old ~/.dsh/skills target was
+# a dead directory — installs went nowhere. Backfill check (ticket 04): no DSH
+# process repopulates agent-presets; this script (or manual copy) is the only
+# sync path, so installing here is final.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$SCRIPT_DIR/../skills"
-SKILLS_DST="$HOME/.dsh/skills"
+SKILLS_DST="$HOME/.dsh/.agent-presets/full/skills"
 
 if [ ! -d "$SKILLS_SRC" ]; then
   echo "Error: skills directory not found at $SKILLS_SRC" >&2
@@ -45,8 +51,8 @@ for key in ('name', 'description'):
 PY
 }
 
-# Copy main skills (wayfinder-maps, grill-me, research, prototype, domain-modeling, to-approval, plan-approve)
-for skill in wayfinder-maps grill-me research prototype domain-modeling to-approval plan-approve; do
+# Copy main skills (wayfinder-maps, grill-me, research, prototype, domain-modeling, to-approval, plan-approve, plan-sync, to-qa-testcases, run-qa-testcases)
+for skill in wayfinder-maps grill-me research prototype domain-modeling to-approval plan-approve plan-sync to-qa-testcases run-qa-testcases; do
   if [ -d "$SKILLS_SRC/$skill" ]; then
     if [ -f "$SKILLS_SRC/$skill/SKILL.md" ]; then
       validate_skill "$SKILLS_SRC/$skill/SKILL.md" || { echo "Error: refusing to install $skill (invalid SKILL.md)" >&2; exit 1; }
@@ -59,6 +65,9 @@ for skill in wayfinder-maps grill-me research prototype domain-modeling to-appro
       wayfinder-maps) skill_id="wayfinder" ;;
       to-approval)    skill_id="mp-to-approval" ;;
       plan-approve)   skill_id="mp-plan-approve" ;;
+      plan-sync)      skill_id="mp-plan-sync" ;;
+      to-qa-testcases)  skill_id="to-qa-testcases" ;;
+      run-qa-testcases) skill_id="run-qa-testcases" ;;
     esac
     rm -rf "$SKILLS_DST/$skill_id"
     cp -R "$SKILLS_SRC/$skill" "$SKILLS_DST/$skill_id"
@@ -93,5 +102,15 @@ for skill in $(ls "$SKILLS_SRC/.optional/" 2>/dev/null); do
     echo "Installed (optional): $skill -> $SKILLS_DST/$skill_id"
   fi
 done
+
+# Post-install self-check (ticket 04): the plan gate must exist in the install
+# state, otherwise plan-approve/plan-sync step 1 is a dangling reference again.
+for skill_id in mp-plan-approve mp-plan-sync; do
+  if [ ! -f "$SKILLS_DST/$skill_id/scripts/plan-lint.sh" ]; then
+    echo "Error: $SKILLS_DST/$skill_id/scripts/plan-lint.sh missing after install" >&2
+    exit 1
+  fi
+done
+echo "Self-check: plan-lint.sh present in mp-plan-approve and mp-plan-sync."
 
 echo "Done. Skills installed to $SKILLS_DST"
