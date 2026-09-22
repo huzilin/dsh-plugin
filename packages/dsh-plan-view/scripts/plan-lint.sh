@@ -1,76 +1,106 @@
 #!/usr/bin/env bash
 # plan-lint —— 只读校验 .plan/ 的文档状态协议。
 #
-# 抓三类本次真实发生过的漂移：
-#   1. 同票双档：同一个票 id 在两个目录各有一份，且副本没标 superseded-by
-#      （S1 事故：tickets/S1.md 标 done，impl-fe/S1.md 还挂 todo）
-#   2. effort 有票无 map：目录里有 tickets/ 却没有 map.md → 整个 effort
-#      不被 plan 视图加载（state-machine/ 的 14 张票就这样不可见）
-#   3. .plan 根目录的待拍板类文档缺 frontmatter、缺 status，或 status 不在词表内
-#      （W5 与两份 dsh-ai-backend 材料即此）
+# 规则正本 = skills/plan-protocol/SKILL.md §三「文档形态约定」；脚本只是执行者，
+# 规则改动先改协议。口径与 plan-lint.mjs 逐条对拍一致（票 02；mjs 已退役，
+# 本文件是唯一实现）。
+#
+# 抓三类漂移：
+#   1. 同票双档：同一票 id 多处落点，且多于一份未标 superseded-by
+#      （map/readme 豁免；type: ledger 是台账登记簿不是票，2026-09-21 拍板）
+#   2. 目录有票缺 map：路径上没有 map.md → 整个目录不被 plan 视图加载
+#   3. 状态头违规：approval 缺四字段/状态越词表；task 状态越词表；
+#      文件名带「待拍板」却无 frontmatter
+#
+# 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
+# assets / qa / handoffs / ledger / 一切隐藏目录与隐藏文件。
 #
 # 只读，不改任何文件。用法：
-#   bash scripts/plan-lint.sh [.plan 目录]      # 省略时自动找 ./.plan 或 ../.plan
+#   bash plan-lint.sh [.plan 目录]      # 省略时自动找 ./.plan 或 ../.plan
 # 退出码：0=无发现，1=有发现，2=用法错误。
 #
-# 兼容 bash 3.2（macOS 自带版没有关联数组），故只用 sort/awk/uniq 等通用工具。
+# 兼容 bash 3.2（macOS 自带版没有关联数组），只用 sort/awk/uniq 等通用工具。
 
 set -uo pipefail
+
+# 文件名按字节比较：macOS 的 sort/uniq 在 UTF-8 collation 下会把不同汉字判等
+# （实测 en_US.UTF-8 把 150 行收成 148），制造「同票双档」假阳性，故强制 C locale。
+export LC_ALL=C
 
 PLAN_DIR="${1:-}"
 if [ -z "$PLAN_DIR" ]; then
   if [ -d ".plan" ]; then PLAN_DIR=".plan"
   elif [ -d "../.plan" ]; then PLAN_DIR="../.plan"
-  else echo "用法: bash scripts/plan-lint.sh <path-to-.plan>" >&2; exit 2
+  else echo "用法: bash plan-lint.sh <path-to-.plan>" >&2; exit 2
   fi
 fi
+PLAN_DIR="${PLAN_DIR%/}"
 [ -d "$PLAN_DIR" ] || { echo "错误: 找不到目录 $PLAN_DIR" >&2; exit 2; }
 
 findings=0
 note() { printf '  %s\n' "$*"; }
 
-# 取某文件的 status 值（frontmatter 内首个小节）
-status_of() {
-  awk '/^---$/{n++;next} n==1 && /^status:/{sub(/^status:[ \t]*/,""); print; exit}' "$1"
+# frontmatter 取字段（首个 --- 围栏内；解析同 mjs：^key:[ \t]*value）
+fm_field() {
+  awk -v k="$2" '/^---[ \t\r]*$/{n++; next} n==1 && index($0, k":")==1 { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }' "$1"
 }
 
-# 合法状态词表：覆盖两套约定（wayfinder 用正文小节、不写 status，故不在此列；
-# 这里只管「写了 status 的」那一份）。superseded-by:<path> 单独前缀匹配。
-LEGAL_STATUS='done|closed|resolved|complete|completed|shipped|open|todo|doing|in_progress|in-progress|wip|claimed|review|ready-for-agent|pending|active|confirmed|blocked|abandoned|rejected|wontfix|cancelled|canceled'
+# 是否有完整 frontmatter 围栏（首行 --- 且存在闭合 ---，同 mjs 的 hasHeader）
+has_header() {
+  awk 'NR==1 && $0!~/^---[ \t\r]*$/{exit 1} NR>1 && $0~/^---[ \t\r]*$/{s=1; exit} END{exit s?0:1}' "$1"
+}
 
-echo "plan-lint: 校验 $PLAN_DIR"
-echo
+# 某目录到 .plan 根的路径上有没有 map.md（同 mjs 的 hasMapOnPath）
+has_map_on_path() {
+  local d="$1"
+  while :; do
+    [ -f "$d/map.md" ] && return 0
+    [ "$d" = "$PLAN_DIR" ] && return 1
+    d=$(dirname "$d")
+  done
+}
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# 全量清单：basename<TAB>path（供第 1、2 节复用）
-# handoffs/ 是 handoff 交接文档产物区，不属 plan 生态（plan-protocol §三「非治理目录」）。
-find "$PLAN_DIR" -name '*.md' -not -path '*/.archive/*' -not -path '*/handoffs/*' -print | sort > "$TMP/files.txt"
+# 收集清单：非治理区整棵剪掉（-mindepth 1 防根目录 .plan 自身被 -name '.*' 剪没）
+find "$PLAN_DIR" -mindepth 1 \( -type d \( -name '.*' -o -name node_modules -o -name assets \
+      -o -name qa -o -name handoffs -o -name ledger \) -prune \) \
+   -o \( -type f -name '*.md' ! -name '.*' -print \) | sort > "$TMP/files.txt"
+
+# 逐文件预取元数据：dir \t id \t path \t hasHeader \t type \t status
+: > "$TMP/meta.tsv"
+while IFS= read -r f; do
+  b=$(basename "$f"); id=${b%.md}; d=$(dirname "$f")
+  hh=$(has_header "$f" && echo 1 || echo 0)
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$d" "$id" "$f" "$hh" \
+    "$(fm_field "$f" type)" "$(fm_field "$f" status)" >> "$TMP/meta.tsv"
+done < "$TMP/files.txt"
+
+echo "plan-lint: 校验 $PLAN_DIR"
+echo
 
 # ── 1. 同票双档 ──────────────────────────────────────────────────────────────
-echo "[1] 同票双档（同一票 id 多处落点，且多于一处未标 superseded-by）"
-# 只把「票一样的名字」算双档：排除各 effort 都会有的通用文件名
-# （map/spec/README 等天然同名，不是同一张票的两个副本）。
-while IFS= read -r f; do printf '%s\t%s\n' "$(basename "$f" .md)" "$f"; done < "$TMP/files.txt" \
-  | grep -vE '^(map|spec|tech-spec|fe-v1-spec|README|index|plan|CONTEXT)(\.md)?\t' > "$TMP/all.tsv"
-cut -f1 "$TMP/all.tsv" | sort | uniq -d > "$TMP/dupes.txt"
+echo "[1] 同票双档（同一票 id 多处落点，且多于一份未标 superseded-by）"
+# map/readme 天然同名豁免（大小写不敏感）；type: ledger 是登记簿不是票
+awk -F'\t' '{l=tolower($2); if (l!="map" && l!="readme" && $5!="ledger") print $2"\t"$3"\t"$6}' \
+  "$TMP/meta.tsv" > "$TMP/ids.tsv"
+cut -f1 "$TMP/ids.tsv" | sort | uniq -d > "$TMP/dupes.txt"
 
 dupe=0
 if [ -s "$TMP/dupes.txt" ]; then
-  while IFS= read -r base; do
-    awk -F'\t' -v b="$base" '$1==b{print $2}' "$TMP/all.tsv" > "$TMP/paths.txt"
-    npath=$(wc -l < "$TMP/paths.txt" | tr -d ' ')
+  while IFS= read -r id; do
+    awk -F'\t' -v b="$id" '$1==b{print $2"\t"$3}' "$TMP/ids.tsv" > "$TMP/g.tsv"
+    first=$(cut -f1 "$TMP/g.tsv" | head -1)
+    n=$(wc -l < "$TMP/g.tsv" | tr -d ' ')
     nstray=0
-    while IFS= read -r p; do
-      st=$(status_of "$p")
+    while IFS=$'\t' read -r p st; do
       case "$st" in superseded-by*) ;; *) nstray=$((nstray + 1)) ;; esac
-    done < "$TMP/paths.txt"
-    # 权威只应有一个落点：多于一处未标副本才算漂移
+    done < "$TMP/g.tsv"
     if [ "$nstray" -gt 1 ]; then
       dupe=$((dupe + 1))
-      note "✗ 「${base}」有 ${npath} 处落点，其中 ${nstray} 处未标 superseded-by："
-      while IFS= read -r p; do note "      $p"; done < "$TMP/paths.txt"
+      note "✗ $first: duplicate-ticket — 票 id「${id}」有 $n 处落点，其中 $nstray 处未标 superseded-by："
+      cut -f1 "$TMP/g.tsv" | while IFS= read -r p; do note "      $p"; done
     fi
   done < "$TMP/dupes.txt"
 fi
@@ -78,55 +108,71 @@ fi
 findings=$((findings + dupe))
 echo
 
-# ── 2. effort 有 tickets/ 却无 map.md ────────────────────────────────────────
-echo "[2] effort 有 tickets/ 却缺 map.md（该 effort 不会被 plan 视图加载）"
-: > "$TMP/nomap.txt"
-while IFS= read -r td; do
-  d=$(dirname "$td")
-  if [ ! -f "$d/map.md" ]; then
-    n=$(find "$td" -name '*.md' | wc -l | tr -d ' ')
-    printf '%s\t%s\n' "$n" "$d" >> "$TMP/nomap.txt"
-  fi
-done < <(find "$PLAN_DIR" -type d -name tickets -not -path '*/.archive/*' -not -path '*/handoffs/*' -print | sort)
+# ── 2. 目录有票却缺 map.md ───────────────────────────────────────────────────
+echo "[2] 目录有票缺 map.md（该目录不会被 plan 视图加载）"
+# ticket-like = 除 map/readme 外的全部 .md，按目录聚合；.plan 根层文档合法免查
+awk -F'\t' '{l=tolower($2); if (l!="map" && l!="readme") print $1"\t"$3}' "$TMP/meta.tsv" \
+  | sort -u > "$TMP/tl.tsv"
+cut -f1 "$TMP/tl.tsv" | sort -u > "$TMP/dirs.txt"
 
 missing=0
-if [ -s "$TMP/nomap.txt" ]; then
-  while IFS=$'\t' read -r n d; do
-    note "✗ $d/ 有 tickets/（$n 张票）但无 map.md → 整目录不可见"
-    missing=$((missing + 1))
-  done < "$TMP/nomap.txt"
-fi
+while IFS= read -r d; do
+  [ "$d" = "$PLAN_DIR" ] && continue
+  has_map_on_path "$d" && continue
+  n=$(awk -F'\t' -v dd="$d" '$1==dd' "$TMP/tl.tsv" | wc -l | tr -d ' ')
+  missing=$((missing + 1))
+  note "✗ ${d}/: missing-map — $n 个票形文件在 plan 视图不会加载的目录下（路径上无 map.md）"
+done < "$TMP/dirs.txt"
 [ "$missing" -eq 0 ] && note "✓ 无"
 findings=$((findings + missing))
 echo
 
-# ── 3. .plan 根目录文档的状态头 ──────────────────────────────────────────────
-echo "[3] .plan 根目录文档缺 frontmatter / 缺 status / status 非法"
+# ── 3. 状态头 ────────────────────────────────────────────────────────────────
+echo "[3] 状态头（approval 四字段与词表 / task 词表 / 「待拍板」裸文件）"
 bad=0
-while IFS= read -r f; do
-  first=$(head -1 "$f")
-  if [ "$first" != "---" ]; then
-    note "✗ 无 frontmatter: $f"; bad=$((bad + 1)); continue
+while IFS=$'\t' read -r d id f hh ty st; do
+  lcty=$(printf '%s' "$ty" | tr 'A-Z' 'a-z')
+  if [ "$lcty" = "approval" ]; then
+    for k in type date status origin; do
+      v=$(fm_field "$f" "$k")
+      if [ -z "$v" ]; then
+        note "✗ $f: status-header — approval 文档缺 frontmatter 字段「${k}」"; bad=$((bad + 1))
+      fi
+    done
+    if [ -z "$st" ]; then
+      note "✗ $f: status-header — approval 文档缺 status"; bad=$((bad + 1)); continue
+    fi
+    head="${st%%:*}"
+    case "$head" in
+      pending|closed|active|abandoned) : ;;
+      *)
+        case "$st" in
+          superseded-by*) : ;;
+          *) note "✗ $f: status-header — approval status「${st}」不在词表（pending/closed/superseded-by:<path>/active/abandoned）"; bad=$((bad + 1)) ;;
+        esac ;;
+    esac
   fi
-  st=$(status_of "$f")
-  if [ -z "$st" ]; then
-    note "✗ 有 frontmatter 但无 status: $f"; bad=$((bad + 1)); continue
+  if [ "$lcty" = "task" ] && [ -n "$st" ]; then
+    case "$st" in
+      open|todo|doing|done|closed) : ;;
+      *) note "✗ $f: status-header — task status「${st}」不在词表（open/todo/doing/done/closed）"; bad=$((bad + 1)) ;;
+    esac
   fi
-  case "$st" in
-    superseded-by*) : ;;
-    *) if ! printf '%s' "$st" | grep -qE "^($LEGAL_STATUS)$"; then
-         note "✗ status 不在词表内（$st）: $f"; bad=$((bad + 1))
-       fi ;;
-  esac
-done < <(find "$PLAN_DIR" -maxdepth 1 -name '*.md' -type f -print | sort)
+  if [ "$hh" = "0" ]; then
+    case "$id" in
+      *待拍板*) note "✗ $f: status-header — 文件名带「待拍板」但无 frontmatter 状态头"; bad=$((bad + 1)) ;;
+    esac
+  fi
+done < "$TMP/meta.tsv"
 [ "$bad" -eq 0 ] && note "✓ 无"
 findings=$((findings + bad))
 echo
 
 # ── 汇总 ─────────────────────────────────────────────────────────────────────
+total=$(wc -l < "$TMP/files.txt" | tr -d ' ')
 if [ "$findings" -eq 0 ]; then
-  echo "plan-lint: ✓ 未发现漂移"
+  echo "plan-lint: ✓ $total 个 markdown，未发现漂移"
   exit 0
 fi
-echo "plan-lint: ✗ 共 $findings 项发现（只读报告，未改动任何文件）"
+echo "plan-lint: ✗ 共 $findings 项发现（$total 个 markdown；只读报告，未改动任何文件）"
 exit 1
