@@ -71,6 +71,19 @@ for skill in wayfinder-maps grill-me research prototype domain-modeling to-appro
   fi
 done
 
+# Inject the plan-lint gate into every installed plan-family skill that runs it
+# (ticket 03: plan-lint ships with the skill so any repo can run it; the script's
+# single source copy lives at skills/plan-approve/scripts/plan-lint.sh).
+PLAN_LINT_SRC="$SKILLS_SRC/plan-approve/scripts/plan-lint.sh"
+for skill_id in mp-plan-approve mp-plan-sync; do
+  if [ -d "$SKILLS_DST/$skill_id" ] && [ -f "$PLAN_LINT_SRC" ]; then
+    mkdir -p "$SKILLS_DST/$skill_id/scripts"
+    cp "$PLAN_LINT_SRC" "$SKILLS_DST/$skill_id/scripts/plan-lint.sh"
+    chmod a+rX "$SKILLS_DST/$skill_id/scripts/plan-lint.sh"
+    echo "Injected: plan-lint.sh -> $SKILLS_DST/$skill_id/scripts/"
+  fi
+done
+
 # Copy optional skills (only if they don't already exist)
 for skill in $(ls "$SKILLS_SRC/.optional/" 2>/dev/null); do
   skill_id=$(echo "$skill" | sed 's/-//g')

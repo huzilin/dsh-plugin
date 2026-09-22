@@ -1,7 +1,7 @@
 ---
 type: task
 blocked_by: [02]
-status: open
+status: done
 ---
 
 # 03: plan-lint 随 skill 分发内置（1A：skill 自包含）
@@ -14,8 +14,13 @@ status: open
 
 ## Acceptance
 
-- [ ] `skills/plan-approve/scripts/plan-lint.sh` 存在且与收口后实现逐字节一致；plan-sync 侧注入机制就位
-- [ ] 两个 SKILL.md 第 1 步文本改为相对本 skill 目录调用
-- [ ] GuideView 文案不再引用 `plan-lint.mjs`；`src/client/PlanView.tsx` 改后 tsdown 构建通过、lib 部署副本一致
-- [ ] `scripts/plan-lint.mjs` 删除，代码域活引用 grep 清零
-- [ ] 在 dsh-plugin 仓内按「skill 目录路径」实跑 lint 成功（模拟 skill 侧真实调用形态）
+- [x] `skills/plan-approve/scripts/plan-lint.sh` 存在且与收口后实现逐字节一致（git 识别为 rename，历史可溯）；plan-sync 侧注入机制就位（install-skills.sh 注入块，随票 04 目的地修正后生效）
+- [x] 两个 SKILL.md 第 1 步文本改为相对本 skill 目录调用，并写明「脚本缺失 = 安装态损坏，报漂移、不得静默降级手工检查」
+- [x] GuideView 文案不再引用 `plan-lint.mjs`；src 改后 tsdown 构建通过、lib 三产物同步（新文案 grep 命中、mjs 引用 0）
+- [x] `scripts/plan-lint.mjs` 与插件级 `scripts/plan-lint.sh` 双双退役，代码域活引用 sweep 清零（sh 头部保留「口径与 mjs 对拍一致」历史注记）
+- [x] 在 dsh-plugin 仓内按「skill 目录路径」实跑 lint 成功（29 个 markdown，绿）
+
+## 落地注
+
+- 2026-09-23 实施。构建工具链备注：包内 node_modules 只有运行时依赖，tsdown 用 harness 仓二进制（`/Users/huzilin/workdir/deepseek-harness/node_modules/.bin/tsdown`，cwd 在本包）跑通；`pnpm run build:client` 会被 workspace 里 deepseek-harness 既有断链的依赖预检卡住（环境旧账，与本票无关）。
+- 在途收账：src/lib 的「effort 徽章全部验收变绿」改动（09-22 前会话遗留）已在本票开工前单独提交（54628d8），未混入本票。

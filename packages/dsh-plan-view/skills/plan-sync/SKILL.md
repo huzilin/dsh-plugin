@@ -14,7 +14,7 @@ This skill closes that loop. It is the fourth step of the lifecycle the plan vie
 
 ## Process
 
-1. **Run the drift lint first.** `bash scripts/plan-lint.sh` (in this plugin's package) catches the structural problems that make reconciliation unreliable: a ticket id with more than one home, an effort holding `tickets/` with no `map.md`, a root document missing its status header. Fix or report those before reading tickets — a ticket that cannot be found cannot be reconciled.
+1. **Run the drift lint first.** The lint script ships inside the `plan-approve` skill's package and is injected here at install time: `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.plan` (resolve the directory from where you loaded this SKILL.md, e.g. `~/.zcode/skills/mp-plan-sync/scripts/plan-lint.sh`). It catches the structural problems that make reconciliation unreliable: a ticket id with more than one home, an effort holding `tickets/` with no `map.md`, status-header violations. Fix or report those before reading tickets — a ticket that cannot be found cannot be reconciled. If the script is missing, the skill install itself is broken — report that drift, do not silently degrade to a manual check.
 
 2. **Collect the open tickets.** Every ticket file under `.plan/` that is *not* already `done`/`closed`, plus any marked done whose acceptance boxes are still empty. The second group matters as much as the first: "done with nothing ticked" is the common shape of work that shipped but was never recorded, and it is exactly what this skill exists to fix.
 

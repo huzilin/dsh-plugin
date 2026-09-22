@@ -1912,7 +1912,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
-            结构漂移先用只读脚本查：<Code>node …/dsh-plan-view/scripts/plan-lint.mjs 仓库根</Code>
+            结构漂移先用只读脚本查：<Code>bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.plan</Code>
             （同票双档、缺 map.md、缺状态头/非法 status）；
             再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
             两者都只报告、不擅自改。

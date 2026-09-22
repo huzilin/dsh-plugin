@@ -12,7 +12,7 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
 ## Process
 
-1. **Run the drift lint first.** `bash scripts/plan-lint.sh` (in this plugin's package) reports the structural problems that make this pass unreliable: a ticket id with more than one home, an effort holding `tickets/` with no `map.md` (so the plan view silently skips it), and root-level documents missing a status header. Fix or report what it finds before reading items — a document that is not in the set you collected cannot be settled, and that is exactly the drift this skill exists to catch.
+1. **Run the drift lint first.** The lint script ships inside this skill: `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.plan` (resolve the directory from where you loaded this SKILL.md — it is usually a symlink, e.g. `~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh`). It read-only reports the structural problems that make this pass unreliable: a ticket id with more than one home, an effort holding `tickets/` with no `map.md` (so the plan view silently skips it), and status-header violations. Fix or report what it finds before reading items — a document that is not in the set you collected cannot be settled, and that is exactly the drift this skill exists to catch. If the script is missing, the skill install itself is broken — report that drift, do not silently degrade to a manual check.
 
 2. **Collect the pending set.** Find every markdown document under `.plan/` whose frontmatter says `status: pending`. Also check the repo's own in-flight ledger (a plan or roadmap document listing open questions) — an item can be live there without a document of its own.
 
