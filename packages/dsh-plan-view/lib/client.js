@@ -2552,6 +2552,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				})).filter((w) => w.kind === kind)
 			})).filter((g) => g.items.length > 0);
 			const allOn = effortIdx < 0;
+			const allAccepted = (dir) => {
+				const work = all.filter((t) => inEffort(t, dir) && ticketKind(t) === "ticket" && !t.outOfScope);
+				return work.length > 0 && work.every((t) => t.qaAccepted);
+			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					display: "flex",
@@ -2594,17 +2598,19 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						}),
 						g.items.map(({ e, i, kind }) => {
 							const on = effortIdx === i;
+							const done = allAccepted(e.dir);
+							const accent = done ? "#4ed17e" : ACCENT;
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								onClick: () => setEffortIdx(i),
-								title: e.dir,
+								title: done ? `${e.dir}（全部工单已验收）` : e.dir,
 								style: {
 									fontSize: 11.5,
 									padding: "4px 12px",
 									borderRadius: 999,
 									cursor: "pointer",
-									border: `1px solid ${on ? ACCENT : BORDER}`,
-									color: on ? ACCENT : TEXT_FAINT,
-									background: on ? `${ACCENT}22` : "transparent"
+									border: `1px solid ${on ? accent : done ? "#4ed17e55" : BORDER}`,
+									color: on || done ? accent : TEXT_FAINT,
+									background: on ? `${accent}22` : "transparent"
 								},
 								children: [
 									kind ? MAP_KIND_META[kind].icon : "🗺️",

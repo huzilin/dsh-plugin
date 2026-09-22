@@ -1273,6 +1273,13 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
     .map(kind => ({ kind, items: efforts.map((e, i) => ({ e, i, kind: mapKind(e.dir, all) })).filter(w => w.kind === kind) }))
     .filter(g => g.items.length > 0)
   const allOn = effortIdx < 0
+  // 全部验收通过（2026-09-22 增）：图内工单（含根层松散票，与计数同口径）
+  // 至少一张，且每张都 qa_accepted（🏁 已验收）。out_of_scope（Ruled out）票
+  // 不算未验收工作，不阻塞绿色（推断口径，与总览进度条的在途口径一致）。
+  const allAccepted = (dir: string): boolean => {
+    const work = all.filter(t => inEffort(t, dir) && ticketKind(t) === 'ticket' && !t.outOfScope)
+    return work.length > 0 && work.every(t => t.qaAccepted)
+  }
   return (
     <div style={{ display: 'flex', gap: 6, padding: '10px 14px 8px', flexWrap: 'wrap', borderBottom: `1px solid ${BORDER_LIGHT}`, alignItems: 'center' }}>
       {efforts.length > 1 && (
@@ -1289,8 +1296,10 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
           )}
           {g.items.map(({ e, i, kind }) => {
             const on = effortIdx === i
+            const done = allAccepted(e.dir)
+            const accent = done ? '#4ed17e' : ACCENT
             return (
-              <span key={e.dir} onClick={() => setEffortIdx(i)} title={e.dir} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? ACCENT : BORDER}`, color: on ? ACCENT : TEXT_FAINT, background: on ? `${ACCENT}22` : 'transparent' }}>
+              <span key={e.dir} onClick={() => setEffortIdx(i)} title={done ? `${e.dir}（全部工单已验收）` : e.dir} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? accent : done ? '#4ed17e55' : BORDER}`, color: on || done ? accent : TEXT_FAINT, background: on ? `${accent}22` : 'transparent' }}>
                 {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{countFor(e.dir)}</span>
               </span>
             )
