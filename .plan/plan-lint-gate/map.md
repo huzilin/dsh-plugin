@@ -13,3 +13,4 @@
 ## Decisions so far
 
 - 2026-09-18 用户拍板 A：建独立只读脚本 + 修说明页悬空引用（结算《待拍板-plan-lint门禁与说明页悬空引用-20260918》）。
+- 2026-09-23 用户拍板「1A 2A 3 修复」：①分发内置随 skill（skill 自包含，装到哪个仓库都能跑）；②sh 收口为唯一实现（mjs 退役，GuideView 文案随改）；③install-skills.sh 目的地与清单修复并实际同步（源 spec：《待拍板-plan-lint随skill内置分发-20260923》，已 closed）。落票 02（sh 口径合流）→ 03（随 skill 分发内置）→ 04（install 修复与同步）。
