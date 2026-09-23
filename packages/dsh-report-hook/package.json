@@ -1,0 +1,23 @@
+{
+  "name": "dsh-report-hook",
+  "version": "0.1.0",
+  "description": "汇报规范自动提醒 hook：每次用户发言时判断是否在要决策/要审批，若是则往 agent 上下文注入一段「汇报规范提醒」（含①~④四条硬规则 + ⑤文档一律用 sidebar_open 在侧边栏打开的交付形态条款，以及\"直接给如何处理\"的内联文案）。基于 DSH hooks-claude-code 桥接 + 单一判断脚本。",
+  "type": "module",
+  "exports": {
+    "./scripts/report-hook": "./scripts/report-hook.mjs",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "hook",
+    "reporting",
+    "approval"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/report-hook.test.mjs"
+  }
+}
