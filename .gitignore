@@ -2,6 +2,11 @@ node_modules/
 dist/
 *.log
 .tmp/
-.pnpm-store/lib/index.js
+.pnpm-store/
 # Local scratch: holds a copy of another repo's .plan for plugin testing.
 .plan-view-test/
+# 本机缓存/运行态与归档留证（2026-09-24 拍板）
+.DS_Store
+.zvec-grep/
+.dsh/
+.zcode/
