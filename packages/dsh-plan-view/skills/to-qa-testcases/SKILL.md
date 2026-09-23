@@ -100,8 +100,8 @@ disable-model-invocation: false
    完成 cases.md §5 设计自检后才算设计完成。
 
 3. **测试资产（三原则，缺一不算完成）**：
-   - **数据可一键重建**：scratch 环境（独立库/命名空间，绝不触联调库）+ 迁移 + seed，凭据经环境变量注入零落地，`env_up` / `env_down` 成对；造数纪律（真实接口链路构造、禁 SQL 直插业务表、造不到=SKIP）见 `run-qa-testcases/references/data-construction.md`，建 seed 前必读；
-   - **脚本可一键复跑**：驱动脚本**软失败收全**（单条断言失败不中断，一轮收齐全部缺陷）、结果落 json、退出码 FAIL>0 非 0 可接 CI；
+   - **数据可一键重建**：scratch 环境（独立库/命名空间，绝不触联调库）+ 迁移 + seed，凭据经环境变量注入零落地，`env_up` / `env_down` 成对；资源自命名零共享（端口/库/目录带测例集标识，两集同机并行互不干扰）+ 临时工作目录显式声明（**禁 /tmp**），红线见骨架 §二「并发与环境红线」；造数纪律（真实接口链路构造、禁 SQL 直插业务表、造不到=SKIP）见 `run-qa-testcases/references/data-construction.md`，建 seed 前必读；
+   - **脚本可一键复跑**：驱动脚本**软失败收全**（单条断言失败不中断，一轮收齐全部缺陷）、结果落 json、退出码 FAIL>0 非 0 可接 CI；等待一律条件探测（探测间隔+上限+早退，**禁固定死等做就绪判定**），红线见骨架 §二「等待与确定性红线」；
    - **结果可对比**：定义基线口径 `PASS / FAIL / SKIP`，SKIP 必附因。
    资产随需求入库；**下一轮不重写数据与脚本**。
    > 有 UI 的项目：呈现通道可执行资产以 **Playwright 形态**为标准（spec 落 `qa/e2e/`、用例编号 grep 绑定、薄壳驱动、截图/登录约定 + 无视觉降级口径），正本见 [references/playwright-assets.md](references/playwright-assets.md)；P 组设计时按其探针口径把呈现层断言写成可判定的文本断言。
@@ -114,6 +114,8 @@ disable-model-invocation: false
 - [ ] （blocker）prd 全部 AC 在 cases.md §2 覆盖矩阵有对应用例编号，无空行
 - [ ] （blocker）每条用例唯一编号、预期可判定（无「功能正常」）；cases.md §5 设计自检全过
 - [ ] （blocker）资产三原则齐备：env_up/env_down、驱动脚本（软失败 + json + 退出码）、基线 PASS/FAIL/SKIP 口径已定义
+- [ ] （blocker）脚本等待全部条件探测（探测间隔 + 上限 + 早退，超时即红），无固定死等做就绪判定（红线见骨架 §二）
+- [ ] （blocker）并发与环境红线达标：资源自命名零共享（端口/库/目录带测例集标识，资源清单入 README）、临时工作目录显式声明且非 /tmp、env_up/env_down 构建与清理步骤成文（红线见骨架 §二「并发与环境红线」）
 - [ ] （blocker）有 UI 则 **P 组已单列**（每元素位 ≥1 条 P-1 + 1 条 P-2，含失败/降级路径）+ 逐页面对齐原型；无 UI 须显式声明
 - [ ] （major）B 组每步断言含业务语义层（角色所需 + 写读联动），非仅协议层
 - [ ] （major）P 组文案类断言逐字可判定（占位/空态/提示条原文入预期栏），非「文案合理」
