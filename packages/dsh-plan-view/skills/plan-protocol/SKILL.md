@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 **谁该读它**：本目录下的 `to-spec` / `to-tickets` / `implement` / `implement-spec` / `plan-sync` / `to-approval` / `plan-approve` / `plan-archive` / `to-qa-testcases` / `run-qa-testcases` / `diagnosing-bugs` / `plan-loop`，以及任何需要解释 plan 流程的 session。这些 skill 各自持有自己的 how；本协议是它们的**公共契约层**，避免各自重述、各自漂移。
 
-> 与 `dsh-plan-view` 插件的关系：插件是**只读**渲染方，按 frontmatter 显示「路线 / 工单 / 待拍板」三页。它不生产文件，只消费。所有文件形态约定（见下文「文档形态」）都是为了让插件能正确读。
+> 与 `dsh-plan-view` 插件的关系：插件是**只读为主**的渲染方——第一层「总览 / 地图 / 测例&缺陷 / 台账 / 说明」页签，图内再按单据类分子页（路线 / 工单 / 待拍板 / 台账 / 缺陷 / 测例 / 串联）。唯一写回是派工那一刻把 `session` 绑上票面（即 §二硬规则 3 的执行登记）；归档轮整轮只读。所有文件形态约定（见下文「文档形态」）都是为了让插件能正确读。
 
 ---
 

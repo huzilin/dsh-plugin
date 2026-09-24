@@ -467,6 +467,13 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			"resolved",
 			"out_of_scope"
 		];
+		const TICKET_TYPES = new Set([
+			"task",
+			"impl",
+			"research",
+			"prototype",
+			"grilling"
+		]);
 		/** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
 		function ticketKind(t) {
 			const ty = (t.type ?? "").trim().toLowerCase();
@@ -477,6 +484,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			if (isPending(t)) return "approval";
 			if (ty === "spec" || ty === "design" || /^(map|readme|index)$/i.test(t.id)) return "note";
 			if (!ty && !t.status) return "note";
+			if (ty && !TICKET_TYPES.has(ty)) return "note";
 			return "ticket";
 		}
 		const KIND_META = {
@@ -3960,10 +3968,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								}),
 								"翻状态；",
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
-								" 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两条流程。"
+								" 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两套流程。"
 							]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(H, { children: "补充流程：执行中暴露的问题" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(H, { children: "补充流程：需要拍板的问题 / 缺口" }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(P, { children: [
 							"「",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
@@ -3981,10 +3989,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							},
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Box, {
-									title: "发现",
-									who: "find-bug",
+									title: "问题发现",
+									who: "用户反馈 / code review / 走查 / QA 缺陷升级",
 									tone: "decide",
-									children: "执行 / 测试中暴露的问题"
+									children: "需要拍板定论的问题 / 缺口"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Arrow, {}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(Box, {

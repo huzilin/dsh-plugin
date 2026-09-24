@@ -461,6 +461,13 @@ const STATUS_ORDER = [
 	"resolved",
 	"out_of_scope"
 ];
+const TICKET_TYPES = new Set([
+	"task",
+	"impl",
+	"research",
+	"prototype",
+	"grilling"
+]);
 /** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
 function ticketKind(t) {
 	const ty = (t.type ?? "").trim().toLowerCase();
@@ -471,6 +478,7 @@ function ticketKind(t) {
 	if (isPending(t)) return "approval";
 	if (ty === "spec" || ty === "design" || /^(map|readme|index)$/i.test(t.id)) return "note";
 	if (!ty && !t.status) return "note";
+	if (ty && !TICKET_TYPES.has(ty)) return "note";
 	return "ticket";
 }
 const KIND_META = {
@@ -3954,10 +3962,10 @@ function GuideView({ scope }) {
 						}),
 						"翻状态；",
 						/* @__PURE__ */ jsx(Code, { children: "plan-sync" }),
-						" 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两条流程。"
+						" 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两套流程。"
 					]
 				}),
-				/* @__PURE__ */ jsx(H, { children: "补充流程：执行中暴露的问题" }),
+				/* @__PURE__ */ jsx(H, { children: "补充流程：需要拍板的问题 / 缺口" }),
 				/* @__PURE__ */ jsxs(P, { children: [
 					"「",
 					/* @__PURE__ */ jsx("strong", {
@@ -3975,10 +3983,10 @@ function GuideView({ scope }) {
 					},
 					children: [
 						/* @__PURE__ */ jsx(Box, {
-							title: "发现",
-							who: "find-bug",
+							title: "问题发现",
+							who: "用户反馈 / code review / 走查 / QA 缺陷升级",
 							tone: "decide",
-							children: "执行 / 测试中暴露的问题"
+							children: "需要拍板定论的问题 / 缺口"
 						}),
 						/* @__PURE__ */ jsx(Arrow, {}),
 						/* @__PURE__ */ jsxs(Box, {

@@ -351,6 +351,11 @@ const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'resolved', 'out_of_sco
 
 type TicketKind = 'ticket' | 'approval' | 'ledger' | 'defect' | 'cases' | 'note'
 
+// 票型词表（plan-protocol §三）：声明这些 type 的文档才主张「要干活」，归工单。
+// approval / qa-defect / ledger 三个保留 type 在下方分支单独接走；词表外的
+// type 值按「说明 / 杂项」解析，不作单据校验对象（2026-09-24 协议补条）。
+const TICKET_TYPES = new Set(['task', 'impl', 'research', 'prototype', 'grilling'])
+
 /** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
 function ticketKind(t: ParsedTicket): TicketKind {
   const ty = (t.type ?? '').trim().toLowerCase()
@@ -376,6 +381,9 @@ function ticketKind(t: ParsedTicket): TicketKind {
   // Both fields are read because either one is a claim of intent; a real ticket
   // states at least one.
   if (!ty && !t.status) return 'note'
+  // 有 type 但词表外：协议规定按说明/杂项解析。pending 推断仍在上游先生效——
+  // 历史待拍板档可能不带 type: approval，不能因 type 词表外被挤出「待拍板」页。
+  if (ty && !TICKET_TYPES.has(ty)) return 'note'
   return 'ticket'
 }
 
