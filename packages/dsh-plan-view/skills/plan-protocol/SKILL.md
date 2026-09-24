@@ -95,7 +95,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **非治理目录**：`.plan/handoffs/`（handoff 交接文档产物区）不属 plan 生态——视图不加载、`plan-lint` 跳过（不查缺 map / 状态头 / 同票双档）。
 - **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`/`impl`，终点=落码验收）。落地工单 `type` 统一写 `task`（`impl` 为早期别名，不再新用）。
 - **票面 `status` 词表**（工单 frontmatter，执行态与终态）：执行中 = `claimed`（登记格式见「执行登记」硬规则）；终态按票型分——实施图票 `task` / `impl` 终态 = `done`；推演图票 `research` / `prototype` / `grilling` 终态 = `resolved`（允许附日期 `resolved <YYYY-MM-DD>`）。
-- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。没有 `type` 的文件仍可见，但归「说明 / 杂项」类。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。
+- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无 `status` 的文件归「说明 / 杂项」类；无 `type` 但有 `status` 的旧格式/手写票按其 `status` 归工单（兼容桥——wayfinder 现行票格式本就写 `type`，此形态只剩存量，新写票一律带 `type`）。
 - **缺陷条目**（`type: qa-defect`，**一缺陷一文件**）：`.plan/<effort>/qa/DEF-NN-<slug>.md`，frontmatter `type: qa-defect` + 状态头，正文 `# DEF-NN 标题` + 固定字段行 `- 严重度:`、`- 类型:`（rd/fe/arch/docs）、`- Assignee:`、`- 状态:`（待修复/已确认/修复中/待复测/已关闭/挂起，取首词匹配、允许附注）、`- 关联用例:`、`- 发现源:`、`- 测试设计缺口:`，其后 A~E 五节（E 节最小复现入口必填——骨架正本见 run-qa-testcases `references/qa-records-skeleton.md`）。
   - **串联**：缺陷与票/挂账的串联靠详情文本写「票 NN」「挂账-NN」。
   - **识别**：qa 目录内不带 `type: qa-defect` 的文件不被视图识别；旧「单文件多小节」形态（`qa/defect.md` 清单总览表）只读兼容——归档轮快照是旧形态，现行一律一缺陷一文件。
