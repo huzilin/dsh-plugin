@@ -13,7 +13,7 @@
 | 缺陷台账 | `docs/v1.0/qa/qa-defects.md` | defect.md（A~D 四节 + 发现源统计） |
 | 诊断报告 | `docs/v1.0/qa/qa-diagnosis.md` | （defect.md 根因节的展开，本 skill 并入 B 节「根因定位」） |
 | 资产说明 | `qa/README.md` | 资产清单 + 复跑三步 + 扩展约定 |
-| 环境 | `qa/qa_env_up.sh` / `qa/qa_env_down.sh` | scratch 库 `wbflow_qa_<ts>` + 服务 :18081；凭据 `QA_MYSQL_PASSWORD` 注入，写 `/tmp/wbflow-qa-env.env` |
+| 环境 | `qa/qa_env_up.sh` / `qa/qa_env_down.sh` | 独库 `wbflow_qa_<ts>`（历史做法，勿照搬，见差距表）+ 服务 :18081；凭据 `QA_MYSQL_PASSWORD` 注入，写 `/tmp/wbflow-qa-env.env` |
 | 驱动 | `qa/qa_drive.py` | 全量验收驱动，末轮基线 195 PASS / 0 FAIL / 1 SKIP（约 40s） |
 | 诊断最小环 | `qa/qa_diag_min.py` | 逐缺陷独立节（bug003 / bug004 / bug005 / bug008 / obs001），约 8s，软失败继续 |
 | 结果 | `qa/qa-results.json` | 末轮逐用例结果（每次运行覆盖） |
@@ -29,7 +29,7 @@
 
 **库态对账**：`sql()` 只读直查 scratch 库；`audit_count(table, row, action, field, by)` 按审计行计数对账「谁在何时改了什么」——竞速类缺陷（BUG-009 幽灵评审位）就是靠 audit_log id 先后序实证的。
 
-**环境成对**：`qa_env_up.sh` 建 scratch 库 + 迁移 + seed + 起服务；`qa_env_down.sh` 按端口杀进程 + DROP scratch 库，绝不触联调库 `wbflow`。（独库型隔离 = 并发维度取「环境」的实现方式之一，非默认要求；默认按业务域维度隔离，见骨架 §二「并发与环境红线」）
+**环境成对**：`qa_env_up.sh` 迁移 + seed + 起服务；`qa_env_down.sh` 按端口杀进程 + 只清自己的数据。**数据隔离按并发控制维度，不按库**：不独占数据库，本集数据对象自建前缀、各测例集各占不同维度值（维度与本轮具体数据集在 cases.md §0 头部声明，见骨架 §二「并发与环境红线」）。wbflow 当年为独库实现（`wbflow_qa_<ts>` 建库/DROP），2026-09-24 拍板后不再是可照搬模式，见下方差距表。
 
 **多轮以末轮为准**：5 轮执行，前 4 轮修正的全是驱动侧问题（docs root 解析、anchor 契约嵌套、operator 归属、update 全量字段），执行报告 §2 逐条列出，与产品缺陷分开——这就是骨架 test.md §2「过程有效性」的来源。
 
@@ -49,4 +49,4 @@
 | 最小复现入口 | defect.md E 节：一条命令按用例过滤 | `qa_diag_min.py` 有逐缺陷函数但**无 CLI 过滤参数**，只能整跑；台账无 E 节 | 加 `--case` 过滤；每条缺陷登记 cmd |
 | 用户批注回归组 | cases.md U 组 | 无 | 用户原话逐条转 U-xx |
 | 文档一致性对账 | D 组含文档 vs 裁决正本 | D 组只对账 DB | 加 D-3 |
-| 并发与环境红线 | 资源自命名零共享 + 临时工作目录禁 /tmp + 构建清理成文（骨架 §二「并发与环境红线」，2026-09-23 拍板） | 凭据文件写 `/tmp`；端口/目录无测例集标识；并发口径未声明 | 资源清单入 README；临时目录改仓库内 `qa/<集名>/.work/` |
+| 并发与环境红线 | 数据并发按维度隔离不按库 + 资源自命名零共享 + 临时工作目录禁 /tmp + 构建清理成文（骨架 §二「并发与环境红线」，2026-09-23/09-24 拍板） | 凭据文件写 `/tmp`；端口/目录无测例集标识；并发口径未声明；独库实现（`wbflow_qa_<ts>`） | 资源清单入 README；临时目录改仓库内 `qa/<集名>/.work/`；数据隔离改业务域并发控制维度（自建数据前缀，不独占库），维度与数据集声明进 cases.md §0 |
