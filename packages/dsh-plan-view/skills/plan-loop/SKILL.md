@@ -44,6 +44,8 @@ disable-model-invocation: true
 |---|---|---|---|
 | 工单 | `open` 且 `blocked_by` 全终态 | 先执行登记（`claimed` + `claimed_by` + `session`，格式见 `plan-protocol` skill），再按 `implement` skill（实施图）或对应推演 skill（推演图）执行；验收框逐条勾，附 diff/commit 翻面 | `done` / `resolved` |
 | 工单 | `blocked_by` 有未终态 | 本轮跳过；依赖票翻面后自然进前沿 | — |
+| 工单 | `done` 但验收框有空 | 按 `plan-sync` skill 口径对账：证据支撑的逐条补勾；附因留格（如「真腿未直证」）如实保留、归等待态 | 框齐，或缺据列明 |
+| 图 | 决策已定案（spec / 拍板档 / 设计定稿）但工单未拆 | 按 `to-tickets` skill 从定案文档拆票（一票一文件 + frontmatter） | 工单落盘进图 |
 | 缺陷 | 待修复 / 已确认 / 修复中 / 待复测 | 按 `diagnosing-bugs` skill 修复（`待复测` 态则跳过修复直接复测；只回写 DEF 的 C 节），回 `run-qa-testcases` skill 同命令复测翻绿 | `已关闭` |
 | 缺陷 | 暴露需求级分歧 | 转 `to-approval` skill 立审批档，进待拍板桶 | — |
 | 测例 | 实施图缺 `qa/cases.md`、被测票缺 `qa_cases` 标记，或票全 done 但 `qa_accepted` 未齐 | 缺测例先按 `to-qa-testcases` skill 基于该图实施票生成；已有测例按 `run-qa-testcases` skill 跑该图：全绿给被测票写 `qa_accepted`；有缺陷立 DEF-NN 进修复环 | 图面测例齐备；票面 `qa_accepted: true` |
