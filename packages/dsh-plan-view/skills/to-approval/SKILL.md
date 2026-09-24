@@ -62,32 +62,8 @@ The header is what makes an approval document findable and trackable later. Five
 
 **A ruling that calls for work becomes a ticket, right then.** The `closed` row above says "either done or filed as a ticket" — that clause is an action, not a label. When the human's ruling is *"do X"*, the ruling is not recorded until the ticket exists:
 
-1. **Invoke the `to-tickets` skill** with the ruling as its input. Do not hand-write the ticket file, and do not paraphrase the ruling into a bullet in this document and call it filed. Either shortcut produces a ticket shaped by whatever the current session felt like — which is how a repo ends up with four incompatible ticket formats and a view that can read none of them.
-2. **Write to the shape the tracker reads**, which is **one file per ticket**, not one file holding many:
-
-   ```
-   .plan/<effort>/tickets/<id>-<slug>.md     ← one ticket, read as one row
-   .plan/<effort>/tickets.md                 ← WRONG: many tickets in one file
-   ```
-
-   `to-tickets` writes `<slug>/tickets.md` by default (a single file with one `##` section per ticket). **Override that here.** A view that reads tickets file-by-file sees a combined file as exactly one ticket and silently loses every ticket inside it — the same failure as a table row read as one row. Split the approved tickets into one file each, named `<id>-<slug>.md`, under `tickets/`.
-
-   Each file carries frontmatter the tracker reads directly:
-
-   ```yaml
-   ---
-   type: task
-   blocked_by: []
-   status: open            # open（待领）→ claimed（执行中，附 claimed_by/session）→ done；推演图票终态 resolved
-   ---
-
-   # <id>: <title>
-
-   **What to build:** <the end-to-end behaviour this ticket makes work>
-   **Blocked by:** <titles it depends on, or 无>
-   **真相源:** <the document that decided it — usually this approval document>
-   ```
-
+1. **Invoke the `to-tickets` skill** with the ruling as its input. Do not hand-write the ticket file, and do not paraphrase the ruling into a bullet in this document and call it filed — a ruling noted in prose is not filed.
+2. **Follow the ticket shape the plan-protocol contract fixes** — one file per ticket, at `.plan/<effort>/tickets/<id>-<slug>.md`, with frontmatter `type` / `blocked_by` / `status`. `to-tickets` writes a single combined `tickets.md` by default; **override that here** — a view that reads tickets file-by-file counts a combined file as one ticket and silently loses every ticket inside it. The shape and vocabulary are owned by plan-protocol and `to-tickets`; do not invent a second format.
 3. **Name the ticket in the record** and link it, with the ruling quoted verbatim beside it.
 
 If no ruling calls for work — every item was a question of fact, or a choice among existing options — there is nothing to file and this step is skipped. The rule is only that *when* work is called for, the ticket comes from the skill that owns ticket format rather than being invented here.
