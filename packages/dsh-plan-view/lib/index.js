@@ -3243,7 +3243,7 @@ function PlanView(props) {
 		effortIdx,
 		selectedDir
 	]);
-	const mapDefects = useMemo(() => effortIdx < 0 ? defects : defects.filter((t) => t.effort === selectedDir), [
+	const mapDefects = useMemo(() => defects.filter((t) => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)), [
 		defects,
 		effortIdx,
 		selectedDir
@@ -3254,7 +3254,7 @@ function PlanView(props) {
 		selectedDir
 	]);
 	const globalLedgers = useMemo(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
-	const mapLedgers = useMemo(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
+	const mapLedgers = useMemo(() => ledgers.filter((t) => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)), [
 		ledgers,
 		effortIdx,
 		selectedDir
@@ -4728,6 +4728,15 @@ function LedgerCard({ entry: e }) {
 				}),
 				/* @__PURE__ */ jsx("span", {
 					style: {
+						fontSize: 11.5,
+						fontFamily: "ui-monospace,Menlo,monospace",
+						color: TEXT_DIM,
+						flexShrink: 0
+					},
+					children: e.id
+				}),
+				/* @__PURE__ */ jsx("span", {
+					style: {
 						flex: 1,
 						minWidth: 200,
 						fontSize: 13,
@@ -5229,7 +5238,7 @@ function buildChain(tickets, defects, ledgers, cases) {
 			key: `l:${e?.id ?? t.id}`,
 			kind: "ledger",
 			ticket: t,
-			title: e?.title ?? t.title,
+			title: e ? `${e.id} ${e.title}` : t.title,
 			badge: e?.state ?? "在挂",
 			badgeColor: (e?.state ?? "在挂").startsWith("阻塞中") ? "#f2555a" : (e?.state ?? "在挂").startsWith("可启动") || (e?.state ?? "").startsWith("在挂") ? "#f7ad31" : "#4ed17e",
 			sub: e ? `挂账 · ${e.source || "无来源"}` : "挂账"

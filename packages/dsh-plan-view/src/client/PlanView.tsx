@@ -1632,10 +1632,11 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     [mapOwnTickets, effortIdx, selectedDir],
   )
   // 缺陷挂在具体图下（.plan/<effort>/qa/），按当前选中的图过滤——与路线页共用
-  // effortIdx/selectedDir，切图时缺陷跟着切。有意与挂账台账的跨图聚合不同：
-  // 挂账是 plan 级跨图债务，缺陷属于某一张图。
+  // effortIdx/selectedDir，切图时缺陷跟着切。根层全局缺陷（.plan/qa/DEF-*.md，
+  // 无图归属）不进地图页——2026-09-25 拍板：地图页只看图归属缺陷，全局缺陷
+  // 只进第一层「测例&缺陷」tab。
   const mapDefects = useMemo(
-    () => (effortIdx < 0 ? defects : defects.filter(t => t.effort === selectedDir)),
+    () => defects.filter(t => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)),
     [defects, effortIdx, selectedDir],
   )
   // 待拍板同语义随图切换（2026-09-21 拍板：筛选后看到的都是同一张图）；
@@ -1644,12 +1645,13 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     () => (effortIdx < 0 ? approvals : approvals.filter(t => selectedDir !== undefined && inEffort(t, selectedDir))),
     [approvals, effortIdx, selectedDir],
   )
-  // 台账两级（2026-09-21 拍板拆分）：根层 `.plan/挂账台账.md` 是项目全局正本；
-  // `.plan/<effort>/挂账台账.md` 是图内台账（t.effort = 图目录）。第一层「台账」
-  // 页只看全局；地图页的台账子页只看当前图的图内台账（全部地图态显示全部台账）。
+  // 台账两级（2026-09-21 拍板拆分）：根层全局台账（.plan/ledger/*.md，一账一文件，
+  // t.effort = ROOT_GROUP）是项目全局正本；`.plan/<effort>/ledger/` 是图内台账
+  // （t.effort = 图目录）。第一层「台账」页只看全局；地图页的台账子页只看图内
+  // 台账——2026-09-25 拍板：全部地图态聚合各图图内台账，全局台账不进地图页。
   const globalLedgers = useMemo(() => ledgers.filter(t => t.effort === ROOT_GROUP), [ledgers])
   const mapLedgers = useMemo(
-    () => (effortIdx < 0 ? ledgers : ledgers.filter(t => t.effort === selectedDir)),
+    () => ledgers.filter(t => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)),
     [ledgers, effortIdx, selectedDir],
   )
   const mapCases = useMemo(
@@ -2239,6 +2241,8 @@ function LedgerCard({ entry: e }: { entry: LedgerEntry }) {
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: tone.bg, color: tone.fg, flexShrink: 0 }}>{e.state}</span>
+        {/* 挂账-NN 编号与文件名/H1 同源（挂账带号纪律）：页面可见，口头引用才对得上。 */}
+        <span style={{ fontSize: 11.5, fontFamily: 'ui-monospace,Menlo,monospace', color: TEXT_DIM, flexShrink: 0 }}>{e.id}</span>
         <span style={{ flex: 1, minWidth: 200, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
         {e.source && <span style={{ fontSize: 10, color: TEXT_FAINT, flexShrink: 0 }}>{e.source}</span>}
       </div>
@@ -2460,7 +2464,8 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
     const e = parseLedgerEntries(t.body)[0]
     return {
       key: `l:${e?.id ?? t.id}`, kind: 'ledger' as const, ticket: t,
-      title: e?.title ?? t.title, badge: e?.state ?? '在挂',
+      // 标题带挂账-NN 编号（挂账带号纪律）：节点上可见，超长截尾不截号。
+      title: e ? `${e.id} ${e.title}` : t.title, badge: e?.state ?? '在挂',
       badgeColor: (e?.state ?? '在挂').startsWith('阻塞中') ? '#f2555a' : (e?.state ?? '在挂').startsWith('可启动') || (e?.state ?? '').startsWith('在挂') ? '#f7ad31' : '#4ed17e',
       sub: e ? `挂账 · ${e.source || '无来源'}` : '挂账',
     }

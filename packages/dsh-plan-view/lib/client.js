@@ -3249,7 +3249,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				effortIdx,
 				selectedDir
 			]);
-			const mapDefects = (0, react.useMemo)(() => effortIdx < 0 ? defects : defects.filter((t) => t.effort === selectedDir), [
+			const mapDefects = (0, react.useMemo)(() => defects.filter((t) => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)), [
 				defects,
 				effortIdx,
 				selectedDir
@@ -3260,7 +3260,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				selectedDir
 			]);
 			const globalLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
-			const mapLedgers = (0, react.useMemo)(() => effortIdx < 0 ? ledgers : ledgers.filter((t) => t.effort === selectedDir), [
+			const mapLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)), [
 				ledgers,
 				effortIdx,
 				selectedDir
@@ -4734,6 +4734,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							style: {
+								fontSize: 11.5,
+								fontFamily: "ui-monospace,Menlo,monospace",
+								color: TEXT_DIM,
+								flexShrink: 0
+							},
+							children: e.id
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							style: {
 								flex: 1,
 								minWidth: 200,
 								fontSize: 13,
@@ -5235,7 +5244,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					key: `l:${e?.id ?? t.id}`,
 					kind: "ledger",
 					ticket: t,
-					title: e?.title ?? t.title,
+					title: e ? `${e.id} ${e.title}` : t.title,
 					badge: e?.state ?? "在挂",
 					badgeColor: (e?.state ?? "在挂").startsWith("阻塞中") ? "#f2555a" : (e?.state ?? "在挂").startsWith("可启动") || (e?.state ?? "").startsWith("在挂") ? "#f7ad31" : "#4ed17e",
 					sub: e ? `挂账 · ${e.source || "无来源"}` : "挂账"
