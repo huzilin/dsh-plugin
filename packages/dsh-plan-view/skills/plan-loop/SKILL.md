@@ -46,7 +46,7 @@ disable-model-invocation: true
 | 工单 | `blocked_by` 有未终态 | 本轮跳过；依赖票翻面后自然进前沿 | — |
 | 缺陷 | 待修复 / 已确认 / 修复中 / 待复测 | 按 `diagnosing-bugs` skill 修复（`待复测` 态则跳过修复直接复测；只回写 DEF 的 C 节），回 `run-qa-testcases` skill 同命令复测翻绿 | `已关闭` |
 | 缺陷 | 暴露需求级分歧 | 转 `to-approval` skill 立审批档，进待拍板桶 | — |
-| 测例 | 图内票全 done 但 `qa_accepted` 未齐 | 按 `run-qa-testcases` skill 跑该图：全绿给被测票写 `qa_accepted`；有缺陷立 DEF-NN 进修复环 | 票面 `qa_accepted: true` |
+| 测例 | 实施图缺 `qa/cases.md`、被测票缺 `qa_cases` 标记，或票全 done 但 `qa_accepted` 未齐 | 缺测例先按 `to-qa-testcases` skill 基于该图实施票生成；已有测例按 `run-qa-testcases` skill 跑该图：全绿给被测票写 `qa_accepted`；有缺陷立 DEF-NN 进修复环 | 图面测例齐备；票面 `qa_accepted: true` |
 | 台账 | `可启动` 且启动条件已满足 | 按**恢复口径**转票（恢复到来源图立票，`- 状态:` 改 `已转票` 并留痕；原图 closed 则重开） | `已转票` |
 | 台账 | `可启动` 但启动条件未触发 | 不硬开工；能补启动条件就补，不能的保持等待态、简报列明 | 等待态（非终态） |
 | 台账 | 债务已被客观证据清偿 | 在条目自身销账并注记（日期 / 去向 / 证据）；拿不准的进裁决单 | `已销` |
