@@ -20,7 +20,7 @@
 ## 网关接入 checklist
 
 - 会话/路由头（如 x-opencode-session）走**通用 extra_headers 配置透传**，不做 provider 特判
-- key 正本在 ~/.dsh/.credentials.yaml refs（env 同源）；上游 5xx 先用 curl 复刻「同形状调用」判别：直连通=客户端问题（头/连接池），直连挂=供应商窗口
+- key 正本 = 仓库 `qa/qa.env`（to-qa-testcases 生成模板 `qa.env.example`、用户手填；缺失即相关用例 SKIP 附因，禁回落仓库外任何全局凭据）；上游 5xx 先用 curl 复刻「同形状调用」判别：直连通=客户端问题（头/连接池），直连挂=供应商窗口
 - 非推理小模型（deepseek-v4-flash）审校类调用 2-5s/次，优先当批量 worker 模型；写稿用强模型
 
 ## 落库口径
