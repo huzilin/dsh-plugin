@@ -58,14 +58,14 @@ export async function fsWrite(scope: SessionScope, path: string, content: string
 // A Remote call is `POST /api/<ns>/<method>` carrying the client-request
 // envelope; the gateway validates `args` against the generated descriptor,
 // whose field names are the Host method's parameter names, verbatim:
-// session/list takes `_request` (its Host parameter is `_request`), while
-// session/create and session/prompt take `request`. commands/execute takes
-// `agentId` (a SessionId string; the reference source tree spells it `agent`,
-// but the running gateway descriptor demands `agentId` — verified live
-// 2026-09-21). The /api trust fence is Host/Origin-based, not per-plugin: a
-// same-origin fetch from this page passes it like any other client call.
-// Verified live against a running harness: session/list returns items,
-// commands/list reaches agent lookup.
+// session/list takes `_request` (its Host parameter is `_request`). The /api
+// trust fence is Host/Origin-based, not per-plugin: a same-origin fetch from
+// this page passes it like any other client call.
+//
+// Dispatch no longer goes through this surface: session/prompt (auto-send),
+// session/create and commands/execute were retired when the action layer moved
+// to draft-first injection (input-bridge + the client-runtime `sessions`
+// service) — buttons now fill the composer and the human sends.
 
 async function rpc<T>(method: string, args: Record<string, unknown>): Promise<T> {
   const resp = await fetch(`/api/${method}`, {
@@ -103,29 +103,6 @@ export async function sessionList(): Promise<SessionSummary[]> {
 // which is the only kind a jump targets. Add cursor walking if archive jumps matter.
 export async function sessionAlive(sessionId: string): Promise<SessionSummary | undefined> {
   return (await sessionList()).find(s => s.sessionId === sessionId)
-}
-
-export async function sessionCreate(cwd?: string): Promise<string> {
-  const v = await rpc<{ sessionId: string }>('session/create', { request: cwd === undefined ? {} : { cwd } })
-  return v.sessionId
-}
-
-/** Non-blocking dispatch: queue one human message on the session's inbox. */
-export async function sessionPrompt(sessionId: string, text: string): Promise<void> {
-  await rpc('session/prompt', {
-    request: {
-      requestId: crypto.randomUUID(),
-      sessionId,
-      mode: 'queue',
-      content: [{ type: 'text', text }],
-      clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    },
-  })
-}
-
-/** Run one slash command (e.g. `/plan-approve <doc>`) inside a session. */
-export async function commandExecute(agentId: string, line: string): Promise<unknown> {
-  return rpc('commands/execute', { agentId, line, submittedAttachments: [] })
 }
 
 export type { SessionScope, FsEntry, FsTextResult, FsBinaryResult }

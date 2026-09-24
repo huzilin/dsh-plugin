@@ -58,29 +58,78 @@ window.__ModuleLoader__.load({
 		async function sessionAlive(sessionId) {
 			return (await sessionList()).find((s) => s.sessionId === sessionId);
 		}
-		async function sessionCreate(cwd) {
-			return (await rpc("session/create", { request: cwd === void 0 ? {} : { cwd } })).sessionId;
+		//#endregion
+		//#region src/client/input-bridge.ts
+		/**
+		* 输入桥：把宿主输入区的草稿写入能力（setDraft）捕获成按钮可调用的 injector。
+		*
+		* 机制参考 dsh-mattpocock-skills-deck 的 StatusBar（MIT）：在 `conversation.input.dock`
+		* 槽位挂一个不渲染任何东西的组件，宿主向该槽位组件传 `props.inputActions.setDraft`
+		* （往当前会话输入框填文字）和 `props.sessionId`。组件把 setDraft 按会话 id 登记进
+		* 模块级注入表；跨会话用 pendingDraft 交接——调用方把草稿挂到目标会话名下再切过去
+		* （`sessions.open`），输入区随会话切换重新挂载时把交接草稿消费掉。
+		*
+		* 按钮语义因此是「草稿优先」：点按钮只把指令填进输入框，人确认后再发送，不静默派活。
+		* 宿主没提供 setDraft 时由调用方兜底（复制到剪贴板）。
+		*/
+		/** 每个已挂载输入区（= 当前打开的会话）的 setDraft，按会话 id 登记。 */
+		const setters = /* @__PURE__ */ new Map();
+		/** 跨会话交接：草稿正文 + 目标会话。目标会话的输入区挂载时消费一次。 */
+		let pendingDraft = null;
+		let pendingTarget = null;
+		/**
+		* 输入桥组件本体。挂在 `conversation.input.dock` 槽位，不渲染任何可见物。
+		* @param props - 宿主传入；只消费 `sessionId` 与 `inputActions.setDraft`。
+		*/
+		function InputBridge(props) {
+			const sid = props.sessionId;
+			const set = props.inputActions?.setDraft;
+			(0, react.useEffect)(() => {
+				if (sid === void 0 || typeof set !== "function") return;
+				setters.set(sid, set);
+				if (pendingDraft !== null && pendingTarget === sid) {
+					const text = pendingDraft;
+					pendingDraft = null;
+					pendingTarget = null;
+					set(text);
+				}
+				return () => {
+					if (setters.get(sid) === set) setters.delete(sid);
+				};
+			}, [sid, set]);
+			return null;
 		}
-		/** Non-blocking dispatch: queue one human message on the session's inbox. */
-		async function sessionPrompt(sessionId, text) {
-			await rpc("session/prompt", { request: {
-				requestId: crypto.randomUUID(),
-				sessionId,
-				mode: "queue",
-				content: [{
-					type: "text",
-					text
-				}],
-				clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-			} });
+		/**
+		* 把草稿送进目标会话的输入框。
+		* @returns `'injected'` 目标会话正开着，已立即填入；`'queued'` 已挂成交接草稿，
+		* 调用方须随后 `sessions.open(sessionId)` 切过去，输入区重挂时自动消费。
+		*/
+		function deliverDraft(sessionId, text) {
+			const set = setters.get(sessionId);
+			if (set !== void 0) {
+				set(text);
+				return "injected";
+			}
+			pendingDraft = text;
+			pendingTarget = sessionId;
+			return "queued";
 		}
-		/** Run one slash command (e.g. `/plan-approve <doc>`) inside a session. */
-		async function commandExecute(agentId, line) {
-			return rpc("commands/execute", {
-				agentId,
-				line,
-				submittedAttachments: []
-			});
+		/**
+		* 注册输入桥槽位。
+		* @param ctx - 客户端根上下文（需已注入 `slots`）。
+		* @returns 注销函数；槽位不可用时返回空操作（桥挂不上不应拖垮整个插件）。
+		*/
+		function registerInputBridge(ctx) {
+			try {
+				return ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
+					name: "conversation.input.dock",
+					id: "dsh-plan-view:input-bridge",
+					order: 60,
+					registrant: "dsh-plan-view"
+				}, InputBridge));
+			} catch {
+				return () => {};
+			}
 		}
 		//#endregion
 		//#region src/client/PlanView.tsx
@@ -638,6 +687,30 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		const shortSession = (id) => id.replace(/^session-/, "").slice(0, 8);
 		const EXPLORE_PROMPT = (t) => `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档。`;
 		const ADVANCE_PROMPT = (t) => `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`;
+		function sessionsOf(ctx) {
+			try {
+				return ctx?.get?.("sessions");
+			} catch {
+				return;
+			}
+		}
+		/** 给会话改名，失败不阻断派单（deck 同款：命名是锦上添花）。 */
+		function renameSession(sessions, sessionId, title) {
+			try {
+				const scopeCtx = sessions.scope?.(sessionId);
+				const r = (scopeCtx !== void 0 ? sessions.sessionOf?.(scopeCtx) : void 0)?.rename?.(title);
+				if (r !== void 0 && typeof r.catch === "function") r.catch(() => {});
+			} catch {}
+		}
+		/** 注入走不通时的兜底：把指令复制到剪贴板，人手动粘贴。返回给用户看的话。 */
+		async function copyFallback(text) {
+			try {
+				await navigator.clipboard?.writeText(text);
+				return "指令已复制到剪贴板——粘贴到输入框确认后发送。";
+			} catch {
+				return "此环境连剪贴板都不可用，请手动把指令粘进输入框。";
+			}
+		}
 		function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose, readOnly }) {
 			const [fullBody, setFullBody] = (0, react.useState)(null);
 			const [busy, setBusy] = (0, react.useState)(null);
@@ -664,13 +737,28 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				window.addEventListener("keydown", onKey);
 				return () => window.removeEventListener("keydown", onKey);
 			}, [onClose]);
-			const openInGui = (sessionId) => {
-				if (ctx?.uiWorkspace?.openSession === void 0) {
-					setMsg("此环境没有跳转能力（uiWorkspace 不可用）。");
-					return false;
+			/**
+			* 把指令草稿送进目标会话的输入框。目标会话正开着就立即填；否则经输入桥挂
+			* 交接草稿后切过去，输入区随会话切换重挂时消费。都走不通退剪贴板。
+			*/
+			const deliverPrompt = async (sessionId, text, okMsg) => {
+				if (sessionId === void 0) {
+					setMsg(await copyFallback(text));
+					return;
 				}
-				ctx.uiWorkspace.openSession(sessionId);
-				return true;
+				try {
+					if (deliverDraft(sessionId, text) === "queued") {
+						const open = sessionsOf(ctx)?.open;
+						if (open === void 0) {
+							setMsg(await copyFallback(text));
+							return;
+						}
+						open(sessionId);
+					}
+					setMsg(okMsg);
+				} catch (e) {
+					setMsg(`打开 session 失败：${e.message}。${await copyFallback(text)}`);
+				}
 			};
 			/** Pure jump with the E1 liveness check. */
 			const jump = async (sessionId) => {
@@ -681,37 +769,46 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						setMsg("该 session 已不可用（可能已被回收）。");
 						return;
 					}
-					openInGui(sessionId);
+					const open = sessionsOf(ctx)?.open;
+					if (open === void 0) {
+						setMsg("此环境没有跳转能力（sessions 服务不可用）。");
+						return;
+					}
+					open(sessionId);
 				} catch (e) {
-					setMsg(`查询 session 失败：${e.message}`);
+					setMsg(`跳转失败：${e.message}`);
 				} finally {
 					setBusy(null);
 				}
 			};
-			/** Create a session bound to this repo, write the B1 binding, dispatch, jump. */
+			/** New session via the client runtime, write the B1 binding, prefill, jump. */
 			const createAndBind = async (promptText) => {
 				setMsg(null);
 				setRebind(false);
 				setBusy("create");
 				try {
-					const sessionId = await sessionCreate(scope.cwd);
+					const sessions = sessionsOf(ctx);
+					if (sessions?.create === void 0) {
+						setMsg(`此环境没有会话创建能力（sessions 服务不可用）。${await copyFallback(promptText)}`);
+						return;
+					}
+					const sessionId = await sessions.create(scope.cwd === void 0 ? {} : { cwd: scope.cwd });
 					const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`;
 					const raw = await fsRead(scope, target);
 					if (raw.kind === "text") await fsWrite(scope, target, upsertFrontmatterKey(raw.content, "session", sessionId));
-					await sessionPrompt(sessionId, promptText);
-					openInGui(sessionId);
+					renameSession(sessions, sessionId, `#${shortId(ticket)} ${ticket.title}`.slice(0, 60));
+					await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`);
 					onChanged();
-					setMsg(`已在新 session ${shortSession(sessionId)} 派活（非阻塞），绑定已写回票面。`);
 				} catch (e) {
 					setMsg(`派发失败：${e.message}`);
 				} finally {
 					setBusy(null);
 				}
 			};
-			/** ①/② dispatch on a ticket: jump back when bound, create when not. */
+			/** ①/② draft-first dispatch on a ticket: refill the bound session, else create one. */
 			const dispatchTicket = async (mode) => {
 				const promptText = mode === "explore" ? EXPLORE_PROMPT(ticket) : ADVANCE_PROMPT(ticket);
-				if (!ticket.session) {
+				if (ticket.session === void 0) {
 					await createAndBind(promptText);
 					return;
 				}
@@ -723,31 +820,22 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						setMsg("绑定的 session 已不可用。可新建 session 并重新绑定。");
 						return;
 					}
-					await sessionPrompt(ticket.session, promptText);
-					openInGui(ticket.session);
-					onChanged();
-					setMsg(`已派给 session ${shortSession(ticket.session)}（非阻塞）。`);
+					await deliverPrompt(ticket.session, promptText, `指令已填进 session ${shortSession(ticket.session)} 的输入框，确认后发送。`);
 				} catch (e) {
-					setMsg(`派发失败：${e.message}`);
+					setMsg(`查询 session 失败：${e.message}`);
 				} finally {
 					setBusy(null);
 				}
 			};
-			/** ③ 拍板: run /plan-approve in the origin session, or this one. */
+			/** ③ 拍板: prefill `/plan-approve <doc>` in the session the user is looking at. */
 			const settle = async () => {
 				setMsg(null);
 				setBusy("settle");
 				try {
-					let target = ticket.originSession;
-					if (target !== void 0) {
-						if (await sessionAlive(target) === void 0) target = void 0;
-					}
-					const at = target ?? scope.sessionId;
-					await commandExecute(at, `/plan-approve ${ticket.file}`);
+					await deliverPrompt(scope.sessionId, `/plan-approve ${ticket.file}`, "已把 /plan-approve 预填进当前会话输入框，确认后发送。");
 					onChanged();
-					setMsg(`已在 session ${shortSession(at)} 派 /plan-approve（非阻塞）。`);
 				} catch (e) {
-					setMsg(`拍板派发失败：${e.message}`);
+					setMsg(`拍板失败：${e.message}`);
 				} finally {
 					setBusy(null);
 				}
@@ -784,7 +872,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
 					actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
 				}
-				if (kind === "approval" && pending) actions.push(btn("✅ 拍板（派 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
+				if (kind === "approval" && pending) actions.push(btn("✅ 拍板（预填 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 			}
 			const jumps = [];
 			if (ticket.session !== void 0) jumps.push([ticket.session, "绑定 session"]);
@@ -5842,6 +5930,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		//#region src/client/index.tsx
 		const inject = ["betterSidebar", "slots"];
 		function apply(ctx) {
+			ctx.effect(() => registerInputBridge(ctx));
 			ctx.effect(() => registerPlanEntry(ctx));
 			ctx.effect(() => ctx.betterSidebar.registerTab({
 				id: PLAN_TAB_ID,

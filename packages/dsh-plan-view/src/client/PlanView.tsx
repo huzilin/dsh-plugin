@@ -10,9 +10,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  commandExecute, fsRead, fsTree, fsWrite, sessionAlive, sessionCreate, sessionList, sessionPrompt,
+  fsRead, fsTree, fsWrite, sessionAlive, sessionList,
   type SessionScope, type SessionSummary, type FsEntry,
 } from './api'
+import { deliverDraft } from './input-bridge'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -611,9 +612,11 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
 //
 // Every page opens the same modal, so the actions live here once: ① 开始推演 /
 // ② 推进 on a ticket, ③ 跳转 / 拍板 on a pending approval. Dispatch is
-// non-blocking by construction — session/prompt queues a message and returns —
-// and the binding (frontmatter `session:`) is written back here so the next
-// click jumps back into the same session instead of forking a new one.
+// draft-first (dsh-mattpocock-skills-deck 同款机制): the button fills the
+// instruction into the target session's composer via the input bridge and the
+// human reviews and sends it — nothing is queued behind the user's back. The
+// binding (frontmatter `session:`) is still written back here so the next
+// click lands in the same session instead of forking a new one.
 
 const shortSession = (id: string) => id.replace(/^session-/, '').slice(0, 8)
 
@@ -621,6 +624,42 @@ const EXPLORE_PROMPT = (t: ParsedTicket) =>
   `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档。`
 const ADVANCE_PROMPT = (t: ParsedTicket) =>
   `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`
+
+/**
+ * 客户端 runtime 的会话面（dsh-client-runtime ISessions 的实际用到子集，
+ * deck openTextInNewSession 同款契约）：create({cwd}) → SessionId；open(sid) 切换；
+ * scope(sid) + sessionOf(ctx) → SessionFace.rename(title) 改名。
+ */
+interface SessionsFace {
+  create(opts?: { cwd?: string }): Promise<string>
+  open(sessionId: string): void
+  scope?(sessionId: string): unknown
+  sessionOf?(scope: unknown): { rename?(title: string): Promise<unknown> } | undefined
+}
+
+function sessionsOf(ctx: any): SessionsFace | undefined {
+  try { return ctx?.get?.('sessions') as SessionsFace | undefined } catch { return undefined }
+}
+
+/** 给会话改名，失败不阻断派单（deck 同款：命名是锦上添花）。 */
+function renameSession(sessions: SessionsFace, sessionId: string, title: string): void {
+  try {
+    const scopeCtx = sessions.scope?.(sessionId)
+    const face = scopeCtx !== undefined ? sessions.sessionOf?.(scopeCtx) : undefined
+    const r = face?.rename?.(title)
+    if (r !== undefined && typeof (r as Promise<unknown>).catch === 'function') (r as Promise<unknown>).catch(() => {})
+  } catch { /* 命名失败忽略 */ }
+}
+
+/** 注入走不通时的兜底：把指令复制到剪贴板，人手动粘贴。返回给用户看的话。 */
+async function copyFallback(text: string): Promise<string> {
+  try {
+    await navigator.clipboard?.writeText(text)
+    return '指令已复制到剪贴板——粘贴到输入框确认后发送。'
+  } catch {
+    return '此环境连剪贴板都不可用，请手动把指令粘进输入框。'
+  }
+}
 
 function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose, readOnly }: {
   ticket: ParsedTicket
@@ -655,13 +694,22 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const openInGui = (sessionId: string): boolean => {
-    if (ctx?.uiWorkspace?.openSession === undefined) {
-      setMsg('此环境没有跳转能力（uiWorkspace 不可用）。')
-      return false
+  /**
+   * 把指令草稿送进目标会话的输入框。目标会话正开着就立即填；否则经输入桥挂
+   * 交接草稿后切过去，输入区随会话切换重挂时消费。都走不通退剪贴板。
+   */
+  const deliverPrompt = async (sessionId: string | undefined, text: string, okMsg: string) => {
+    if (sessionId === undefined) { setMsg(await copyFallback(text)); return }
+    try {
+      if (deliverDraft(sessionId, text) === 'queued') {
+        const open = sessionsOf(ctx)?.open
+        if (open === undefined) { setMsg(await copyFallback(text)); return }
+        open(sessionId)
+      }
+      setMsg(okMsg)
+    } catch (e) {
+      setMsg(`打开 session 失败：${(e as Error).message}。${await copyFallback(text)}`)
     }
-    ctx.uiWorkspace.openSession(sessionId)
-    return true
   }
   /** Pure jump with the E1 liveness check. */
   const jump = async (sessionId: string) => {
@@ -669,54 +717,50 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
     try {
       const live = await sessionAlive(sessionId)
       if (live === undefined) { setMsg('该 session 已不可用（可能已被回收）。'); return }
-      openInGui(sessionId)
-    } catch (e) { setMsg(`查询 session 失败：${(e as Error).message}`) }
+      const open = sessionsOf(ctx)?.open
+      if (open === undefined) { setMsg('此环境没有跳转能力（sessions 服务不可用）。'); return }
+      open(sessionId)
+    } catch (e) { setMsg(`跳转失败：${(e as Error).message}`) }
     finally { setBusy(null) }
   }
-  /** Create a session bound to this repo, write the B1 binding, dispatch, jump. */
+  /** New session via the client runtime, write the B1 binding, prefill, jump. */
   const createAndBind = async (promptText: string) => {
     setMsg(null); setRebind(false); setBusy('create')
     try {
-      const sessionId = await sessionCreate(scope.cwd)
+      const sessions = sessionsOf(ctx)
+      if (sessions?.create === undefined) {
+        setMsg(`此环境没有会话创建能力（sessions 服务不可用）。${await copyFallback(promptText)}`)
+        return
+      }
+      const sessionId = await sessions.create(scope.cwd === undefined ? {} : { cwd: scope.cwd })
       const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`
       const raw = await fsRead(scope, target)
       if (raw.kind === 'text') await fsWrite(scope, target, upsertFrontmatterKey(raw.content, 'session', sessionId))
-      await sessionPrompt(sessionId, promptText)
-      openInGui(sessionId)
+      renameSession(sessions, sessionId, `#${shortId(ticket)} ${ticket.title}`.slice(0, 60))
+      await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`)
       onChanged()
-      setMsg(`已在新 session ${shortSession(sessionId)} 派活（非阻塞），绑定已写回票面。`)
     } catch (e) { setMsg(`派发失败：${(e as Error).message}`) }
     finally { setBusy(null) }
   }
-  /** ①/② dispatch on a ticket: jump back when bound, create when not. */
+  /** ①/② draft-first dispatch on a ticket: refill the bound session, else create one. */
   const dispatchTicket = async (mode: 'explore' | 'advance') => {
     const promptText = mode === 'explore' ? EXPLORE_PROMPT(ticket) : ADVANCE_PROMPT(ticket)
-    if (!ticket.session) { await createAndBind(promptText); return }
+    if (ticket.session === undefined) { await createAndBind(promptText); return }
     setMsg(null); setBusy(mode)
     try {
       const live = await sessionAlive(ticket.session)
       if (live === undefined) { setRebind(true); setMsg('绑定的 session 已不可用。可新建 session 并重新绑定。'); return }
-      await sessionPrompt(ticket.session, promptText)
-      openInGui(ticket.session)
-      onChanged()
-      setMsg(`已派给 session ${shortSession(ticket.session)}（非阻塞）。`)
-    } catch (e) { setMsg(`派发失败：${(e as Error).message}`) }
+      await deliverPrompt(ticket.session, promptText, `指令已填进 session ${shortSession(ticket.session)} 的输入框，确认后发送。`)
+    } catch (e) { setMsg(`查询 session 失败：${(e as Error).message}`) }
     finally { setBusy(null) }
   }
-  /** ③ 拍板: run /plan-approve in the origin session, or this one. */
+  /** ③ 拍板: prefill `/plan-approve <doc>` in the session the user is looking at. */
   const settle = async () => {
     setMsg(null); setBusy('settle')
     try {
-      let target = ticket.originSession
-      if (target !== undefined) {
-        const live = await sessionAlive(target)
-        if (live === undefined) target = undefined
-      }
-      const at = target ?? scope.sessionId
-      await commandExecute(at, `/plan-approve ${ticket.file}`)
+      await deliverPrompt(scope.sessionId, `/plan-approve ${ticket.file}`, '已把 /plan-approve 预填进当前会话输入框，确认后发送。')
       onChanged()
-      setMsg(`已在 session ${shortSession(at)} 派 /plan-approve（非阻塞）。`)
-    } catch (e) { setMsg(`拍板派发失败：${(e as Error).message}`) }
+    } catch (e) { setMsg(`拍板失败：${(e as Error).message}`) }
     finally { setBusy(null) }
   }
 
@@ -744,7 +788,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
         actions.push(btn('▶ 推进', () => void dispatchTicket('advance'), 'advance'))
       }
     }
-    if (kind === 'approval' && pending) actions.push(btn('✅ 拍板（派 /plan-approve）', () => void settle(), 'settle', '#4ed17e'))
+    if (kind === 'approval' && pending) actions.push(btn('✅ 拍板（预填 /plan-approve）', () => void settle(), 'settle', '#4ed17e'))
   }
   const jumps: [string, string][] = []
   if (ticket.session !== undefined) jumps.push([ticket.session, '绑定 session'])
@@ -1860,14 +1904,14 @@ function GuideView({ scope }: { scope: SessionScope }) {
         </div>
         <P style={{ marginTop: 2 }}>
           <strong style={{ color: TEXT }}>回写发生在两处，是同一件事的两种时机</strong>：执行类 skill 在每张票合并落地时<strong style={{ color: TEXT }}>当场</strong>翻状态；
-          <Code>plan-sync</Code> 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两条流程。
+          <Code>plan-sync</Code> 事后对账，把「看起来已完成、票面没翻」的条目找回补齐。两者不是两套流程。
         </P>
 
-        <H>补充流程：执行中暴露的问题</H>
+        <H>补充流程：需要拍板的问题 / 缺口</H>
         <P>「<strong style={{ color: TEXT }}>发现一个 bug / 缺口</strong>」时走这条链——先拍板定论，依据就是拍板文档本身。</P>
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', margin: '10px 0' }}>
-          <Box title="发现" who="find-bug" tone="decide">
-            执行 / 测试中暴露的问题
+          <Box title="问题发现" who="用户反馈 / code review / 走查 / QA 缺陷升级" tone="decide">
+            需要拍板定论的问题 / 缺口
           </Box>
           <Arrow />
           <Box title="待拍板文档" who="to-approval → plan-approve" tone="decide">
