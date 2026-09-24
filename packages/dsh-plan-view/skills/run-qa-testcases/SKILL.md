@@ -75,7 +75,7 @@ disable-model-invocation: false
 ## 自检（出结论前逐条过，任一 blocker 不过不许出结论）
 
 - [ ] （blocker）执行用例全部来自 cases.md，无现场自造用例；测例集缺口已退回 to-qa-testcases 或显式降险
-- [ ] （blocker）prd 全部 AC 在 test.md §4 逐条给出三态之一，无缺项；每条结论可追溯到用例编号或直接证据
+- [ ] （blocker）spec 全部 AC 在 test.md §4 逐条给出三态之一，无缺项；每条结论可追溯到用例编号或直接证据
 - [ ] （blocker）有 UI 则 P 组 §3 截图记录齐备且原型逐条 diff 无未解释差距；无 UI 显式声明；纯协议通道未对 UI 出「通过」
 - [ ] （blocker）用户验收环境的现有数据已过一次期望矩阵巡检（或验证环境即用户环境）
 - [ ] （blocker）每条缺陷文件（`DEF-NN-*.md`）E 节「最小复现入口」齐备且末次运行为红
