@@ -13,16 +13,16 @@ General-purpose agent skills, adapted from [Matt Pocock's skills](https://github
 
 ## Skills
 
-Five of these — `wayfinder`, `grill-me`, `research`, `prototype`, `domain-modeling` — live directly in this directory, because they ship as the Claude Code plugin (wayfinder plus the four skills its method invokes by name). The rest are optional extras under [`.optional/`](./.optional/) — copy over whichever you want alongside the core five. `to-approval` and `plan-approve` sit directly here too, kept alongside the core five rather than in `.optional/`.
+Most skills live directly in this directory and install by default. The rest are optional extras under [`.optional/`](./.optional/) — copy over whichever you want.
 
 **User-invoked** — reached by typing their name; their job is to orchestrate a session.
 
 - **[grill-me](./grill-me/SKILL.md)** — a relentless interview to sharpen a plan or design, one question at a time.
-- **[grill-with-docs](./.optional/grill-with-docs/SKILL.md)** — grill-me plus live domain-model upkeep: updates `CONTEXT.md` and ADRs as decisions crystallise.
+- **[grill-with-docs](./grill-with-docs/SKILL.md)** — grill-me plus live domain-model upkeep: updates `CONTEXT.md` and ADRs as decisions crystallise.
 - **[handoff](./.optional/handoff/SKILL.md)** — compact the current conversation into a handoff document (`.plan/handoffs/`) so a fresh agent can continue.
-- **[improve-codebase-architecture](./.optional/improve-codebase-architecture/SKILL.md)** — scan for deepening opportunities, present as a visual HTML report, then grill through the chosen one.
+- **[improve-codebase-architecture](./improve-codebase-architecture/SKILL.md)** — scan for deepening opportunities, present as a visual HTML report, then grill through the chosen one.
 - **[to-spec](./.optional/to-spec/SKILL.md)** — synthesize the current conversation into a spec at `.plan/<slug>/spec.md`.
-- **[to-tickets](./.optional/to-tickets/SKILL.md)** — break a plan or spec into tracer-bullet tickets at `.plan/<slug>/tickets.md`.
+- **[to-tickets](./to-tickets/SKILL.md)** — break a plan or spec into tracer-bullet tickets at `.plan/<slug>/tickets.md`.
 - **[to-approval](./to-approval/SKILL.md)** — expand a decision stated too tersely to act on into a readable approval document at `.plan/`, carrying a status header so it stays trackable.
 - **[plan-approve](./plan-approve/SKILL.md)** — work the set of `.plan/` documents waiting on the human: re-verify each `pending` item, report the ones already settled, put the live ones in one batch, then record the rulings and advance each document's status.
 - **[wayfinder](./wayfinder/SKILL.md)** — chart a big, foggy effort as a map of investigation tickets, resolved one per session. Storage is adapter-specific; the default is [local markdown](./wayfinder/TRACKER-MARKDOWN.md) under `.plan/<slug>/`.
