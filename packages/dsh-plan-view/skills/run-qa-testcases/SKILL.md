@@ -5,7 +5,6 @@ description: >-
   更新回归基线。支持单实施图与 full 全量回归两种调用。Use whenever asked to 跑用例/跑测试/执行测例/
   测试执行/跑回归/回归测试/复测/执行验收/出验收报告/帮我测一下/只测一个接口, or to test a
   feature/API/flow/page or do QA acceptance; also 缺陷登记/记缺陷/建缺陷台账/缺陷复盘.
-  造数禁令/验收五维 DoD/验收清单/真模型 E2E/sqlite 替身语义的正本全在本 skill references/。
   写用例/设计用例/用例设计/建测例资产 用 to-qa-testcases；失败根因定位用 diagnosing-bugs。
 disable-model-invocation: false
 ---
@@ -91,4 +90,4 @@ disable-model-invocation: false
 - 不写用例、不改用例设计（用户渠道缺口回写补进 cases.md 是登记纪律，不是重新设计）；测例集构建归 `to-qa-testcases`。
 - 不定位根因、不修 bug（`diagnosing-bugs`）；本 skill 只保证缺陷条目让诊断零重建。
 - 不替代用户验收：用户验收节点保留，本 skill 目标是把「呈现/语义类」问题在用户验收前消化掉。
-- plan-lint 自 2026-09-24 起查 `qa/` 缺陷档的围栏与状态头（DEF- 前缀无围栏、缺四字段均报）；正文字段行形状 lint 不查，仍靠本自检与人工复核兜。
+- plan-lint 查 `qa/` 缺陷档的围栏与状态头（DEF- 前缀无围栏、缺四字段均报）；正文字段行形状 lint 不查，仍靠本自检与人工复核兜。

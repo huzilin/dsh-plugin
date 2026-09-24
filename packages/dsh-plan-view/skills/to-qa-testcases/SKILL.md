@@ -2,8 +2,7 @@
 name: to-qa-testcases
 description: >-
   构建测例：设计依据八源盘点 → 用例设计（A/B/P/C/D/U 六组，有 UI 必设 P 组页面预期 P-1 UI 呈现 +
-  P-2 使用交互）→ 可执行资产三原则。产出 .plan/<effort>/qa/cases.md + 环境一键重建/驱动一键复跑/
-  结果可对比资产。Use whenever asked to 写测试用例/写用例/设计用例/用例设计/补用例/建测例资产,
+  P-2 使用交互）→ 可执行资产三原则。Use whenever asked to 写测试用例/写用例/设计用例/用例设计/补用例/建测例资产,
   or to build test cases / test-suite assets for a feature/API/flow/page (纯页面验收/只要 P 组/页面走查清单 = 纯页面验收形态). 跑用例/执行/验收/回归/
   复测/缺陷登记 用 run-qa-testcases；失败根因定位用 diagnosing-bugs。
 disable-model-invocation: false
