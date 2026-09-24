@@ -29,7 +29,7 @@
 
 **库态对账**：`sql()` 只读直查 scratch 库；`audit_count(table, row, action, field, by)` 按审计行计数对账「谁在何时改了什么」——竞速类缺陷（BUG-009 幽灵评审位）就是靠 audit_log id 先后序实证的。
 
-**环境成对**：`qa_env_up.sh` 建 scratch 库 + 迁移 + seed + 起服务；`qa_env_down.sh` 按端口杀进程 + DROP scratch 库，绝不触联调库 `wbflow`。
+**环境成对**：`qa_env_up.sh` 建 scratch 库 + 迁移 + seed + 起服务；`qa_env_down.sh` 按端口杀进程 + DROP scratch 库，绝不触联调库 `wbflow`。（独库型隔离 = 并发维度取「环境」的实现方式之一，非默认要求；默认按业务域维度隔离，见骨架 §二「并发与环境红线」）
 
 **多轮以末轮为准**：5 轮执行，前 4 轮修正的全是驱动侧问题（docs root 解析、anchor 契约嵌套、operator 归属、update 全量字段），执行报告 §2 逐条列出，与产品缺陷分开——这就是骨架 test.md §2「过程有效性」的来源。
 
