@@ -4,7 +4,7 @@ description: Settle the plan documents waiting on you — read every pending doc
 disable-model-invocation: true
 ---
 
-**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（to-tickets；整轮归档归 plan-archive）、交接契约与文档形态约定，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层，先读那份再读本文件的 how）。
+**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（to-tickets；整轮归档归 plan-archive）、交接契约与文档形态约定，见 `plan-protocol` skill（公共协议层，先读那份再读本文件的 how）。
 
 You have decisions waiting. They are scattered across the `.plan/` documents that carry `status: pending`, some written days ago, some overtaken by later work, some still live. Reading them one at a time to find out which is which is the work this skill removes.
 
@@ -52,7 +52,7 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
    - **When the ruling calls for work, produce the ticket by invoking `to-tickets`** — not by hand-writing a file, and not by noting the follow-up in prose and calling it filed. The ruling is not recorded until the ticket exists; name it in the record and link it beside the quoted ruling. A ticket invented by the settling session is shaped by whatever that session felt like, which is how one repo accumulates several incompatible ticket formats that no view can read.
    - **Tickets go one file each**, at `.plan/<effort>/tickets/<id>-<slug>.md`, with frontmatter `type` / `blocked_by` / `status`. `to-tickets` defaults to a single combined `tickets.md`; override that — a reader that loads tickets file-by-file counts a combined file as one ticket and silently loses every ticket inside it.
    - When no ruling calls for work (a question of fact, a choice among existing options), there is nothing to file.
-    - **If the ruling changes an architectural fact, update the charter.** When a ruling settles a bug, gap, or design question whose answer alters the system's layering, domain boundaries, state machines, contracts, or dependency edges — and the repo keeps a single architecture source of truth (e.g. `docs/architecture.md`, self-declared "全局架构唯一正本") — correct that document in the same pass. This is the architecture-charter touchpoint for the *supplementary flow* (find-bug → to-approval → plan-approve): a bug fix that silently contradicts the charter is how the charter rots. Do not duplicate the ruling into the charter; update the facts and keep its document map pointing at the approval document that decided it. If the ruling changes no architectural fact, skip this step.
+    - **If the ruling changes an architectural fact, update the charter.** When a ruling settles a bug, gap, or design question whose answer alters the system's layering, domain boundaries, state machines, contracts, or dependency edges — and the repo keeps a single architecture source of truth (e.g. `docs/architecture.md`, self-declared "全局架构唯一正本") — correct that document in the same pass. This is the architecture-charter touchpoint for the *supplementary flow* (problem report → to-approval → plan-approve): a bug fix that silently contradicts the charter is how the charter rots. Do not duplicate the ruling into the charter; update the facts and keep its document map pointing at the approval document that decided it. If the ruling changes no architectural fact, skip this step.
 
    A ruling written only in chat is lost the moment the session ends.
 
@@ -64,9 +64,11 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
    Then add the stale-marker to any section whose items are gone: what replaced it, when, and what the document is still good for. Never leave a document at `pending` once its items are settled — that is precisely the lie this skill exists to catch.
 
-8. **Leave settled documents in place — file movement belongs to the round archive.** Do not `git mv` closed documents out of `.plan/` here. Every document is a member of the round that raised it (the grill / wayfinder / find-bug → impl chain), and moving one file alone breaks that round's directory integrity. When the round completes, `plan-archive` moves the whole round into `.archive/rounds/<round-id>/` in one piece. This step advances statuses (step 7) and moves nothing — so no path sweep is needed here either.
+8. **Leave settled documents in place — file movement belongs to the round archive.** Do not `git mv` closed documents out of `.plan/` here. Every document is a member of the round that raised it (the grill / wayfinder / problem-report → impl chain), and moving one file alone breaks that round's directory integrity. When the round completes, `plan-archive` moves the whole round into `.archive/rounds/<round-id>/` in one piece. This step advances statuses (step 7) and moves nothing — so no path sweep is needed here either.
 
 9. **Open anything the human must read now.** A document that needs a ruling, or that records one, goes to the sidebar. A path alone makes them go fetch it.
+
+10. **Re-run the lint before closing.** Run the same script from step 1 once more, after the last status write. A settling pass that ends red introduced drift while writing — fix it in the same pass (the 形态契约变更回扫 clause in plan-protocol §三 makes this the contract, not a courtesy), then report. Exit green or say plainly why you did not.
 
 ## Completion criterion
 

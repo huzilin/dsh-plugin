@@ -57,7 +57,8 @@ PY
 for src in "$SKILLS_SRC"/*/; do
   skill="$(basename "$src")"
   case "$skill" in
-    grill-me)        skill_id="grilling" ;;
+    grill-me)        skill_id="mp-grill-me" ;;
+    grilling)        skill_id="mp-grilling" ;;
     to-approval)     skill_id="mp-to-approval" ;;
     plan-approve)    skill_id="mp-plan-approve" ;;
     plan-sync)       skill_id="mp-plan-sync" ;;

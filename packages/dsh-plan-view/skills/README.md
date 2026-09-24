@@ -32,6 +32,8 @@ Most skills live directly in this directory and install by default. The rest are
 
 - **[codebase-design](./.optional/codebase-design/SKILL.md)** — shared vocabulary and principles for designing deep modules.
 - **[domain-modeling](./domain-modeling/SKILL.md)** — actively build and sharpen the project's domain model (`CONTEXT.md`, `docs/adr/`).
+- **[grilling](./grilling/SKILL.md)** — the relentless interview itself: design-tree rounds, one frontier at a time, questions written to an approval document before they are asked. [grill-me](./grill-me/SKILL.md) is the user-invoked router that reaches it.
+- **[domain-modeling](./domain-modeling/SKILL.md)** — actively build and sharpen the project's domain model (`CONTEXT.md`, `docs/adr/`).
 - **[prototype](./prototype/SKILL.md)** — throwaway code that answers a design question: an interactive terminal app for logic/state questions, or radically different UI variants behind one switcher.
 - **[research](./research/SKILL.md)** — investigate a question against primary sources and capture cited findings as markdown.
 - **[to-qa-testcases](./to-qa-testcases/SKILL.md)** — build an effort's test suite: design-source inventory → case design → executable assets, written to `.plan/<effort>/qa/cases.md` (cases carry no frontmatter; only the defect ledger does).

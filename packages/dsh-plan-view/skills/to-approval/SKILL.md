@@ -4,7 +4,7 @@ description: Expand a decision the agent stated too tersely to act on — a bare
 disable-model-invocation: true
 ---
 
-**本 skill 是 plan 流程的环节之一。** 它的位置、下游（plan-approve）、交接契约与文档形态约定，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层，先读那份再读本文件的 how）。
+**本 skill 是 plan 流程的环节之一。** 它的位置、下游（plan-approve）、交接契约与文档形态约定，见 `plan-protocol` skill（公共协议层，先读那份再读本文件的 how）。
 
 The agent said something like "W1 needs your call" or "confirm option B" — accurate, and unusable. The human cannot decide from it: the id means nothing to them, the context lives only in the agent's head, and the tradeoff was never written down. So they ask for it expanded, and an approval document is born.
 

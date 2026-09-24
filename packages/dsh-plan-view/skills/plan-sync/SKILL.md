@@ -4,7 +4,7 @@ description: Reconcile `.plan/` tickets with what actually shipped — read ever
 disable-model-invocation: true
 ---
 
-**本 skill 是 plan 流程的环节之一（落地链收尾对账）。** 它在流程中的位置、回写两时机的约定、与 implement* 的分工，见同仓 `skills/plan-protocol/SKILL.md`（公共协议层）。
+**本 skill 是 plan 流程的环节之一（落地链收尾对账）。** 它在流程中的位置、回写两时机的约定、与 implement* 的分工，见 `plan-protocol` skill（公共协议层）。
 
 A ticket's `status` is a claim, and nothing enforces it. Work gets finished in a session that never went back to turn the field; other work gets marked done and the acceptance boxes stay empty. The ticket file then tells the next session something untrue — either "still to do" about finished work, or "finished" with no evidence for it.
 
@@ -40,9 +40,11 @@ This skill closes that loop. It is the fourth step of the lifecycle the plan vie
    - **Tick the acceptance boxes that the evidence supports.** Tick only those; a box you cannot substantiate stays empty, and the box that stays empty is the honest record of what was claimed but not shown.
    - **Append a one-line landing note** naming the commit or merge and anything still open, in the ticket's own language. The note is what a later reader trusts when the status looks surprising.
 
-6. **Commit the batch.** One commit for the reconciliation, listing the tickets touched and the direction each moved. Do not mix it with other work — the whole point is that this change is auditable on its own.
+6. **Re-run the lint before committing.** Same script as step 1, after the last ticket write-back. A reconciliation pass that ends red introduced drift while writing — fix it in the same pass, then commit.
 
-7. **Report what you could not settle.** Tickets left open despite looking finished are the useful output: they name work whose evidence is missing, which is either a real gap or a ticket too vaguely written to verify. Both are worth the human's attention.
+7. **Commit the batch.** One commit for the reconciliation, listing the tickets touched and the direction each moved. Do not mix it with other work — the whole point is that this change is auditable on its own.
+
+8. **Report what you could not settle.** Tickets left open despite looking finished are the useful output: they name work whose evidence is missing, which is either a real gap or a ticket too vaguely written to verify. Both are worth the human's attention.
 
 ## What this is not
 
