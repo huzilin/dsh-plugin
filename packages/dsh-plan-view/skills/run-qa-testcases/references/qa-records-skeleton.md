@@ -81,7 +81,7 @@ origin: <readability-rescue / proactive / review / retrospective>
 
 ```
 - 严重度: <S1 严重 / S2 一般 / S3 轻微 / S4 建议；优先级 P0~P3 一并写>
-- 类型: <rd / fe / arch / docs——既有 role_id，不用 backend/frontend>
+- 类型: <rd / fe / arch / docs，不用 backend/frontend>
 - Assignee: <指派>
 - 状态: <待修复 / 已确认 / 修复中 / 待复测 / 已关闭 / 挂起，六词照用、允许附注（如「已关闭（复测 PASS）」）——插件取首词匹配>
 - 关联用例: <用例号，如 A-06 / B-08；多个逗号分隔>

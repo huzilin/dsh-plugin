@@ -41,7 +41,7 @@ disable-model-invocation: false
 
 4. **缺陷条目（一缺陷一文件，`DEF-NN-<slug>.md`）**：每条缺陷独立一个文件，按骨架补**真 frontmatter 状态头**（`type: qa-defect` + 四字段，围栏/引用块=插件读不到），正文 `# DEF-NN 标题` + 字段行（严重度/类型/Assignee/状态/关联用例/发现源/测试设计缺口），A~E 五节登记，**E 节「最小复现入口」必填**（一条命令 + 环境变量 + 预期红信号，见「交接契约」；fe 缺陷的命令 = `npx playwright test -g <用例编号>`，协议通道缺陷仍走原驱动脚本）；登记**发现源**（QA 轮 / 用户）与**测试设计缺口**——用户渠道缺陷必填缺哪个源/维度/通道，缺口**当轮**补进 cases.md 并按案例库格式追加 `to-qa-testcases/references/case-library.md`；详情文本写「票 NN」「挂账-NN」即可被串联视图挂链。
 
-5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`，既有 role_id）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；项目有评审/推进工具链时按其路由把缺陷推到 resolve/confirm/reopen。
+5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；项目有评审/推进工具链时按其路由把缺陷推到 resolve/confirm/reopen。
 6. **票面测试标记回写**：本轮测例全部执行完 → 给被测票 frontmatter 写 `qa_tested: true`；验收通过（AC 全过 + 该票无未关闭缺陷）→ 写 `qa_accepted: true`。三标记与 `qa_cases`（to-qa-testcases 写）一起在票卡/详情徽标展示。
 
 7. **落盘 + 自检**：test.md / DEF-NN 缺陷档 / screenshots/ 落 `.plan/<effort>/qa/` → 按本 skill「自检」逐条过 → **收尾跑 plan-lint**（脚本随本 skill 安装：`bash <本 skill 目录>/scripts/plan-lint.sh <repo>/.plan`；0 发现或当轮修复才收口）→ 按项目产物登记惯例登记 test.md / 缺陷台账 / 资产 link → 台账全部关闭时把 frontmatter `status` 翻 `closed`（仍有未关闭保持 `active`）→ 提评/推进。
