@@ -74,9 +74,9 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 
 **交接契约（硬规则）**：
 
-1. **票的格式由 `to-tickets` 独占**——它是票格式正本 + 被 `plan-approve` 调用的生成器，输入必须是 spec / 待拍板文档 / 推演地图，不能是裸结论；调它时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件。**落票的时机是合法集合**，不限字面调用本 skill：①拍板结算（`plan-approve` 调 `to-tickets`）；②挂账恢复转票（见 §三 挂账台账「恢复口径」）；③修复会话按拍板档立返工票。无论哪个时机落票，格式必须与 `to-tickets` 产出一致（一票一文件 + frontmatter `type` / `blocked_by` / `status`），plan-lint 兜底校验。
+1. **票的格式由 `to-tickets` 独占**——它是落地链的票格式正本 + 被 `plan-approve` 调用的生成器（wayfinder 图内的推演票不走 to-tickets，走 §三的同构 TRACKER-MARKDOWN 契约），输入必须是 spec / 待拍板文档 / 推演地图，不能是裸结论；调它时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件。**落票的时机是合法集合**，不限字面调用本 skill：①拍板结算（`plan-approve` 调 `to-tickets`）；②挂账恢复转票（见 §三 挂账台账「恢复口径」）；③修复会话按拍板档立返工票。无论哪个时机落票，格式必须与 `to-tickets` 产出一致（一票一文件 + frontmatter `type` / `blocked_by` / `status`），plan-lint 兜底校验。
 2. **回写发生在两处，是同一件事的两种时机**：`implement*` 在每张票合并落地时**当场**翻状态；`plan-sync` 事后对账补齐。两者不是两套流程。
-3. **执行登记（多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——`status: claimed` + `claimed_by: <agent 名>` + `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
+3. **执行登记（多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——frontmatter 形态票写 `status: claimed` + `claimed_by: <agent 名>` + `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）；wayfinder 推导形态票写 `claimed_by` + `claimed_at`，不写 `status`（格式契约见 TRACKER-MARKDOWN）。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
 4. **`plan-approve` 是「决策 → 票」的主转化点**：拍板结论是「做 X」时，必须调 `to-tickets` 落票，否则结论只是聊天记录，下次会话丢失。挂账恢复转票与修复返工票是另外两个合法落票时机（见规则 1），不需要先有拍板文档在手——依据分别是台账「恢复口径」与拍板档结论。
 5. **架构正本（如 `docs/architecture.md`，项目自declare「全局架构唯一正本」者）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，也在末步更新。它不新建——已存在就维护。
 6. **QA 缺陷环不经过拍板**：缺陷档（`DEF-NN`）是返工依据，修复交 `diagnosing-bugs`（按 E 节「最小复现入口」契约，修复只回写 C 节），复测回 `run-qa-testcases` 用同一条命令翻绿；票面 `qa_cases` / `qa_tested` / `qa_accepted` 三标记由测试两 skill 写入，验收条件 = AC 全过 + 该票无未关闭缺陷；缺陷暴露需求级分歧时才转 `to-approval`。
@@ -94,8 +94,8 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **effort 标志**：目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `tickets/` 目录不被读取。
 - **非治理目录**：`.plan/handoffs/`（handoff 交接文档产物区）不属 plan 生态——视图不加载、`plan-lint` 跳过（不查缺 map / 状态头 / 同票双档）。
 - **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`/`impl`，终点=落码验收）。落地工单 `type` 统一写 `task`（`impl` 为早期别名，不再新用）。
-- **票面 `status` 词表**（工单 frontmatter，执行态与终态）：执行中 = `claimed`（登记格式见「执行登记」硬规则）；终态按票型分——实施图票 `task` / `impl` 终态 = `done`；推演图票 `research` / `prototype` / `grilling` 终态 = `resolved`（允许附日期 `resolved <YYYY-MM-DD>`）。
-- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无 `status` 的文件归「说明 / 杂项」类；无 `type` 但有 `status` 的旧格式/手写票按其 `status` 归工单（兼容桥——wayfinder 现行票格式本就写 `type`，此形态只剩存量，新写票一律带 `type`）。
+- **票面 `status` 词表**（工单 frontmatter，执行态与终态）：执行中 = `claimed`（登记格式见「执行登记」硬规则）；终态按票型分——实施图票 `task` / `impl` 终态 = `done`；推演图票 `research` / `prototype` / `grilling` 终态 = `resolved`（允许附日期 `resolved <YYYY-MM-DD>`）。票态有两种合法形态：**frontmatter 形态**（to-tickets 系，`status` 写在 frontmatter）；**wayfinder 推导形态**（`status` 不入 frontmatter，由收束节推导——`## Answer` 带正文 = `resolved`、`## Ruled out` 带正文 = `out_of_scope`、`claimed_by` 在位 = `claimed`、其余 = `open`）。两形态共享同一 type 词表；推导形态的格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`。
+- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无 `status` 的文件归「说明 / 杂项」类；无 `type` 但有 `status` 的存量手写票按其 `status` 归工单（兼容形态，新写票一律带 `type`）。
 - **缺陷条目**（`type: qa-defect`，**一缺陷一文件**）：`.plan/<effort>/qa/DEF-NN-<slug>.md`，frontmatter `type: qa-defect` + 状态头，正文 `# DEF-NN 标题` + 固定字段行 `- 严重度:`、`- 类型:`（rd/fe/arch/docs）、`- Assignee:`、`- 状态:`（待修复/已确认/修复中/待复测/已关闭/挂起，取首词匹配、允许附注）、`- 关联用例:`、`- 发现源:`、`- 测试设计缺口:`，其后 A~E 五节（E 节最小复现入口必填——骨架正本见 run-qa-testcases `references/qa-records-skeleton.md`）。
   - **串联**：缺陷与票/挂账的串联靠详情文本写「票 NN」「挂账-NN」。
   - **识别**：qa 目录内不带 `type: qa-defect` 的文件不被视图识别；旧「单文件多小节」形态（`qa/defect.md` 清单总览表）只读兼容——归档轮快照是旧形态，现行一律一缺陷一文件。
