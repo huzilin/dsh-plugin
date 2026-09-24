@@ -1,13 +1,13 @@
 # run-qa-testcases · 骨架正本（《执行验收记录》test.md + 《缺陷台账》defect.md）
 
-> 本文件是两份执行侧产物章节骨架的**唯一权威**（2026-09-20 票 02 自 to-qa-testcases 骨架迁入，口径按当日裁定修毕）。章节名稳定：SKILL.md 的 Process / 自检按 §编号引用本骨架，下游（diagnosing-bugs、下一轮回归）按章节名取料。**不自造小标题、不重排**；按需节标 ⭕，其余必填。
+> 本文件是两份执行侧产物章节骨架的**唯一权威**。章节名稳定：SKILL.md 的 Process / 自检按 §编号引用本骨架，下游（diagnosing-bugs、下一轮回归）按章节名取料。**不自造小标题、不重排**；按需节标 ⭕，其余必填。
 > 《用例设计》cases.md 骨架与可执行资产三原则的正本在 `to-qa-testcases/references/testsuite-skeleton.md`——本 skill 消费它，不复述它。
 
 ---
 
 ## 一、《执行验收记录》`.plan/<effort>/qa/test.md`
 
-> 落点：`.plan/<effort>/qa/test.md`。**本文件不加 frontmatter 状态头**——qa 三件套中只有 `defect.md` 加头（裁定⑧），本文件保持纯正文形态，不被 plan 视图识别。
+> 落点：`.plan/<effort>/qa/test.md`。**本文件不加 frontmatter 状态头**——qa 三件套中只有 `defect.md` 加头，本文件保持纯正文形态，不被 plan 视图识别。
 
 ### §0 基本信息
 被测对象 / 阶段 / 环境 / 执行方式（协议通道 + 呈现通道）/ 轮次（以末轮为准）/ 报告日期。
@@ -56,7 +56,7 @@ P-1 UI 呈现与 P-2 使用交互分两表落三态，逐条挂截图（落 `qa/
 
 ## 二、《缺陷条目》`.plan/<effort>/qa/DEF-NN-<slug>.md`（一缺陷一文件）
 
-> 落点：每条缺陷独立一个文件 `.plan/<effort>/qa/DEF-NN-<slug>.md`（2026-09-21 拍板；原单文件 `defect.md` 多小节形态**只读兼容**——归档轮快照是旧形态，现行一律拆文件）。文件名 slug 取标题短语（去标点空格，≤14 字）。
+> 落点：每条缺陷独立一个文件 `.plan/<effort>/qa/DEF-NN-<slug>.md`（原单文件 `defect.md` 多小节形态**只读兼容**——归档轮快照是旧形态，现行一律拆文件）。文件名 slug 取标题短语（去标点空格，≤14 字）。
 
 ### 文件状态头（必须是真 frontmatter）
 

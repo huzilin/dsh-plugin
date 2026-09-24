@@ -12,7 +12,7 @@ disable-model-invocation: false
 
 # run-qa-testcases（跑测例 + 缺陷管理）
 
-输入 = `to-qa-testcases` 产出的 `.plan/<effort>/qa/cases.md` 与仓库 `qa/` 可执行资产（env_up/env_down、驱动脚本、诊断最小环）。本 skill 跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。产物落 `.plan/<effort>/qa/test.md` + 一缺陷一文件的 `.plan/<effort>/qa/DEF-NN-<slug>.md`（2026-09-21 拍板，原单文件 defect.md 形态废弃）+ `qa/screenshots/`（可执行脚本留仓库 `qa/`）。 无图归属的缺陷（SOP 回测 / 整页回测发现）落根层 `.plan/qa/DEF-*.md`，进 plan 第一层「测例&缺陷」tab。
+输入 = `to-qa-testcases` 产出的 `.plan/<effort>/qa/cases.md` 与仓库 `qa/` 可执行资产（env_up/env_down、驱动脚本、诊断最小环）。本 skill 跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。产物落 `.plan/<effort>/qa/test.md` + 一缺陷一文件的 `.plan/<effort>/qa/DEF-NN-<slug>.md` + `qa/screenshots/`（可执行脚本留仓库 `qa/`）。 无图归属的缺陷（SOP 回测 / 整页回测发现）落根层 `.plan/qa/DEF-*.md`，进 plan 第一层「测例&缺陷」tab。
 
 > **分工**：写用例/设计用例/建资产归 `to-qa-testcases`（它的 cases.md 章节名是本 skill 的取料口径，不自造小标题）；失败用例根因定位归 `diagnosing-bugs`（E 节契约交接）；业务意图最终确认归用户。
 > **标准权威说明**：test.md / defect.md 章节骨架、缺陷文档状态头、总览表头、条目字段的**权威版本**在 `references/qa-records-skeleton.md`。老项目若有同名模板（qa-acceptance-template 等），以本骨架为准。
@@ -26,11 +26,9 @@ disable-model-invocation: false
 | 接入/更换 LLM 网关、真模型 E2E、上游 5xx 排查 | [real-model-e2e.md](references/real-model-e2e.md) | 替身测管道契约，真模型测格式文明+连接生命周期；随发版例行不能一次定终身 |
 | sqlite 替身集成测试 / GORM 迁移 / 「替身绿真库挂」 | [sqlite-mysql-substitute.md](references/sqlite-mysql-substitute.md) | 索引名/default 吞零值/AutoMigrate≠DDL/并发语义必须真机 |
 
-> 事故锚点：2026-09-12 SQL 直插致验收假阳性（data-construction.md 复盘）；同日「接口通路但页面崩了」致验收五维 DoD 立项（acceptance-dod.md 头注）。
-
 ## Process
 
-1. **取测例与资产**：读该图 `cases.md` §2/§3 取本轮要跑的用例编号；**跑批前核资产选书来源**（自建书名前缀；9xx 验收书与他人存量造数书不可消费——八源盘点第 8 源「环境与数据纪律」，qa-env 票 04）；`env_up` 重建测试环境；确认驱动脚本可按用例编号过滤单跑。测例集缺失或不可执行 → 退回 `to-qa-testcases`，不在本 skill 现造用例。
+1. **取测例与资产**：读该图 `cases.md` §2/§3 取本轮要跑的用例编号；**跑批前核数据集来源**（须为 cases.md §0 三件套声明的本集自建数据集；他人造数与验收专用数据不可消费——八源盘点第 8 源「环境与数据纪律」）；`env_up` 重建测试环境；确认驱动脚本可按用例编号过滤单跑。测例集缺失或不可执行 → 退回 `to-qa-testcases`，不在本 skill 现造用例。
 
 2. **双通道执行**：
    - **协议通道**：驱动脚本跑 A/B/C/D/U 组 + 库态对账；软失败收全，一轮收齐全部失败；
@@ -43,10 +41,10 @@ disable-model-invocation: false
 
 4. **缺陷条目（一缺陷一文件，`DEF-NN-<slug>.md`）**：每条缺陷独立一个文件，按骨架补**真 frontmatter 状态头**（`type: qa-defect` + 四字段，围栏/引用块=插件读不到），正文 `# DEF-NN 标题` + 字段行（严重度/类型/Assignee/状态/关联用例/发现源/测试设计缺口），A~E 五节登记，**E 节「最小复现入口」必填**（一条命令 + 环境变量 + 预期红信号，见「交接契约」；fe 缺陷的命令 = `npx playwright test -g <用例编号>`，协议通道缺陷仍走原驱动脚本）；登记**发现源**（QA 轮 / 用户）与**测试设计缺口**——用户渠道缺陷必填缺哪个源/维度/通道，缺口**当轮**补进 cases.md 并按案例库格式追加 `to-qa-testcases/references/case-library.md`；详情文本写「票 NN」「挂账-NN」即可被串联视图挂链。
 
-5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`，既有 role_id）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；wbflow 环境下对应 `wb_comment(domain)` 路由 → resolve → confirm/reopen。
-6. **票面测试标记回写（2026-09-21 拍板）**：本轮测例全部执行完 → 给被测票 frontmatter 写 `qa_tested: true`；验收通过（AC 全过 + 该票无未关闭缺陷）→ 写 `qa_accepted: true`。三标记与 `qa_cases`（to-qa-testcases 写）一起在票卡/详情徽标展示。
+5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`，既有 role_id）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；项目有评审/推进工具链时按其路由把缺陷推到 resolve/confirm/reopen。
+6. **票面测试标记回写**：本轮测例全部执行完 → 给被测票 frontmatter 写 `qa_tested: true`；验收通过（AC 全过 + 该票无未关闭缺陷）→ 写 `qa_accepted: true`。三标记与 `qa_cases`（to-qa-testcases 写）一起在票卡/详情徽标展示。
 
-7. **落盘 + 自检**：test.md / defect.md / screenshots/ 落 `.plan/<effort>/qa/` → 按本 skill「自检」逐条过 → 登记产物（wbflow：`wb_add_artifact`，nodeId=当前节点）→ 台账全部关闭时把 frontmatter `status` 翻 `closed`（仍有未关闭保持 `active`）→ 提评/推进。
+7. **落盘 + 自检**：test.md / defect.md / screenshots/ 落 `.plan/<effort>/qa/` → 按本 skill「自检」逐条过 → 按项目产物登记惯例登记 test.md / 缺陷台账 / 资产 link → 台账全部关闭时把 frontmatter `status` 翻 `closed`（仍有未关闭保持 `active`）→ 提评/推进。
 
 ## 两种调用（自然语言触发语，非 CLI 参数）
 
@@ -92,4 +90,4 @@ disable-model-invocation: false
 - 不写用例、不改用例设计（用户渠道缺口回写补进 cases.md 是登记纪律，不是重新设计）；测例集构建归 `to-qa-testcases`。
 - 不定位根因、不修 bug（`diagnosing-bugs`）；本 skill 只保证缺陷条目让诊断零重建。
 - 不替代用户验收：用户验收节点保留，本 skill 目标是把「呈现/语义类」问题在用户验收前消化掉。
-- `plan-lint` 暂不校验 `qa/` 目录（2026-09-20 裁定⑩）——头写错 lint 不报，靠本自检与人工复核兜。
+- `plan-lint` 暂不校验 `qa/` 目录——头写错 lint 不报，靠本自检与人工复核兜。

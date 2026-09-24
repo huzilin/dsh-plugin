@@ -11,9 +11,9 @@ disable-model-invocation: false
 
 # to-qa-testcases（构建测例）
 
-本 skill 只做**构建测例**一件事：设计依据盘点 → 用例设计（六组）→ 可执行资产三原则。产物 = `.plan/<effort>/qa/cases.md`（无 effort 的项目按其 docs 惯例放 `qa/cases.md`）+ 仓库 `qa/` 下可执行资产（环境一键重建 + 驱动一键复跑 + 结果可对比）。 无图归属的回测测例（SOP 回测 / 整页回测，挂不到具体工单/图）落 `.plan/qa/cases-<主题>.md`，进 plan 第一层「测例&缺陷」tab。 cases.md 落盘后给**被测票** frontmatter 回写 `qa_cases: true`（2026-09-21 拍板——票卡「🧪 测例」徽标的数据源；后续 `qa_tested`/`qa_accepted` 由 run-qa-testcases 写）。**不执行测例、不出验收结论、不登缺陷**——那半截在 `run-qa-testcases`（跑测例 → 验收记录 → 缺陷台账 → 返工闭环）。
+本 skill 只做**构建测例**一件事：设计依据盘点 → 用例设计（六组）→ 可执行资产三原则。产物 = `.plan/<effort>/qa/cases.md`（无 effort 的项目按其 docs 惯例放 `qa/cases.md`）+ 仓库 `qa/` 下可执行资产（环境一键重建 + 驱动一键复跑 + 结果可对比）。 无图归属的回测测例（SOP 回测 / 整页回测，挂不到具体工单/图）落 `.plan/qa/cases-<主题>.md`，进 plan 第一层「测例&缺陷」tab。 cases.md 落盘后给**被测票** frontmatter 回写 `qa_cases: true`（票卡「🧪 测例」徽标的数据源；后续 `qa_tested`/`qa_accepted` 由 run-qa-testcases 写）。**不执行测例、不出验收结论、不登缺陷**——那半截在 `run-qa-testcases`（跑测例 → 验收记录 → 缺陷台账 → 返工闭环）。
 
-> **标准权威说明**：本 skill 承载《用例设计》cases.md 章节骨架与资产三原则的**权威版本**（正文见 `references/testsuite-skeleton.md`）。项目内若有同名模板（如 `qa-acceptance-template.md`），以本 skill 为准，模板退役或改为指针。成品示例见 `references/demo-wbflow.md`。
+> **标准权威说明**：本 skill 承载《用例设计》cases.md 章节骨架与资产三原则的**权威版本**（正文见 `references/testsuite-skeleton.md`）。项目内若有同名模板（如 `qa-acceptance-template.md`），以本 skill 为准，模板退役或改为指针。
 > **分工**：`run-qa-testcases` 管执行与缺陷（本 skill 产出的测例集与资产就是它的执行武器，验收记录/缺陷台账骨架也在它的 references/）；`diagnosing-bugs` 管失败用例根因定位；测试场景协议层（造数禁令/验收五维 DoD/真模型 E2E/替身语义）5 个正本在 `run-qa-testcases/references/`，造数前必读 `run-qa-testcases/references/data-construction.md`。
 
 ## 为什么存在（设计门禁原理）
@@ -33,7 +33,7 @@ disable-model-invocation: false
 5. **架构/设计文档**（arch_design、rd/fe design 等），且须与裁决正本互验，防文档过期；
 6. **用户历史批注/反馈原话**——本项目全部历史批注逐条转 oracle。用户说过一次的要求，第二次仍漏测是最不可接受的盲区；
 7. **live 数据 / seed / 真实环境**；
-8. **环境与数据纪律**（qa-env 票 04，2026-09-24）——自动化资产锚定的数据对象来源合法性：必须为自建书名前缀，显式排除 9xx 验收书与他人存量造数书（**无写路径≠可消费**）；「**验收环境适配**」自查：本 effort 是否需要 9xx 书数据支撑／测例文档 §〇·三 定位表加行／`scripts/rebuild_qa_env.py` 加 `build_9NN()`（三步协议见其头注）；并发场景写明隔离与清理手段。指针（不复制全文，单一真相源）：`scripts/rebuild_qa_env.py` 头注、OpenViking《验收环境书与造数纪律》、`docs/验收环境.md`。
+8. **环境与数据纪律**——自动化资产锚定的数据对象来源合法性：必须为本测例集自建（前缀自命名），显式排除他人存量造数与验收专用数据（**无写路径≠可消费**）；「**验收环境适配**」自查：本 effort 是否需要用户验收环境的存量数据支撑，需要则声明数据获取方式与构建脚本；并发场景写明隔离与清理手段（头部声明三件套：维度 + 数据集唯一 id + 构建脚本路径，见骨架 §二）。
 
 然后做**双向映射**：每个源条目 ↔ 用例编号。任一条目无对应用例 = 设计缺口，补齐或显式声明降险后才算设计完成。
 
@@ -81,7 +81,6 @@ disable-model-invocation: false
 
 - **骨架正本**：`references/testsuite-skeleton.md`（cases.md 必填节 + 资产三原则）
 - **呈现通道资产形态正本**：`references/playwright-assets.md`（Playwright 六项形态 + DOM 探针清单 + 无视觉降级口径 + VLM 位置表；有 UI 项目必读）
-- **成品示例**：`references/demo-wbflow.md`（一个真实完整测例项目的索引与可复用模式）
 - **盲区案例库**：`references/case-library.md`（设计前读一遍已知盲区类型；新教训只往这里追加）
 
 ## Process
@@ -101,13 +100,13 @@ disable-model-invocation: false
    完成 cases.md §5 设计自检后才算设计完成。
 
 3. **测试资产（三原则，缺一不算完成）**：
-   - **数据可一键重建**：并发隔离按**维度**不按库——不要求每测例集独立库/命名空间，按被测业务域选定**并发控制维度**（电商域=商品、写作域=书），同环境并行的各测例集各占不同维度值；**cases.md §0 头部必须显式声明两件事防后续偏移**：①并发控制维度是什么；②本轮实际使用的具体测试数据集（具体操作哪个商品/哪本书）。数据可一键重建（迁移 + seed，维度值被污染即重建自愈），凭据经环境变量注入零落地，`env_up` / `env_down` 成对；机器资源（端口/工作目录/容器与进程名）自命名零共享带测例集标识（独库为维度取「环境」的可选实现）+ 临时工作目录显式声明（**禁 /tmp**），红线见骨架 §二「并发与环境红线」；造数纪律（真实接口链路构造、禁 SQL 直插业务表、造不到=SKIP）见 `run-qa-testcases/references/data-construction.md`，建 seed 前必读；
+   - **数据可一键重建**：并发隔离按**维度**不按库——不要求每测例集独立库/命名空间，按被测业务域选定**并发控制维度**（电商域=商品、写作域=书），同环境并行的各测例集各占不同维度值；**cases.md §0 头部声明三件套，缺一不达标**：①并发控制维度是什么（如：书）；②数据集唯一 id=具体实例（书 id/书名；id 运行时生成的由构建脚本产出后回写登记位、头部登记当前实例，禁只报 `-<ts>` 模式不给实例）；③构建该数据集的自动化脚本路径（一键重建）。测试内容=§2/§3 用例集。数据可一键重建（迁移 + seed，维度值被污染即重建自愈），凭据经环境变量注入零落地，`env_up` / `env_down` 成对；机器资源（端口/工作目录/容器与进程名）自命名零共享带测例集标识（独库为维度取「环境」的可选实现）+ 临时工作目录显式声明（**禁 /tmp**），红线见骨架 §二「并发与环境红线」；造数纪律（真实接口链路构造、禁 SQL 直插业务表、造不到=SKIP）见 `run-qa-testcases/references/data-construction.md`，建 seed 前必读；
    - **脚本可一键复跑**：驱动脚本**软失败收全**（单条断言失败不中断，一轮收齐全部缺陷）、结果落 json、退出码 FAIL>0 非 0 可接 CI；等待一律条件探测（探测间隔+上限+早退，**禁固定死等做就绪判定**），红线见骨架 §二「等待与确定性红线」；
    - **结果可对比**：定义基线口径 `PASS / FAIL / SKIP`，SKIP 必附因。
    资产随需求入库；**下一轮不重写数据与脚本**。
    > 有 UI 的项目：呈现通道可执行资产以 **Playwright 形态**为标准（spec 落 `qa/e2e/`、用例编号 grep 绑定、薄壳驱动、截图/登录约定 + 无视觉降级口径），正本见 [references/playwright-assets.md](references/playwright-assets.md)；P 组设计时按其探针口径把呈现层断言写成可判定的文本断言。
 
-4. **落盘 + 自检**：cases.md 与资产落盘（`.plan/<effort>/qa/cases.md` + 仓库 `qa/`）→ 按本 skill「自检」逐条过 → 登记产物（wbflow：`wb_add_artifact` cases.md + 资产 link，nodeId=当前节点）。执行、验收记录、缺陷登记交 `run-qa-testcases`。
+4. **落盘 + 自检**：cases.md 与资产落盘（`.plan/<effort>/qa/cases.md` + 仓库 `qa/`）→ 按本 skill「自检」逐条过 → 按项目产物登记惯例登记 cases.md 与资产 link。执行、验收记录、缺陷登记交 `run-qa-testcases`。
 
 ## 自检（完成前逐条过，任一 blocker 不过不许交出测例集）
 
@@ -116,7 +115,7 @@ disable-model-invocation: false
 - [ ] （blocker）每条用例唯一编号、预期可判定（无「功能正常」）；cases.md §5 设计自检全过
 - [ ] （blocker）资产三原则齐备：env_up/env_down、驱动脚本（软失败 + json + 退出码）、基线 PASS/FAIL/SKIP 口径已定义
 - [ ] （blocker）脚本等待全部条件探测（探测间隔 + 上限 + 早退，超时即红），无固定死等做就绪判定（红线见骨架 §二）
-- [ ] （blocker）并发与环境红线达标：并发控制维度与本轮具体测试数据集已在 cases.md §0 头部声明（维度按业务域选定，如电商=商品/写作=书）；机器资源自命名零共享（端口/工作目录带测例集标识，资源清单入 README）、临时工作目录显式声明且非 /tmp、env_up/env_down 构建与清理步骤成文（红线见骨架 §二「并发与环境红线」）
+- [ ] （blocker）并发与环境红线达标：头部声明三件套齐备且可复核——①并发控制维度 ②数据集唯一 id（具体实例 id/书名，非 `<ts>` 模式）③构建脚本路径（均在 cases.md §0，红线见骨架 §二「并发与环境红线」）；机器资源自命名零共享（端口/工作目录带测例集标识，资源清单入 README）、临时工作目录显式声明且非 /tmp、env_up/env_down 构建与清理步骤成文（红线见骨架 §二「并发与环境红线」）
 - [ ] （blocker）有 UI 则 **P 组已单列**（每元素位 ≥1 条 P-1 + 1 条 P-2，含失败/降级路径）+ 逐页面对齐原型；无 UI 须显式声明
 - [ ] （major）B 组每步断言含业务语义层（角色所需 + 写读联动），非仅协议层
 - [ ] （major）P 组文案类断言逐字可判定（占位/空态/提示条原文入预期栏），非「文案合理」
