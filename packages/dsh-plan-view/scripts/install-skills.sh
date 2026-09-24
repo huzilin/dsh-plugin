@@ -90,7 +90,7 @@ done
 # lint，注入面扩到 diagnosing-bugs 与 run-qa-testcases；mp-implement /
 # mp-implement-spec 无源仓正本（安装态直改），脚本注入按目录存在条件执行。
 PLAN_LINT_SRC="$SKILLS_SRC/plan-approve/scripts/plan-lint.sh"
-for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases mp-implement mp-implement-spec; do
+for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases mp-implement mp-implement-spec plan-loop; do
   if [ -d "$SKILLS_DST/$skill_id" ] && [ -f "$PLAN_LINT_SRC" ]; then
     mkdir -p "$SKILLS_DST/$skill_id/scripts"
     cp "$PLAN_LINT_SRC" "$SKILLS_DST/$skill_id/scripts/plan-lint.sh"
@@ -112,12 +112,12 @@ done
 # Post-install self-check (ticket 04): the plan gate must exist in the install
 # state, otherwise plan-approve/plan-sync step 1 is a dangling reference again.
 # 只断言有源仓正本、由本脚本管理的 skill；implement* 无正本不在此列。
-for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases; do
+for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases plan-loop; do
   if [ ! -f "$SKILLS_DST/$skill_id/scripts/plan-lint.sh" ]; then
     echo "Error: $SKILLS_DST/$skill_id/scripts/plan-lint.sh missing after install" >&2
     exit 1
   fi
 done
-echo "Self-check: plan-lint.sh present in mp-plan-approve, mp-plan-sync, mp-diagnosing-bugs, run-qa-testcases."
+echo "Self-check: plan-lint.sh present in mp-plan-approve, mp-plan-sync, mp-diagnosing-bugs, run-qa-testcases, plan-loop."
 
 echo "Done. Skills installed to $SKILLS_DST"

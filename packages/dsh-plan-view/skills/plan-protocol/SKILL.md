@@ -1,6 +1,6 @@
 ---
 name: plan-protocol
-description: The plan-ecosystem contract — where each plan skill sits, what it owns, and how they hand off. Load when any of to-spec / to-tickets / implement / implement-spec / plan-sync / to-approval / plan-approve / plan-archive / to-qa-testcases / run-qa-testcases / diagnosing-bugs is invoked, when explaining the flows or the QA defect loop, or when asked to init a fresh `.plan/` workspace in a repo.
+description: The plan-ecosystem contract — where each plan skill sits, what it owns, and how they hand off. Load when any of to-spec / to-tickets / implement / implement-spec / plan-sync / to-approval / plan-approve / plan-archive / to-qa-testcases / run-qa-testcases / diagnosing-bugs / plan-loop is invoked, when explaining the flows or the QA defect loop, or when asked to init a fresh `.plan/` workspace in a repo.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 本文件是 **plan 一套 skill 的共享协议**。它不做事，只规定：三条流程（主流程 / 补充流程 / QA 流程）、每个 skill 的位置与职责、文档形态约定、跨 skill 交接契约。
 
-**谁该读它**：本目录下的 `to-spec` / `to-tickets` / `implement` / `implement-spec` / `plan-sync` / `to-approval` / `plan-approve` / `plan-archive` / `to-qa-testcases` / `run-qa-testcases` / `diagnosing-bugs`，以及任何需要解释 plan 流程的 session。这些 skill 各自持有自己的 how；本协议是它们的**公共契约层**，避免各自重述、各自漂移。
+**谁该读它**：本目录下的 `to-spec` / `to-tickets` / `implement` / `implement-spec` / `plan-sync` / `to-approval` / `plan-approve` / `plan-archive` / `to-qa-testcases` / `run-qa-testcases` / `diagnosing-bugs` / `plan-loop`，以及任何需要解释 plan 流程的 session。这些 skill 各自持有自己的 how；本协议是它们的**公共契约层**，避免各自重述、各自漂移。
 
 > 与 `dsh-plan-view` 插件的关系：插件是**只读**渲染方，按 frontmatter 显示「路线 / 工单 / 待拍板」三页。它不生产文件，只消费。所有文件形态约定（见下文「文档形态」）都是为了让插件能正确读。
 
@@ -70,6 +70,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | `run-qa-testcases` | QA 流（执行 + 缺陷台账） | `to-qa-testcases` 产物 | `diagnosing-bugs`（有缺陷时）；复测回到本 skill | `test.md` + `DEF-NN-*.md` + 截图；票写 `qa_tested` / `qa_accepted`；收尾跑 plan-lint | 不修 bug、不定位根因 |
 | `diagnosing-bugs` | QA 返工环（根因定位 + 修复） | 缺陷档 E 节「最小复现入口」 | `run-qa-testcases`（复测关闭） | 根因 + 修复 + 回归位；**只回写 DEF 的 C 节**；收尾跑 plan-lint | 不翻缺陷状态机、不跑全量回归、不记缺陷 |
 | `plan-archive` | ② 之后（整轮归档期） | 已走完的轮（全部成员） | 无 | 整轮归档（目录结构原样）+ sweep 轮外引用 + 标过时/废弃 | 不自动跑、不改代码、不散件归档 |
+| `plan-loop` | 循环编排层（跨三条流程） | 全部既有单据 | 轮内按动作表调度各环节 skill | 轮次推进 + Brief + 收口裁决单 | 不拍板、不发明单据格式、不代替 plan-archive 自动归档 |
 
 **交接契约（硬规则）**：
 
