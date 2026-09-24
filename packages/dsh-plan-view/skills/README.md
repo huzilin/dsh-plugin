@@ -25,6 +25,8 @@ Most skills live directly in this directory and install by default. The rest are
 - **[to-tickets](./to-tickets/SKILL.md)** — break a plan or spec into tracer-bullet tickets at `.plan/<slug>/tickets.md`.
 - **[to-approval](./to-approval/SKILL.md)** — expand a decision stated too tersely to act on into a readable approval document at `.plan/`, carrying a status header so it stays trackable.
 - **[plan-approve](./plan-approve/SKILL.md)** — work the set of `.plan/` documents waiting on the human: re-verify each `pending` item, report the ones already settled, put the live ones in one batch, then record the rulings and advance each document's status.
+- **[plan-archive](./plan-archive/SKILL.md)** — archive completed plan work one round at a time: a finished round is `git mv`'d whole into `.archive/rounds/<round-id>/`, out-of-round references swept, superseded conclusions marked in place. Run manually when a round has shipped.
+- **[plan-sync](./plan-sync/SKILL.md)** — reconcile `.plan/` tickets with what actually shipped: judge from git and the code, write back statuses and acceptance ticks, end green on plan-lint.
 - **[wayfinder](./wayfinder/SKILL.md)** — chart a big, foggy effort as a map of investigation tickets, resolved one per session. Storage is adapter-specific; the default is [local markdown](./wayfinder/TRACKER-MARKDOWN.md) under `.plan/<slug>/`.
 - **[writing-great-skills](./.optional/writing-great-skills/SKILL.md)** — reference for writing and editing skills well.
 
@@ -33,7 +35,8 @@ Most skills live directly in this directory and install by default. The rest are
 - **[codebase-design](./.optional/codebase-design/SKILL.md)** — shared vocabulary and principles for designing deep modules.
 - **[domain-modeling](./domain-modeling/SKILL.md)** — actively build and sharpen the project's domain model (`CONTEXT.md`, `docs/adr/`).
 - **[grilling](./grilling/SKILL.md)** — the relentless interview itself: design-tree rounds, one frontier at a time, questions written to an approval document before they are asked. [grill-me](./grill-me/SKILL.md) is the user-invoked router that reaches it.
-- **[domain-modeling](./domain-modeling/SKILL.md)** — actively build and sharpen the project's domain model (`CONTEXT.md`, `docs/adr/`).
+- **[diagnosing-bugs](./diagnosing-bugs/SKILL.md)** — diagnosis loop for hard bugs and performance regressions: build a tight red/green feedback loop first, then hypothesise, instrument, fix, and land a regression test.
+- **[plan-protocol](./plan-protocol/SKILL.md)** — the shared contract of the plan ecosystem: the three flows, each skill's position and hand-offs, and the document shapes the plan view reads. The plan skills load it before acting; also inits a fresh `.plan/` workspace.
 - **[prototype](./prototype/SKILL.md)** — throwaway code that answers a design question: an interactive terminal app for logic/state questions, or radically different UI variants behind one switcher.
 - **[research](./research/SKILL.md)** — investigate a question against primary sources and capture cited findings as markdown.
 - **[to-qa-testcases](./to-qa-testcases/SKILL.md)** — build an effort's test suite: design-source inventory → case design → executable assets, written to `.plan/<effort>/qa/cases.md` (cases carry no frontmatter; only the defect ledger does).
@@ -50,12 +53,12 @@ Beyond the retargeting described in [LICENSE](./LICENSE), `wayfinder` makes thre
 
 Upstream's own layering is preserved. The skill is tracker-agnostic method; storage mechanics live in an adapter, and the local-markdown adapter is the default upstream names when no tracker is wired up.
 
-## Maintenance: source repo vs installed skills（2026-09-24 拍板）
+## Maintenance: source repo vs installed skills
 
 - **源仓是唯一修改入口**。`packages/dsh-plan-view/skills/` 下的 skill 正本只在 git 里改（Edit 定点改 + commit）；安装态（`~/.zcode/skills/` 等）是**分发产物，只读**。
 - **流向单向**：源仓 commit → 复制分发到安装态。安装态上若发现领先内容（其他会话绕过源仓直改所致），先逐处审查、用 Edit 定点回填源仓入库，再统一下发；**禁止从安装态整文件 `cp` 覆盖源仓**——分发侧的未审改动会随 cp 污染正本。
 - **分发后必须 `diff -r` 全树校验零 gap**（双侧同步靠记忆不可靠：case-library.md 曾漏同步两轮才发现）。
 - **写作纪律：skill 只写做法，不叙历史**——skill 正文与 references 示例一律正面陈述怎么做；历史做法、事故叙事归 `case-library.md`（教训正本）与 git 历史，不进示范材料。
-- **skills 自包含**：skill 正文与 references 零外部引用——不得指引 agent 去读其他仓库的文件/脚本/记忆库；确需的知识内化进 skill 正文（2026-09-24 拍板）。案例库（case-library.md）的案例标签与日期属案例身份，不属操作引用。
+- **skills 自包含**：skill 正文与 references 零外部引用——不得指引 agent 去读其他仓库的文件/脚本/记忆库；确需的知识内化进 skill 正文。案例库（case-library.md）的案例标签与日期属案例身份，不属操作引用。
 - **规则正文零历史变更标记**：条款一律只写现行要求，不写「（日期 拍板/裁定）」「票 NN」「原 X 形态废弃」等变更史；形态兼容说明（旧形态只读兼容）除外。
 - 分发目前仍手动；自动化（扩 install-skills.sh 或新增同步脚本）待票。
