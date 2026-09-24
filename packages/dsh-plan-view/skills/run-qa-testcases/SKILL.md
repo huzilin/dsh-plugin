@@ -15,7 +15,7 @@ disable-model-invocation: false
 输入 = `to-qa-testcases` 产出的 `.plan/<effort>/qa/cases.md` 与仓库 `qa/` 可执行资产（env_up/env_down、驱动脚本、诊断最小环）。本 skill 跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。产物落 `.plan/<effort>/qa/test.md` + 一缺陷一文件的 `.plan/<effort>/qa/DEF-NN-<slug>.md` + `qa/screenshots/`（可执行脚本留仓库 `qa/`）。 无图归属的缺陷（SOP 回测 / 整页回测发现）落根层 `.plan/qa/DEF-*.md`，进 plan 第一层「测例&缺陷」tab。
 
 > **分工**：写用例/设计用例/建资产归 `to-qa-testcases`（它的 cases.md 章节名是本 skill 的取料口径，不自造小标题）；失败用例根因定位归 `diagnosing-bugs`（E 节契约交接）；业务意图最终确认归用户。
-> **标准权威说明**：test.md / defect.md 章节骨架、缺陷文档状态头、总览表头、条目字段的**权威版本**在 `references/qa-records-skeleton.md`。老项目若有同名模板（qa-acceptance-template 等），以本骨架为准。
+> **标准权威说明**：test.md 章节骨架、DEF-NN 缺陷档的状态头/字段行/五节结构的**权威版本**在 `references/qa-records-skeleton.md`。老项目若有同名模板（qa-acceptance-template 等），以本骨架为准。
 
 ## 测试场景协议层（正本在本 skill references/，按任务特征必读）
 
@@ -44,24 +44,24 @@ disable-model-invocation: false
 5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`，既有 role_id）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；项目有评审/推进工具链时按其路由把缺陷推到 resolve/confirm/reopen。
 6. **票面测试标记回写**：本轮测例全部执行完 → 给被测票 frontmatter 写 `qa_tested: true`；验收通过（AC 全过 + 该票无未关闭缺陷）→ 写 `qa_accepted: true`。三标记与 `qa_cases`（to-qa-testcases 写）一起在票卡/详情徽标展示。
 
-7. **落盘 + 自检**：test.md / defect.md / screenshots/ 落 `.plan/<effort>/qa/` → 按本 skill「自检」逐条过 → 按项目产物登记惯例登记 test.md / 缺陷台账 / 资产 link → 台账全部关闭时把 frontmatter `status` 翻 `closed`（仍有未关闭保持 `active`）→ 提评/推进。
+7. **落盘 + 自检**：test.md / DEF-NN 缺陷档 / screenshots/ 落 `.plan/<effort>/qa/` → 按本 skill「自检」逐条过 → **收尾跑 plan-lint**（脚本随本 skill 安装：`bash <本 skill 目录>/scripts/plan-lint.sh <repo>/.plan`；0 发现或当轮修复才收口）→ 按项目产物登记惯例登记 test.md / 缺陷台账 / 资产 link → 台账全部关闭时把 frontmatter `status` 翻 `closed`（仍有未关闭保持 `active`）→ 提评/推进。
 
 ## 两种调用（自然语言触发语，非 CLI 参数）
 
 | 调用 | 作用域 | 行为 |
 |---|---|---|
-| **单图**：「跑 <effort> 的测例 / 复测 <effort>」 | 指定实施图 | 只跑该图测例，test.md / defect.md 写回该图 `qa/` |
+| **单图**：「跑 <effort> 的测例 / 复测 <effort>」 | 指定实施图 | 只跑该图测例，test.md / DEF-NN 缺陷档写回该图 `qa/` |
 | **full**：「跑全量回归」 | 全部实施图 | 扫 `.plan/*/map.md` 筛**实施图**（票型 `task`/`impl`；推演图 `research`/`prototype`/`grilling` 跳过）逐图按单图流程跑；出**总账** + **分账** |
 
 - **full 总账**：跨图 PASS/FAIL/SKIP 汇总 + 回归判定（对照各图基线，FAIL>0 即回归），落 `.plan/qa/full-regression-<YYYYMMDD>.md`（plan 根层，无 `map.md` 不成 effort、不进视图）；
 - **full 分账**：各图结果写回各自 `qa/test.md`，新缺陷各建 `qa/DEF-NN-<slug>.md`；
 - **默认含 `status: closed` 的图**（代码仍在生产，全量回归就是查回退）；用户说「只跑 active / 只跑进行中」时跳过 closed 图（`active-only` 开关）。
 
-## 交接契约（defect.md → diagnosing-bugs）
+## 交接契约（DEF-NN 缺陷档 → diagnosing-bugs）
 
 `diagnosing-bugs` Phase 1 的完成判据是「一条**已跑过一次**、red-capable、确定性、秒级、agent 可无人值守运行的命令」。本 skill 的缺陷条目在登记时就把它交齐，诊断方零重建：
 
-| diagnosing-bugs 需要 | defect.md 提供（必填字段） |
+| diagnosing-bugs 需要 | DEF-NN 缺陷档提供（必填字段） |
 |---|---|
 | 用户的确切症状 | B 节「实际结果」原样报文/截图（非转述） |
 | 驱动到 bug 代码路径的一条命令 | E 节「最小复现入口」：`cmd`（脚本路径 + 用例编号过滤）+ 环境变量清单 + 前置（env_up）|
@@ -80,9 +80,10 @@ disable-model-invocation: false
 - [ ] （blocker）用户验收环境的现有数据已过一次期望矩阵巡检（或验证环境即用户环境）
 - [ ] （blocker）每条缺陷文件（`DEF-NN-*.md`）E 节「最小复现入口」齐备且末次运行为红
 - [ ] （major）被测票 frontmatter 已回写 `qa_tested` / `qa_accepted`（验收通过时）
-- [ ] （blocker）defect.md 头为真 frontmatter（`---` 包裹、`type: qa-defect`）；总览表头九列与骨架逐字一致；条目状态用六词 + 附注（首词可被插件匹配）
+- [ ] （blocker）每条缺陷文件（`DEF-NN-*.md`）头为真 frontmatter（`---` 包裹、`type: qa-defect` + 状态头四字段）；字段行为骨架逐行列表格式（`- 状态:` 行首），首词属六词、允许附注；不得内联合并
+- [ ] （blocker）收尾已跑 plan-lint（随本 skill 安装的 `scripts/plan-lint.sh <repo>/.plan`），0 发现或已当轮修复
 - [ ] （major）用户渠道缺陷均有「测试设计缺口」回写并已补进 cases.md
-- [ ] （major）未通过项均在 defect.md 有条目，无悬空失败；SKIP 均附因
+- [ ] （major）未通过项均有 `DEF-NN-*.md` 条目，无悬空失败；SKIP 均附因
 - [ ] （major）多轮执行的驱动侧修正已与产品缺陷区分（test.md §2 过程有效性）
 
 ## 边界 / Out of scope
@@ -90,4 +91,4 @@ disable-model-invocation: false
 - 不写用例、不改用例设计（用户渠道缺口回写补进 cases.md 是登记纪律，不是重新设计）；测例集构建归 `to-qa-testcases`。
 - 不定位根因、不修 bug（`diagnosing-bugs`）；本 skill 只保证缺陷条目让诊断零重建。
 - 不替代用户验收：用户验收节点保留，本 skill 目标是把「呈现/语义类」问题在用户验收前消化掉。
-- `plan-lint` 暂不校验 `qa/` 目录——头写错 lint 不报，靠本自检与人工复核兜。
+- plan-lint 自 2026-09-24 起查 `qa/` 缺陷档的围栏与状态头（DEF- 前缀无围栏、缺四字段均报）；正文字段行形状 lint 不查，仍靠本自检与人工复核兜。

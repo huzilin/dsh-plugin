@@ -76,9 +76,9 @@ The header is what makes an approval document findable and trackable later. Five
 
    ```yaml
    ---
-   type: impl
+   type: task
    blocked_by: []
-   status: open            # open | todo | doing | done | closed | …
+   status: open            # open（待领）→ claimed（执行中，附 claimed_by/session）→ done；推演图票终态 resolved
    ---
 
    # <id>: <title>

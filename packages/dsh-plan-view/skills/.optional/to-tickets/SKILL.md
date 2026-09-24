@@ -65,7 +65,7 @@ Each file carries frontmatter the tracker reads, then the ticket's own body:
 ---
 type: task
 blocked_by: []          # ticket ids that gate this one, or [] when none
-status: open            # open | todo | doing | done | closed
+status: open            # open（待领）→ claimed（执行中）→ done；推演图票（research/prototype/grilling）终态 resolved
 ---
 
 # <NN>: <title>

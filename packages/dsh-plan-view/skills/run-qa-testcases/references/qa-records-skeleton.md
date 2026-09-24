@@ -1,4 +1,4 @@
-# run-qa-testcases · 骨架正本（《执行验收记录》test.md + 《缺陷台账》defect.md）
+# run-qa-testcases · 骨架正本（《执行验收记录》test.md + 《缺陷条目》DEF-NN-*.md）
 
 > 本文件是两份执行侧产物章节骨架的**唯一权威**。章节名稳定：SKILL.md 的 Process / 自检按 §编号引用本骨架，下游（diagnosing-bugs、下一轮回归）按章节名取料。**不自造小标题、不重排**；按需节标 ⭕，其余必填。
 > 《用例设计》cases.md 骨架与可执行资产三原则的正本在 `to-qa-testcases/references/testsuite-skeleton.md`——本 skill 消费它，不复述它。
@@ -7,7 +7,7 @@
 
 ## 一、《执行验收记录》`.plan/<effort>/qa/test.md`
 
-> 落点：`.plan/<effort>/qa/test.md`。**本文件不加 frontmatter 状态头**——qa 三件套中只有 `defect.md` 加头，本文件保持纯正文形态，不被 plan 视图识别。
+> 落点：`.plan/<effort>/qa/test.md`。**本文件不加 frontmatter 状态头**——qa 三件套中只有 `DEF-NN-*.md` 缺陷档加头，本文件保持纯正文形态，不被 plan 视图识别。
 
 ### §0 基本信息
 被测对象 / 阶段 / 环境 / 执行方式（协议通道 + 呈现通道）/ 轮次（以末轮为准）/ 报告日期。
@@ -15,7 +15,7 @@
 ### §1 测试概述与结论（结论先行）
 **验收结论**：[通过 / 有条件通过 / 不通过] —— [一句话理由]
 - 末轮结果：PASS n / FAIL n / SKIP n（SKIP 逐条附因）
-- 遗留：S1/P0 n、S2/P1 n（编号指向 defect.md）
+- 遗留：S1/P0 n、S2/P1 n（编号指向各 `DEF-NN-*.md`）
 
 ### §2 覆盖与执行结果 + 过程有效性
 | 组 | 覆盖 | 结果 |
@@ -40,7 +40,7 @@ P-1 UI 呈现与 P-2 使用交互分两表落三态，逐条挂截图（落 `qa/
 1. 重置环境：<env_up 命令>
 2. 运行回归：<驱动命令>            # 基线 PASS n / FAIL n / SKIP n
 3. 缺口补测：<驱动未覆盖项清单>
-4. 比对基线：FAIL>0 即回归；对照 defect.md 判断新旧
+4. 比对基线：FAIL>0 即回归；对照各 `DEF-NN-*.md` 判断新旧
 5. 拆环境：<env_down 命令>
 ```
 
