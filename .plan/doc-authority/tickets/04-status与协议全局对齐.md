@@ -1,10 +1,41 @@
 ---
 type: task
 blocked_by: []
-status: open
+status: done
 ---
 
 # 04 status 与 `plan-protocol` 全局对齐（wayfinder 改从协议）
+
+## 执行记录（2026-09-27 完成）
+
+**已完成全部落点**：
+
+| 落点 | 改动 | 验证 |
+|:--|:--|:--|
+| `plan-protocol` §三票面 status 词表 | 主句已统一为「终态 = `done`（不分票型）」；新增「四套状态机互不套用」子条款 | grep 零残留 |
+| `plan-protocol` 收口纪律 | 删去复述，改为「正本见 §三，本节不另立」——**消第二处定义** | — |
+| `wayfinder/TRACKER-MARKDOWN.md` | 「There is no `status:` field」段改写为**从协议**（词表正本指向 `plan-protocol`）；推导表 `resolved` → **`done`**；新增「`done` 与 `out_of_scope` 不是同义」段 | — |
+| `wayfinder/SKILL.md` | **逐处判定**：`:66/:68/:74/:106` 等**票态词**改 `done`；`:30` 计数示例、`:47/:49` 索引模板、`:82/:83/:133` 动词与英文词义**保留**（改词须保义） | `resolved` 仅剩 1 处动词 |
+| `to-tickets` | 模板注释已指向协议正本 | — |
+| `plan-lint.sh` | 词表移除 `resolved`，单独报废弃词 | 探针实测拦截生效 |
+| 插件读取层 | 见票 05 | 产物核对通过 |
+
+**必须保义的区分已保住（用户裁定「区分」）**：
+
+- `wayfinder/SKILL.md:66` — 阻塞判定为「every ticket it lists is `done`」；
+- `wayfinder/SKILL.md:68` — 「`out_of_scope` is closed, and closed is not `done`: **it satisfies no blocking edge**」；
+- `TRACKER-MARKDOWN.md:70` — 新增整段明示：`done` 是路线经过、`out_of_scope` 是路线刻意绕开；**只有 `done` 满足阻塞边**，塌陷两者会让边界静默算作一步。
+
+**顺手修掉一个真缺陷：陈旧孤儿副本 `mp-wayfinder`**
+
+- **发现**：安装区存在两个 wayfinder 目录——`wayfinder`（`install-skills.sh` 实际维护，§:71 默认命名）与 `mp-wayfinder`（**陈旧孤儿**，早于一次改名遗留，**无任何脚本或配置引用**）；
+- **实测**：两者 inode 不同（非硬链），且 `mp-wayfinder` 差 **34 行**、停在旧文本（`resolved` md5 `2438eb2b…` vs 现行 `5b6274ff…`）；
+- **对照**：`domain-modeling`/`prototype`/`research` 三个同名对**内容一致**，唯 `mp-wayfinder` 陈旧——**证明它是孤儿而非设计如此**；
+- **处置（用户裁定「删除并在后续用我们改好的 wayfinder 替换」）**：删除后用改好的版本重建，**三处现已逐字节一致**（md5 `5b6274ffc681203a9d05f027fdf35179`）。
+
+**验证**：三处 wayfinder 一致性 ✓；`plan-lint` 通过。
+
+---
 
 ## 交付什么
 

@@ -13,15 +13,15 @@ import {
   fsRead, fsTree, fsWrite, sessionAlive, sessionList,
   type SessionScope, type SessionSummary, type FsEntry,
 } from './api'
-import { deliverDraft } from './input-bridge'
+import { deliverDraft, isBridged } from './input-bridge'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type TicketStatus = 'resolved' | 'out_of_scope' | 'claimed' | 'open'
+type TicketStatus = 'done' | 'out_of_scope' | 'claimed' | 'open'
 
 interface ParsedTicket {
   id: string; file: string; title: string; type: string | undefined
-  blockedBy: string[]; resolved: boolean; outOfScope: boolean; claimedBy: string | undefined
+  blockedBy: string[]; done: boolean; outOfScope: boolean; claimedBy: string | undefined
   status: string | undefined  // frontmatter `status` — the portable state field
   date: string | undefined    // frontmatter `date` — used for "how long has this been pending"
   origin: string | undefined  // frontmatter `origin` — why an approval doc exists
@@ -61,7 +61,7 @@ function deriveTicketStatus(file: string, raw: string): ParsedTicket {
     file, title: titleMatch?.[1]?.replace(/`[^`]*`/g, '')?.trim() ?? file,
     type: fm.type,
     blockedBy: parseBlockedBy(fm.blocked_by),
-    resolved: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
+    done: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
     status: fm.status, date: fm.date, origin: fm.origin,
     session: fm.session, originSession: fm['origin_session'], body,
     qaCases: fm.qa_cases === 'true', qaTested: fm.qa_tested === 'true', qaAccepted: fm.qa_accepted === 'true',
@@ -90,7 +90,7 @@ function upsertFrontmatterKey(raw: string, key: string, value: string): string {
 // body-section markers (`## Answer` / `## Ruled out`) and a plain frontmatter
 // `status` field, which is what non-wayfinder repos write. Both are honoured;
 // the section markers win when present, since they carry more detail.
-const DONE_STATUS = new Set(['done', 'closed', 'resolved', 'complete', 'completed', 'shipped'])
+const DONE_STATUS = new Set(['done', 'closed', 'complete', 'completed', 'shipped'])
 const OUT_STATUS = new Set(['abandoned', 'rejected', 'wontfix', "won't fix", 'cancelled', 'canceled', 'superseded'])
 const CLAIMED_STATUS = new Set(['doing', 'in_progress', 'in-progress', 'wip', 'claimed', 'in review', 'review'])
 
@@ -104,9 +104,9 @@ function statusWord(t: ParsedTicket): string {
 
 function displayStatus(t: ParsedTicket): TicketStatus {
   if (t.outOfScope) return 'out_of_scope'
-  if (t.resolved) return 'resolved'
+  if (t.done) return 'done'
   const w = statusWord(t)
-  if (DONE_STATUS.has(w)) return 'resolved'
+  if (DONE_STATUS.has(w)) return 'done'
   if (OUT_STATUS.has(w)) return 'out_of_scope'
   if (t.claimedBy) return 'claimed'
   if (CLAIMED_STATUS.has(w)) return 'claimed'
@@ -330,9 +330,9 @@ const TYPE_FALLBACK = { icon: '•', color: '#888' }
 // Sentinel for "this file declares no type" — a real bucket, never a hidden one.
 const NO_TYPE = '\u0000no-type'
 const typeTheme = (t: string | undefined) => TYPE_THEME[t ?? ''] ?? TYPE_FALLBACK
-const DOT: Record<string, string> = { open: '#81858c', claimed: '#f7ad31', resolved: '#4ed17e', out_of_scope: '#61666b' }
-const STATUS_LABELS: Record<TicketStatus, string> = { open: 'Open', claimed: 'Claimed', resolved: 'Resolved', out_of_scope: 'Out of scope' }
-const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'resolved', 'out_of_scope']
+const DOT: Record<string, string> = { open: '#81858c', claimed: '#f7ad31', done: '#4ed17e', out_of_scope: '#61666b' }
+const STATUS_LABELS: Record<TicketStatus, string> = { open: 'Open', claimed: 'Claimed', done: 'Done', out_of_scope: 'Out of scope' }
+const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'done', 'out_of_scope']
 
 // ─── "Waiting on you" ────────────────────────────────────────────────────────
 //
@@ -354,7 +354,12 @@ type TicketKind = 'ticket' | 'approval' | 'ledger' | 'defect' | 'cases' | 'note'
 // 票型词表（plan-protocol §三）：声明这些 type 的文档才主张「要干活」，归工单。
 // approval / qa-defect / ledger 三个保留 type 在下方分支单独接走；词表外的
 // type 值按「说明 / 杂项」解析，不作单据校验对象（2026-09-24 协议补条）。
-const TICKET_TYPES = new Set(['task', 'impl', 'research', 'prototype', 'grilling'])
+//
+// `impl` 不再是票型（2026-09-27 用户拍板「不必支持 impl」）——本集合不收录它。
+// 后果如实说明：存量 `type: impl` 票（nvwa `.plan/dna-ab-full/` 15 张，其中 3 张
+// status: open）会被判为 'note'、不出现在工单视图，**直到它们按「形态契约变更
+// 回扫」条款迁移为 `type: task`**。这是该拍板的既定语义：不支持即不识别。
+const TICKET_TYPES = new Set(['task', 'research', 'prototype', 'grilling'])
 
 /** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
 function ticketKind(t: ParsedTicket): TicketKind {
@@ -399,12 +404,17 @@ const KIND_META: Record<TicketKind, { label: string; icon: string; color: string
 // ─── Map kinds: 推演图 vs 实施图 ─────────────────────────────────────────────
 //
 // 一个 effort 是推演图（wayfinder：票型 research/grilling/prototype，终点=决策
-// 清零）还是实施图（票型 task/impl，终点=落码验收），由票型推导——不需要文档
+// 清零）还是实施图（票型 task，终点=落码验收），由票型推导——不需要文档
 // 自我声明。两类图工作流不同（推演靠讨论，实施靠派工），展示上分两组。
+//
+// 注意 `impl` 在本文件有两个身份（均与票型无关），勿与票型混淆：①**内部类型名**
+// MapKind='impl'（实施图的分类标识，不应改名）；②**历史目录路径** impl/、impl-fe/
+// （见 resolveEfforts 的 workstream 分支，读的是路径不是票型）。
+// `type: impl` 已不是票型（2026-09-27 拍板），本文件不再对它作任何识别。
 type MapKind = 'speculation' | 'impl'
 
 const SPECULATION_TYPES = new Set(['research', 'grilling', 'prototype'])
-const IMPL_TYPES = new Set(['task', 'impl'])
+const IMPL_TYPES = new Set(['task'])
 
 function mapKind(dir: string, tickets: ParsedTicket[]): MapKind | undefined {
   let speculation = false, impl = false
@@ -703,21 +713,52 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
   }, [onClose])
 
   /**
-   * 把指令草稿送进目标会话的输入框。目标会话正开着就立即填；否则经输入桥挂
-   * 交接草稿后切过去，输入区随会话切换重挂时消费。都走不通退剪贴板。
+   * 触发宿主会话切换（`sessions.open`）。实测宿主 select→通知→渲染链可能同步
+   * 挂死，因此绝不留在 await 链上：宏任务里调用、吞掉一切异常，调用即视为已触发。
+   */
+  const openSessionDetached = (sessionId: string): boolean => {
+    const open = sessionsOf(ctx)?.open
+    if (open === undefined) return false
+    setTimeout(() => {
+      try {
+        const r = open(sessionId) as unknown
+        if (r !== undefined && r !== null && typeof (r as Promise<unknown>).catch === 'function') (r as Promise<unknown>).catch(() => {})
+      } catch { /* 未知 id 等宿主异常：留给就绪轮询与看门狗兜底 */ }
+    }, 0)
+    return true
+  }
+  /**
+   * 把指令草稿送进目标会话的输入框。目标会话正开着就立即（宏任务）填；否则经
+   * 输入桥挂交接草稿、触发切换，并等输入区重挂消费掉草稿。每一步都即时反馈，
+   * 看门狗保证 UI 永不卡在 busy 态，指令最终兜底进剪贴板——绝不静默丢失。
    */
   const deliverPrompt = async (sessionId: string | undefined, text: string, okMsg: string) => {
     if (sessionId === undefined) { setMsg(await copyFallback(text)); return }
-    try {
-      if (deliverDraft(sessionId, text) === 'queued') {
-        const open = sessionsOf(ctx)?.open
-        if (open === undefined) { setMsg(await copyFallback(text)); return }
-        open(sessionId)
-      }
-      setMsg(okMsg)
-    } catch (e) {
-      setMsg(`打开 session 失败：${(e as Error).message}。${await copyFallback(text)}`)
+    if (deliverDraft(sessionId, text) === 'injected') { setMsg(okMsg); return }
+    if (!openSessionDetached(sessionId)) {
+      setMsg(`已选好 session ${shortSession(sessionId)}，但此环境无法切换会话。${await copyFallback(text)}`)
+      return
     }
+    setMsg(`正在切到 session ${shortSession(sessionId)}…`)
+    // 输入区重挂后输入桥才会消费交接草稿；就绪即报成功，超时也把现状说清。
+    const deadline = Date.now() + 10000
+    while (!isBridged(sessionId) && Date.now() < deadline) await new Promise(r => setTimeout(r, 200))
+    if (isBridged(sessionId)) setMsg(okMsg)
+    else setMsg(`已触发切到 session ${shortSession(sessionId)}；指令会在输入区就绪时自动填入，若一直没出现：${await copyFallback(text)}`)
+  }
+  /** 动作总看门狗：任何环节挂死（含宿主内部），15 秒后强制恢复 UI 并把指令兜底进剪贴板。 */
+  const withWatchdog = async (key: string, work: () => Promise<void>, fallbackText?: () => string) => {
+    setMsg(null); setBusy(key)
+    let finished = false
+    const watchdog = new Promise<void>(resolve => setTimeout(() => {
+      if (finished) return
+      setBusy(null)
+      void (fallbackText !== undefined ? copyFallback(fallbackText()) : Promise.resolve('')).then(
+        extra => setMsg(`操作超时（宿主无响应）。${extra}`),
+      )
+    }, 15000))
+    await Promise.race([work.then(() => { finished = true }), watchdog])
+    if (finished) setBusy(null)
   }
   /** Pure jump with the E1 liveness check. */
   const jump = async (sessionId: string) => {
@@ -725,16 +766,14 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
     try {
       const live = await sessionAlive(sessionId)
       if (live === undefined) { setMsg('该 session 已不可用（可能已被回收）。'); return }
-      const open = sessionsOf(ctx)?.open
-      if (open === undefined) { setMsg('此环境没有跳转能力（sessions 服务不可用）。'); return }
-      open(sessionId)
+      if (!openSessionDetached(sessionId)) { setMsg('此环境没有跳转能力（sessions 服务不可用）。'); return }
+      setMsg(`正在切到 session ${shortSession(sessionId)}…`)
     } catch (e) { setMsg(`跳转失败：${(e as Error).message}`) }
     finally { setBusy(null) }
   }
   /** New session via the client runtime, write the B1 binding, prefill, jump. */
   const createAndBind = async (promptText: string) => {
-    setMsg(null); setRebind(false); setBusy('create')
-    try {
+    await withWatchdog('create', async () => {
       const sessions = sessionsOf(ctx)
       if (sessions?.create === undefined) {
         setMsg(`此环境没有会话创建能力（sessions 服务不可用）。${await copyFallback(promptText)}`)
@@ -745,31 +784,32 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
       const raw = await fsRead(scope, target)
       if (raw.kind === 'text') await fsWrite(scope, target, upsertFrontmatterKey(raw.content, 'session', sessionId))
       renameSession(sessions, sessionId, `#${shortId(ticket)} ${ticket.title}`.slice(0, 60))
-      await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`)
+      // 绑定已落盘，先刷新数据（票面 chip 立即可见），再做可能挂死的投递段。
       onChanged()
-    } catch (e) { setMsg(`派发失败：${(e as Error).message}`) }
-    finally { setBusy(null) }
+      await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`)
+    }, () => promptText)
   }
   /** ①/② draft-first dispatch on a ticket: refill the bound session, else create one. */
   const dispatchTicket = async (mode: 'explore' | 'advance') => {
     const promptText = mode === 'explore' ? EXPLORE_PROMPT(ticket) : ADVANCE_PROMPT(ticket)
     if (ticket.session === undefined) { await createAndBind(promptText); return }
-    setMsg(null); setBusy(mode)
-    try {
-      const live = await sessionAlive(ticket.session)
+    await withWatchdog(mode, async () => {
+      setRebind(false)
+      let live: SessionSummary | undefined
+      try {
+        live = await sessionAlive(ticket.session!)
+      } catch { live = undefined }
       if (live === undefined) { setRebind(true); setMsg('绑定的 session 已不可用。可新建 session 并重新绑定。'); return }
-      await deliverPrompt(ticket.session, promptText, `指令已填进 session ${shortSession(ticket.session)} 的输入框，确认后发送。`)
-    } catch (e) { setMsg(`查询 session 失败：${(e as Error).message}`) }
-    finally { setBusy(null) }
+      await deliverPrompt(ticket.session!, promptText, `指令已填进 session ${shortSession(ticket.session!)} 的输入框，确认后发送。`)
+    }, () => promptText)
   }
   /** ③ 拍板: prefill `/plan-approve <doc>` in the session the user is looking at. */
   const settle = async () => {
-    setMsg(null); setBusy('settle')
-    try {
-      await deliverPrompt(scope.sessionId, `/plan-approve ${ticket.file}`, '已把 /plan-approve 预填进当前会话输入框，确认后发送。')
+    const line = `/plan-approve ${ticket.file}`
+    await withWatchdog('settle', async () => {
+      await deliverPrompt(scope.sessionId, line, '已把 /plan-approve 预填进当前会话输入框，确认后发送。')
       onChanged()
-    } catch (e) { setMsg(`拍板失败：${(e as Error).message}`) }
-    finally { setBusy(null) }
+    }, () => line)
   }
 
   const kind = ticketKind(ticket)
@@ -869,7 +909,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null; readOnly?: boolean }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const groups = useMemo(() => {
-    const g: Record<TicketStatus, ParsedTicket[]> = { resolved: [], out_of_scope: [], claimed: [], open: [] }
+    const g: Record<TicketStatus, ParsedTicket[]> = { done: [], out_of_scope: [], claimed: [], open: [] }
     for (const t of tickets) g[displayStatus(t)].push(t)
     return g
   }, [tickets])
@@ -879,13 +919,13 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
     [tickets],
   )
   const active = tickets.filter(t => !t.outOfScope)
-  const done = tickets.filter(t => t.resolved).length
+  const done = tickets.filter(t => t.done).length
   const pct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT }}>
       <div style={{ padding: '12px 16px 0', display: 'flex', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Kanban</span>
-        <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · {done} resolved</span>
+        <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · {done} done</span>
       </div>
       {/* 归档轮次里不该再有 pending；万一轮内有漏拍板的旧文档，也不在此催办 */}
       {!readOnly && waiting.length > 0 && (
@@ -956,7 +996,8 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
   const OUTSTANDING: TicketStatus[] = ['open', 'claimed']
   const [statusSet, setStatusSet] = useState<Set<TicketStatus>>(() => new Set(OUTSTANDING))
   // Filter over the types actually in the data, not a hardcoded four. A repo
-  // writing `type: impl` must not start with every row filtered out.
+  // carrying legacy `type: impl` tickets (nvwa, not yet swept) must not start
+  // with every row filtered out.
   // A file with no `type` is a real case (23 such files in novel), not an error.
   // Bucket it under NO_TYPE so it is visible and filterable — leaving it out of
   // the set silently hid every such file from this view.
@@ -1005,7 +1046,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
         <span style={{ fontSize: 14, fontWeight: 700 }}>Table</span>
         <span style={{ fontSize: 12, color: '#888' }}>
           {rows.length}/{tickets.length} tickets
-          {statusSet.size < STATUS_ORDER.length && <span style={{ color: '#666' }}>（默认隐藏已完成；勾 Status 里的 Resolved 可看）</span>}
+          {statusSet.size < STATUS_ORDER.length && <span style={{ color: '#666' }}>（默认隐藏已完成；勾 Status 里的 Done 可看）</span>}
         </span>
       </div>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -1180,7 +1221,7 @@ function layoutGraph(tickets: ParsedTicket[]) {
   }
   const roots = layers[0].map(t => t.id)
   roots.forEach((r, i) => edges.push({ from: START, to: r, key: `s${i}` }))
-  const leaves = grid.filter(t => (childrenOf.get(t.id) ?? []).length === 0 && t.resolved).map(t => t.id)
+  const leaves = grid.filter(t => (childrenOf.get(t.id) ?? []).length === 0 && t.done).map(t => t.id)
   leaves.forEach((l, i) => edges.push({ from: l, to: END, key: `l${i}` }))
   for (const t of side) {
     const n = t.id; const p = depsOf(t).find(b => byId.has(b))
@@ -1458,7 +1499,7 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
               {g.items.map(({ e }) => {
                 const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
                 const work = own.filter(t => ticketKind(t) === 'ticket' && !t.outOfScope)
-                const done = work.filter(t => t.resolved).length
+                const done = work.filter(t => t.done).length
                 const pct = work.length > 0 ? Math.round((done / work.length) * 100) : 0
                 const { stage, color } = effortStage(own)
                 return (
@@ -2100,7 +2141,7 @@ function ledgerStage(e: LedgerEntry, mapTickets: ParsedTicket[]): string {
   if (e.state === '已销' || e.state === '已转票') return e.state
   const unmet = e.blocked.filter(n => {
     const t = mapTickets.find(x => { const m = x.file.match(/^(\d+)-/); return m !== null && m !== undefined && parseInt(m[1], 10) === parseInt(n, 10) })
-    return t === undefined || (displayStatus(t) !== 'resolved' && !t.outOfScope)
+    return t === undefined || (displayStatus(t) !== 'done' && !t.outOfScope)
   })
   if (e.state === '阻塞中') return unmet.length > 0 ? '阻塞中' : '可启动'
   return unmet.length > 0 ? '阻塞中' : (e.state === '可启动' ? '可启动' : '可启动')
