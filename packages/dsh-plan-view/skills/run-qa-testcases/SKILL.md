@@ -51,7 +51,7 @@ disable-model-invocation: false
 | 调用 | 作用域 | 行为 |
 |---|---|---|
 | **单图**：「跑 <effort> 的测例 / 复测 <effort>」 | 指定实施图 | 只跑该图测例，test.md / DEF-NN 缺陷档写回该图 `qa/` |
-| **full**：「跑全量回归」 | 全部实施图 | 扫 `.plan/*/map.md` 筛**实施图**（票型 `task`/`impl`；推演图 `research`/`prototype`/`grilling` 跳过）逐图按单图流程跑；出**总账** + **分账** |
+| **full**：「跑全量回归」 | 全部实施图 | 扫 `.plan/*/map.md` 筛**实施图**（票型 `task`；推演图 `research`/`prototype`/`grilling` 跳过）逐图按单图流程跑；出**总账** + **分账** |
 
 - **full 总账**：跨图 PASS/FAIL/SKIP 汇总 + 回归判定（对照各图基线，FAIL>0 即回归），落 `.plan/qa/full-regression-<YYYYMMDD>.md`（plan 根层，无 `map.md` 不成 effort、不进视图）；
 - **full 分账**：各图结果写回各自 `qa/test.md`，新缺陷各建 `qa/DEF-NN-<slug>.md`；

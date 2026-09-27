@@ -87,19 +87,41 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 
 - **一票一文件**：`.plan/<effort>/tickets/<NN>-<slug>.md`。**禁止**把多票写进一个 `tickets.md`——按文件读取的一方会把合并文件当成**一张票**，里面所有票丢失。
 - **frontmatter 是权威**：票里 `status` / `type` / `blocked_by` 以 frontmatter 为准，不读正文表格。
+- **`blocked_by` 格式（两形态共用的唯一格式，2026-09-27 拍板统一）**：YAML 流式序列，取值**裸写、不加引号**——
+  - `blocked_by: []`：无前置（**唯一合法空值**；不得写 `[无]`、`none`、留空）
+  - `blocked_by: [03]`：单个前置；`blocked_by: [03, 04]`：多个前置，逗号+空格分隔
+  - **禁止加引号**（`["03"]`、`['03']`）——工具侧解析器（`splitNums`）对引号不容忍，会致**整图解析中止**；本插件读取层虽容忍引号，但**正本格式一律裸写**，容忍不等于合法
+  - **票 id 形态**：本仓票用两位数字（`03`）；带字面前缀的票（如 `AIT1`、`OPT3`）直接写前缀全称，不加引号
+  - **本格式同时适用于 frontmatter 形态票与 wayfinder 推导形态票**——两形态共享同一 `blocked_by` 契约（推演形态的完整契约见 wayfinder `TRACKER-MARKDOWN.md`）；**禁止另立第二种写法**（协议与 wayfinder 两侧曾各写一套、致 27 处带引号票在工具侧整图中止，2026-09-27 收口）
 - **状态头四字段**（待拍板 / spec / map 等文档）：`type` / `date` / `status` / `origin`。
   - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
   - `origin`：产生原因（`readability-rescue` / `proactive` / `review` / `retrospective`）。
 - **审批文档归属**：待拍板默认**落所属图** `.plan/<effort>/待拍板-<slug>-<date>.md`——视图按 effort 归图，只在该图「待拍板」子页出现；**根层 `.plan/待拍板-*.md` 只放全局性拍板**（跨图 / 无图归属的裁决）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。既有根层已 closed 的历史拍板不强制回迁（相对引用密集、不再进拍板流，原地即历史锚点）。
 - **effort 标志**：目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `tickets/` 目录不被读取。
 - **非治理目录**：`.plan/handoffs/`（handoff 交接文档产物区）不属 plan 生态——视图不加载、`plan-lint` 跳过（不查缺 map / 状态头 / 同票双档）。
-- **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`/`impl`，终点=落码验收）。落地工单 `type` 统一写 `task`（`impl` 为早期别名，不再新用）。
-- **票面 `status` 词表**（工单 frontmatter，执行态与终态）：执行中 = `claimed`（登记格式见「执行登记」硬规则）；终态按票型分——实施图票 `task` / `impl` 终态 = `done`；推演图票 `research` / `prototype` / `grilling` 终态 = `resolved`（允许附日期 `resolved <YYYY-MM-DD>`）。票态有两种合法形态：**frontmatter 形态**（to-tickets 系，`status` 写在 frontmatter）；**wayfinder 推导形态**（`status` 不入 frontmatter，由收束节推导——`## Answer` 带正文 = `resolved`、`## Ruled out` 带正文 = `out_of_scope`、`claimed_by` 在位 = `claimed`、其余 = `open`）。两形态共享同一 type 词表；推导形态的格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`。
-- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无 `status` 的文件归「说明 / 杂项」类；无 `type` 但有 `status` 的存量手写票按其 `status` 归工单（兼容形态，新写票一律带 `type`）。
+- **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`，终点=落码验收）。落地工单 `type` 一律写 `task`——**唯一合法值**（2026-09-27 拍板：`impl` 不支持、不识别）。
+  - **`impl` 不是票型（2026-09-27 拍板）**：`impl` 源自早期 novel 的目录名（`.plan/<effort>/impl/`、`impl-fe/`），后被误用为 `type` 值沿用；三处正本（本协议、`to-tickets` 票模板、wayfinder `TRACKER-MARKDOWN.md`）**均未将它列为合法票型**。**新写票一律 `task`**；存量 `type: impl` 票由「形态契约变更回扫」条款迁移——**未迁移前该票不被识别为工单**。注意 `impl` 另有两个**非票型**身份，不可混淆、不得清理——插件内部类型名 `MapKind='impl'`（实施图分组标识）与历史目录路径 `impl/`、`impl-fe/`。
+- **票面 `status` 词表**（工单 frontmatter，执行态与终态）：执行中 = `claimed`（登记格式见「执行登记」硬规则）；终态 = `done`（**不分票型，全票统一**；允许附日期 `done <YYYY-MM-DD>`）。票态有两种合法形态：**frontmatter 形态**（to-tickets 系，`status` 写在 frontmatter）；**wayfinder 推导形态**（`status` 不入 frontmatter，由收束节推导——`## Answer` 带正文 = `done`、`## Ruled out` 带正文 = `out_of_scope`、`claimed_by` 在位 = `claimed`、其余 = `open`）。两形态共享同一 type 词表；推导形态的格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`。
+  - **本条只管「票」——四套状态机互不套用（2026-09-27 拍板）**：`type` 词表里有状态概念的共四类，但**分属四个坐标系，词表不得互相套用**：
+
+    | type | 载体 | 词表 | 回答的问题 |
+    |:--|:--|:--|:--|
+    | `task` / `research` / `prototype` / `grilling` | frontmatter `status:` | `open` / `claimed` / `done` | 这张**票**走到哪了 |
+    | `approval` | frontmatter `status:` | `pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned` | 这个**提问**结案了吗 |
+    | `ledger` | 正文 `- 状态:` | `在挂` / `已销` / `已转票` | 这笔**债**还了吗、转移到哪了 |
+    | `qa-defect` | 正文 `- 状态:` | `待修复` / `已确认` / `修复中` / `待复测` / `已关闭` / `挂起` | 这个**缺陷**修好并复测通过了吗 |
+
+  - **不得统一**：`approval` 的 `closed` 不可改写为 `done`——它会抹掉 `superseded-by`（被取代）与 `abandoned`（不问了）的区分，而这两个态正是「防止已作废的待拍项滞留」的依据；`ledger` 的「已转票」不可改写为 `done`——**「债务已还清」与「债务转移给他处」是两件不同的事**，混同即账目错误。
+  - **载体差异是解析契约**：`ledger` / `qa-defect` 的状态写在**正文固定字段行**（非 frontmatter），是插件台账页／缺陷页与 agent 扫描的解析契约，**不得改形**（见「挂账台账」「缺陷条目」两条）。
+  - **判据**：**同一坐标系才可统一**——`task` 与三个推演票型同属「票」，故共用一套票态并已统一为 `done`；其余三类各答各的问题，**跨坐标系套用词表即语义塌陷**。
+  - **收口口径**：票态**只有本条一处定义**（README 模板等处的复述须与本节一致）。
+- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。**这份清单即 `type` 的唯一合法词表**——`impl` **不在其中**（2026-09-27 拍板：不支持该类型，见「图二型」条），这是 2026-09-27 收口前的协议内部矛盾点，现予消除。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无 `status` 的文件归「说明 / 杂项」类；无 `type` 但有 `status` 的存量手写票按其 `status` 归工单（兼容形态，新写票一律带 `type`）。
 - **缺陷条目**（`type: qa-defect`，**一缺陷一文件**）：`.plan/<effort>/qa/DEF-NN-<slug>.md`，frontmatter `type: qa-defect` + 状态头，正文 `# DEF-NN 标题` + 固定字段行 `- 严重度:`、`- 类型:`（rd/fe/arch/docs）、`- Assignee:`、`- 状态:`（待修复/已确认/修复中/待复测/已关闭/挂起，取首词匹配、允许附注）、`- 关联用例:`、`- 发现源:`、`- 测试设计缺口:`，其后 A~E 五节（E 节最小复现入口必填——骨架正本见 run-qa-testcases `references/qa-records-skeleton.md`）。
   - **串联**：缺陷与票/挂账的串联靠详情文本写「票 NN」「挂账-NN」。
   - **识别**：qa 目录内不带 `type: qa-defect` 的文件不被视图识别；旧「单文件多小节」形态（`qa/defect.md` 清单总览表）只读兼容——归档轮快照是旧形态，现行一律一缺陷一文件。
   - **无图归属的缺陷**（SOP 回测、整页回测发现，挂不到具体工单/图）：落根层 `.plan/qa/DEF-*.md`（同格式），进第一层「测例&缺陷」tab。
+  - **登记正本与用户直报**：缺陷档登记正本 = run-qa-testcases 的 `references/qa-records-skeleton.md`——字段行枚举、A~E 五节骨架、E 节「最小复现入口」的登记纪律以它为准。**用户直报缺陷（不经测试轮）**：会话按该正本立档，`- 发现源:` 按下条人工标记纪律、`- 测试设计缺口:` 必填，E 节复现命令须真跑一次取得红色输出（`diagnosing-bugs` 零重建接单的前提），立档收尾跑 plan-lint，按类型派 `diagnosing-bugs`；执行轮登记、复测、回归基线与台账关闭仍归 run-qa-testcases 主流程，本条只覆盖不经测试轮的直报。
+  - **发现源人工标记纪律（2026-09-22 拍板）**：人工发现的缺陷（用户直报、验收走查、用户发现后 AI 协查定位均属之）`- 发现源:` 固定写「用户（人工发现；<语境附注>）」——novel 存量「用户（人工走查）」（DEF-01~08 先例）为等价历史形态；**禁止裸写「用户」**，并附验收文档指针；复盘按发现源透视人工发现率与 agent 走查盲区。
 - **测例文档**：`qa/cases.md` **一图一份、不拆文件**——测例是批量设计文档（§0 被测对象/八源盘点/覆盖矩阵为共享上下文），由插件按路径识别为 `cases` 类单列「🧪 测例」子页，无需 frontmatter。
   - **测试标记写回票面**：`to-qa-testcases` 产出 cases.md 后给被测票写 `qa_cases: true`；`run-qa-testcases` 执行完写 `qa_tested: true`；验收通过（AC 全过 + 无未关闭缺陷）写 `qa_accepted: true`——三标记在票卡/详情以徽标展示。
   - **无图归属的回测测例**（SOP 回测、整页回测，挂不到具体工单/图）：落根层 `.plan/qa/cases-<主题>.md`（一主题一文件、不拆单），进第一层「测例&缺陷」tab；能挂到工单/图的测例放图内 `qa/cases.md`。
@@ -160,7 +182,7 @@ origin: proactive
 - `qa/`（缺陷一缺陷一文件 `DEF-NN-*.md`，测例 `cases.md` 一图一份；根层 `qa/` 放无图归属的回测产物）
 - `.archive/`（整轮归档，由 plan-archive 迁入）
 
-收口纪律：票面终态 `task`/`impl` = `done`、`research`/`prototype`/`grilling` = `resolved`（允许附日期）、执行中 = `claimed`；收口动作（implement / plan-sync / 测例执行 / 缺陷诊断 / plan-approve）收尾跑 plan-lint，0 发现或当轮修复。
+收口纪律：票面终态 = `done`（不分票型，允许附日期）、执行中 = `claimed`（票态词表正本见 §三「票面 `status` 词表」，本节不另立）；收口动作（implement / plan-sync / 测例执行 / 缺陷诊断 / plan-approve）收尾跑 plan-lint，0 发现或当轮修复。
 
 ## 指针
 

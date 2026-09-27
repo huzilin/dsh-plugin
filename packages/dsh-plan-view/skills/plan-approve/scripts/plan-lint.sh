@@ -16,10 +16,15 @@
 #   4. 票形态：tickets/ 下文件缺 frontmatter 或缺 type/blocked_by；合体
 #      tickets.md（多票一文件会被视图当成一张票；2026-09-24 拍板「1」——
 #      手写票不拦写入，格式必须同源 to-tickets，lint 兜底）
-#      词表正本 = plan-protocol §三（2026-09-24 闭合）：task/impl 终态 done、
-#      research/prototype/grilling 终态 resolved（允许附日期）、执行中 claimed；
+#      词表正本 = plan-protocol §三「票面 status 词表」（2026-09-27 拍板统一）：
+#      票的终态只有一个词 done（不分票型，允许附日期 done <YYYY-MM-DD>）、
+#      执行中 claimed、另有 open 与 out_of_scope。
+#      resolved 已于 2026-09-27 退出票态词表（原话「resolved 改为 done」），
+#      本脚本不再放行——残留 resolved 的票须由「形态契约变更回扫」迁移。
 #      todo/doing/closed 为插件归一容忍别名；type 不在上表的文件按说明/杂项
 #      解析、不查（研究型票 status 暂不设门，留观察）。
+#      impl 已于 2026-09-27 废弃（历史别名，三处正本从未列它为合法票型）；
+#      存量票由「形态契约变更回扫」迁移，本脚本不作拦截。
 #
 # 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
 # assets / handoffs / ledger / 一切隐藏目录与隐藏文件。
@@ -168,9 +173,10 @@ while IFS=$'\t' read -r d id f hh ty st; do
   fi
   if [ "$lcty" = "task" ] && [ -n "$st" ]; then
     case "$st" in
-      open|claimed|done|out_of_scope|resolved|resolved\ *) : ;;
-      todo|doing|closed) : ;;  # 插件归一容忍别名（→claimed / →resolved）
-      *) note "✗ $f: status-header — task status「${st}」不在词表（open/claimed/done/resolved [日期]/out_of_scope；容忍别名 todo/doing/closed）"; bad=$((bad + 1)) ;;
+      open|claimed|done|out_of_scope|done\ *) : ;;
+      todo|doing|closed) : ;;  # 插件归一容忍别名（→claimed / →done）
+      resolved|resolved\ *) note "✗ $f: status-header — task status「${st}」为已废弃词：resolved 已退出票态词表（2026-09-27 拍板「resolved 改为 done」），请改为 done"; bad=$((bad + 1)) ;;
+      *) note "✗ $f: status-header — task status「${st}」不在词表（open/claimed/done [日期]/out_of_scope；容忍别名 todo/doing/closed）"; bad=$((bad + 1)) ;;
     esac
   fi
   if [ "$hh" = "0" ]; then

@@ -34,7 +34,7 @@ The frontmatter holds the ticket's facts, and is the only place any of them is w
 ```markdown
 ---
 type: research | prototype | grilling | task
-blocked_by: [NN, NN]                 # [] when none
+blocked_by: [NN, NN]                 # [] when none — bare values, never quoted
 claimed_by: <session or agent id>    # set while a session holds the ticket
 claimed_at: <RFC 3339 timestamp>     # set alongside claimed_by
 undermined_by: [NN]                  # optional — see the skill
