@@ -55,36 +55,23 @@ test('注入文案要点：含四条硬规则与"忽略"降级', () => {
   assert.ok(!t.includes('"decision"'))
 })
 
-test('注入文案⑤：审批文档落盘后必须用 sidebar_open 打开', () => {
+// 【2026-09-27 用户要求整条删除】原⑤（sidebar_open 打开文档）与⑥（刷新语义）
+// 已退役。以下用例改为「负向断言」，防止条款被误恢复而无人察觉。
+test('退役断言：⑤⑥ 侧边栏条款不得再出现在注入文案里', () => {
   const t = loadReminder()
-  assert.ok(t.includes('⑤'), '提醒应有第⑤条（交付形态）')
-  assert.ok(t.includes('sidebar_open'), '提醒应点名 sidebar_open 工具')
-  assert.ok(t.includes('侧边栏'), '提醒应说明打开位置是侧边栏')
-  // 覆盖用户原话的两层要求：要拍板的文档 + 一般的文档输出
-  assert.ok(t.includes('审批文档'), '提醒应覆盖「要拍板的文档」')
-  assert.ok(t.includes('一般性的文档输出'), '提醒应覆盖「一般文档输出」')
-  // 退化路径必须写明，避免工具不可用时 agent 卡死
-  assert.ok(t.includes('不可用'), '提醒应给出 sidebar_open 不可用时的退化路径')
+  assert.ok(!t.includes('sidebar_open'), '提醒不应再点名 sidebar_open 工具')
+  assert.ok(!t.includes('侧边栏'), '提醒不应再要求把文档开到侧边栏')
+  assert.ok(!t.includes('⑤'), '提醒不应再有第⑤条')
+  assert.ok(!t.includes('⑥'), '提醒不应再有第⑥条')
+  assert.ok(!t.includes('与是否要拍板无关'), '结语不应再声明⑤独立于拍板判定')
+  assert.ok(!t.includes('刷新按钮'), '提醒不应再提及刷新按钮')
 })
 
-test('注入文案⑤：文档打开要求与是否要拍板解耦', () => {
+test('退役断言：条款①~④完整保留（删除⑤⑥不得误伤前四条）', () => {
   const t = loadReminder()
-  // 结语必须明说「与是否要拍板无关」，否则 agent 可能因判定为非决策而跳过打开
-  assert.ok(t.includes('与是否要拍板无关'), '结语应声明⑤独立于拍板判定')
-})
-
-test('注入文案⑥：如实声明「无法关闭/无法得知已开」，不得谎报刷新', () => {
-  const t = loadReminder()
-  assert.ok(t.includes('⑥'), '提醒应有第⑥条（已打开文档的处置）')
-  // 核心诚实性约束：必须说清模型做不到关闭与查询
-  assert.ok(t.includes('关闭'), '提醒应说明关闭能力')
-  assert.ok(t.includes('做不到'), '提醒应如实声明关闭/查询做不到')
-  assert.ok(t.includes('谎称'), '提醒应禁止谎报刷新成功')
-  // 重复打开的真实语义必须写明是「聚焦」而非刷新
-  assert.ok(t.includes('聚焦'), '提醒应说明重复打开只是聚焦')
-  // 不得诱导用户点会弹确认框的刷新按钮（用户明确要求「不要弹提示」）
-  assert.ok(t.includes('刷新按钮'), '提醒应点名不要诱导点刷新按钮')
-  assert.ok(t.includes('弹确认框') || t.includes('弹框'), '提醒应说明刷新按钮会弹框')
+  for (const k of ['①', '②', '③', '④']) {
+    assert.ok(t.includes(k), `提醒应保留第${k}条`)
+  }
 })
 
 test('classifyPrompt：非决策返回 null（不注入）', () => {

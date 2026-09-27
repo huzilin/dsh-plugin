@@ -94,14 +94,26 @@ function InputBridge(props) {
 	return null;
 }
 /**
+* 目标会话的输入桥是否已就绪（该会话的输入区已挂载、setDraft 已登记）。
+* `deliverDraft` 返回 `'queued'` 后调用方据此判断交接草稿是否已被消费。
+*/
+function isBridged(sessionId) {
+	return setters.has(sessionId);
+}
+/**
 * 把草稿送进目标会话的输入框。
-* @returns `'injected'` 目标会话正开着，已立即填入；`'queued'` 已挂成交接草稿，
-* 调用方须随后 `sessions.open(sessionId)` 切过去，输入区重挂时自动消费。
+* @returns `'injected'` 目标会话正开着，已排入立即填入（宿主 setDraft 在宏任务里
+* 触发——实测它可能同步挂死，绝不能留在调用方的 await 链上）；`'queued'` 已挂成
+* 交接草稿，调用方须随后 `sessions.open(sessionId)` 切过去，输入区重挂时自动消费。
 */
 function deliverDraft(sessionId, text) {
 	const set = setters.get(sessionId);
 	if (set !== void 0) {
-		set(text);
+		setTimeout(() => {
+			try {
+				set(text);
+			} catch {}
+		}, 0);
 		return "injected";
 	}
 	pendingDraft = text;
@@ -164,7 +176,7 @@ function deriveTicketStatus(file, raw) {
 		title: titleMatch?.[1]?.replace(/`[^`]*`/g, "")?.trim() ?? file,
 		type: fm.type,
 		blockedBy: parseBlockedBy(fm.blocked_by),
-		resolved: hasAnswer,
+		done: hasAnswer,
 		outOfScope: hasRuledOut,
 		claimedBy: fm.claimed_by,
 		status: fm.status,
@@ -198,7 +210,6 @@ function upsertFrontmatterKey(raw, key, value) {
 const DONE_STATUS = new Set([
 	"done",
 	"closed",
-	"resolved",
 	"complete",
 	"completed",
 	"shipped"
@@ -228,9 +239,9 @@ function statusWord(t) {
 }
 function displayStatus(t) {
 	if (t.outOfScope) return "out_of_scope";
-	if (t.resolved) return "resolved";
+	if (t.done) return "done";
 	const w = statusWord(t);
-	if (DONE_STATUS.has(w)) return "resolved";
+	if (DONE_STATUS.has(w)) return "done";
 	if (OUT_STATUS.has(w)) return "out_of_scope";
 	if (t.claimedBy) return "claimed";
 	if (CLAIMED_STATUS.has(w)) return "claimed";
@@ -446,24 +457,23 @@ const typeTheme = (t) => TYPE_THEME[t ?? ""] ?? TYPE_FALLBACK;
 const DOT = {
 	open: "#81858c",
 	claimed: "#f7ad31",
-	resolved: "#4ed17e",
+	done: "#4ed17e",
 	out_of_scope: "#61666b"
 };
 const STATUS_LABELS = {
 	open: "Open",
 	claimed: "Claimed",
-	resolved: "Resolved",
+	done: "Done",
 	out_of_scope: "Out of scope"
 };
 const STATUS_ORDER = [
 	"open",
 	"claimed",
-	"resolved",
+	"done",
 	"out_of_scope"
 ];
 const TICKET_TYPES = new Set([
 	"task",
-	"impl",
 	"research",
 	"prototype",
 	"grilling"
@@ -518,7 +528,7 @@ const SPECULATION_TYPES = new Set([
 	"grilling",
 	"prototype"
 ]);
-const IMPL_TYPES = new Set(["task", "impl"]);
+const IMPL_TYPES = new Set(["task"]);
 function mapKind(dir, tickets) {
 	let speculation = false, impl = false;
 	for (const t of tickets) {
@@ -740,27 +750,58 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 		return () => window.removeEventListener("keydown", onKey);
 	}, [onClose]);
 	/**
-	* 把指令草稿送进目标会话的输入框。目标会话正开着就立即填；否则经输入桥挂
-	* 交接草稿后切过去，输入区随会话切换重挂时消费。都走不通退剪贴板。
+	* 触发宿主会话切换（`sessions.open`）。实测宿主 select→通知→渲染链可能同步
+	* 挂死，因此绝不留在 await 链上：宏任务里调用、吞掉一切异常，调用即视为已触发。
+	*/
+	const openSessionDetached = (sessionId) => {
+		const open = sessionsOf(ctx)?.open;
+		if (open === void 0) return false;
+		setTimeout(() => {
+			try {
+				const r = open(sessionId);
+				if (r !== void 0 && r !== null && typeof r.catch === "function") r.catch(() => {});
+			} catch {}
+		}, 0);
+		return true;
+	};
+	/**
+	* 把指令草稿送进目标会话的输入框。目标会话正开着就立即（宏任务）填；否则经
+	* 输入桥挂交接草稿、触发切换，并等输入区重挂消费掉草稿。每一步都即时反馈，
+	* 看门狗保证 UI 永不卡在 busy 态，指令最终兜底进剪贴板——绝不静默丢失。
 	*/
 	const deliverPrompt = async (sessionId, text, okMsg) => {
 		if (sessionId === void 0) {
 			setMsg(await copyFallback(text));
 			return;
 		}
-		try {
-			if (deliverDraft(sessionId, text) === "queued") {
-				const open = sessionsOf(ctx)?.open;
-				if (open === void 0) {
-					setMsg(await copyFallback(text));
-					return;
-				}
-				open(sessionId);
-			}
+		if (deliverDraft(sessionId, text) === "injected") {
 			setMsg(okMsg);
-		} catch (e) {
-			setMsg(`打开 session 失败：${e.message}。${await copyFallback(text)}`);
+			return;
 		}
+		if (!openSessionDetached(sessionId)) {
+			setMsg(`已选好 session ${shortSession(sessionId)}，但此环境无法切换会话。${await copyFallback(text)}`);
+			return;
+		}
+		setMsg(`正在切到 session ${shortSession(sessionId)}…`);
+		const deadline = Date.now() + 1e4;
+		while (!isBridged(sessionId) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
+		if (isBridged(sessionId)) setMsg(okMsg);
+		else setMsg(`已触发切到 session ${shortSession(sessionId)}；指令会在输入区就绪时自动填入，若一直没出现：${await copyFallback(text)}`);
+	};
+	/** 动作总看门狗：任何环节挂死（含宿主内部），15 秒后强制恢复 UI 并把指令兜底进剪贴板。 */
+	const withWatchdog = async (key, work, fallbackText) => {
+		setMsg(null);
+		setBusy(key);
+		let finished = false;
+		const watchdog = new Promise((resolve) => setTimeout(() => {
+			if (finished) return;
+			setBusy(null);
+			(fallbackText !== void 0 ? copyFallback(fallbackText()) : Promise.resolve("")).then((extra) => setMsg(`操作超时（宿主无响应）。${extra}`));
+		}, 15e3));
+		await Promise.race([work.then(() => {
+			finished = true;
+		}), watchdog]);
+		if (finished) setBusy(null);
 	};
 	/** Pure jump with the E1 liveness check. */
 	const jump = async (sessionId) => {
@@ -771,12 +812,11 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 				setMsg("该 session 已不可用（可能已被回收）。");
 				return;
 			}
-			const open = sessionsOf(ctx)?.open;
-			if (open === void 0) {
+			if (!openSessionDetached(sessionId)) {
 				setMsg("此环境没有跳转能力（sessions 服务不可用）。");
 				return;
 			}
-			open(sessionId);
+			setMsg(`正在切到 session ${shortSession(sessionId)}…`);
 		} catch (e) {
 			setMsg(`跳转失败：${e.message}`);
 		} finally {
@@ -785,10 +825,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 	};
 	/** New session via the client runtime, write the B1 binding, prefill, jump. */
 	const createAndBind = async (promptText) => {
-		setMsg(null);
-		setRebind(false);
-		setBusy("create");
-		try {
+		await withWatchdog("create", async () => {
 			const sessions = sessionsOf(ctx);
 			if (sessions?.create === void 0) {
 				setMsg(`此环境没有会话创建能力（sessions 服务不可用）。${await copyFallback(promptText)}`);
@@ -799,13 +836,9 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 			const raw = await fsRead(scope, target);
 			if (raw.kind === "text") await fsWrite(scope, target, upsertFrontmatterKey(raw.content, "session", sessionId));
 			renameSession(sessions, sessionId, `#${shortId(ticket)} ${ticket.title}`.slice(0, 60));
-			await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`);
 			onChanged();
-		} catch (e) {
-			setMsg(`派发失败：${e.message}`);
-		} finally {
-			setBusy(null);
-		}
+			await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`);
+		}, () => promptText);
 	};
 	/** ①/② draft-first dispatch on a ticket: refill the bound session, else create one. */
 	const dispatchTicket = async (mode) => {
@@ -814,33 +847,29 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 			await createAndBind(promptText);
 			return;
 		}
-		setMsg(null);
-		setBusy(mode);
-		try {
-			if (await sessionAlive(ticket.session) === void 0) {
+		await withWatchdog(mode, async () => {
+			setRebind(false);
+			let live;
+			try {
+				live = await sessionAlive(ticket.session);
+			} catch {
+				live = void 0;
+			}
+			if (live === void 0) {
 				setRebind(true);
 				setMsg("绑定的 session 已不可用。可新建 session 并重新绑定。");
 				return;
 			}
 			await deliverPrompt(ticket.session, promptText, `指令已填进 session ${shortSession(ticket.session)} 的输入框，确认后发送。`);
-		} catch (e) {
-			setMsg(`查询 session 失败：${e.message}`);
-		} finally {
-			setBusy(null);
-		}
+		}, () => promptText);
 	};
 	/** ③ 拍板: prefill `/plan-approve <doc>` in the session the user is looking at. */
 	const settle = async () => {
-		setMsg(null);
-		setBusy("settle");
-		try {
-			await deliverPrompt(scope.sessionId, `/plan-approve ${ticket.file}`, "已把 /plan-approve 预填进当前会话输入框，确认后发送。");
+		const line = `/plan-approve ${ticket.file}`;
+		await withWatchdog("settle", async () => {
+			await deliverPrompt(scope.sessionId, line, "已把 /plan-approve 预填进当前会话输入框，确认后发送。");
 			onChanged();
-		} catch (e) {
-			setMsg(`拍板失败：${e.message}`);
-		} finally {
-			setBusy(null);
-		}
+		}, () => line);
 	};
 	const kind = ticketKind(ticket);
 	const pending = isPending(ticket);
@@ -1176,7 +1205,7 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
 	const [focus, setFocus] = useState(null);
 	const groups = useMemo(() => {
 		const g = {
-			resolved: [],
+			done: [],
 			out_of_scope: [],
 			claimed: [],
 			open: []
@@ -1186,7 +1215,7 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
 	}, [tickets]);
 	const waiting = useMemo(() => tickets.filter(isPending).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)), [tickets]);
 	const active = tickets.filter((t) => !t.outOfScope);
-	const done = tickets.filter((t) => t.resolved).length;
+	const done = tickets.filter((t) => t.done).length;
 	const pct = active.length > 0 ? Math.round(done / active.length * 100) : 0;
 	return /* @__PURE__ */ jsxs("div", {
 		style: {
@@ -1218,7 +1247,7 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
 						tickets.length,
 						" tickets · ",
 						done,
-						" resolved"
+						" done"
 					]
 				})]
 			}),
@@ -1660,7 +1689,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) 
 						" tickets",
 						statusSet.size < STATUS_ORDER.length && /* @__PURE__ */ jsx("span", {
 							style: { color: "#666" },
-							children: "（默认隐藏已完成；勾 Status 里的 Resolved 可看）"
+							children: "（默认隐藏已完成；勾 Status 里的 Done 可看）"
 						})
 					]
 				})]
@@ -2209,7 +2238,7 @@ function layoutGraph(tickets) {
 		to: r,
 		key: `s${i}`
 	}));
-	grid.filter((t) => (childrenOf.get(t.id) ?? []).length === 0 && t.resolved).map((t) => t.id).forEach((l, i) => edges.push({
+	grid.filter((t) => (childrenOf.get(t.id) ?? []).length === 0 && t.done).map((t) => t.id).forEach((l, i) => edges.push({
 		from: l,
 		to: END,
 		key: `l${i}`
@@ -2863,7 +2892,7 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 					children: g.items.map(({ e }) => {
 						const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
 						const work = own.filter((t) => ticketKind(t) === "ticket" && !t.outOfScope);
-						const done = work.filter((t) => t.resolved).length;
+						const done = work.filter((t) => t.done).length;
 						const pct = work.length > 0 ? Math.round(done / work.length * 100) : 0;
 						const { stage, color } = effortStage(own);
 						return /* @__PURE__ */ jsxs("div", {
@@ -4418,7 +4447,7 @@ function ledgerStage(e, mapTickets) {
 			const m = x.file.match(/^(\d+)-/);
 			return m !== null && m !== void 0 && parseInt(m[1], 10) === parseInt(n, 10);
 		});
-		return t === void 0 || displayStatus(t) !== "resolved" && !t.outOfScope;
+		return t === void 0 || displayStatus(t) !== "done" && !t.outOfScope;
 	});
 	if (e.state === "阻塞中") return unmet.length > 0 ? "阻塞中" : "可启动";
 	return unmet.length > 0 ? "阻塞中" : e.state === "可启动" ? "可启动" : "可启动";

@@ -45,13 +45,25 @@ export function InputBridge(props: { sessionId?: string; inputActions?: { setDra
 }
 
 /**
+ * 目标会话的输入桥是否已就绪（该会话的输入区已挂载、setDraft 已登记）。
+ * `deliverDraft` 返回 `'queued'` 后调用方据此判断交接草稿是否已被消费。
+ */
+export function isBridged(sessionId: string): boolean {
+  return setters.has(sessionId)
+}
+
+/**
  * 把草稿送进目标会话的输入框。
- * @returns `'injected'` 目标会话正开着，已立即填入；`'queued'` 已挂成交接草稿，
- * 调用方须随后 `sessions.open(sessionId)` 切过去，输入区重挂时自动消费。
+ * @returns `'injected'` 目标会话正开着，已排入立即填入（宿主 setDraft 在宏任务里
+ * 触发——实测它可能同步挂死，绝不能留在调用方的 await 链上）；`'queued'` 已挂成
+ * 交接草稿，调用方须随后 `sessions.open(sessionId)` 切过去，输入区重挂时自动消费。
  */
 export function deliverDraft(sessionId: string, text: string): 'injected' | 'queued' {
   const set = setters.get(sessionId)
-  if (set !== undefined) { set(text); return 'injected' }
+  if (set !== undefined) {
+    setTimeout(() => { try { set(text) } catch { /* 宿主输入机异常不反噬按钮链 */ } }, 0)
+    return 'injected'
+  }
   pendingDraft = text
   pendingTarget = sessionId
   return 'queued'
