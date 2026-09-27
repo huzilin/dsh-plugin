@@ -1,10 +1,43 @@
 ---
 type: task
 blocked_by: [01, 02, 03, 04, 05]
-status: open
+status: done
 ---
 
 # 06 `doc-authority` 自身归宿分流（自指验证）
+
+## 执行记录（2026-09-27 完成 · 自指验证通过）
+
+**分流结果**：
+
+| spec 节 | 归宿 | 目标状态 |
+|:--|:--|:--|
+| Problem Statement | → 需求文档 §Problem | ✓ 存在 |
+| Solution | → 需求文档 §Solution | ✓ 存在 |
+| User Stories | → 需求文档 §用户故事 | ✓ 存在 |
+| Implementation Decisions | → arch §二/§五 ＋ 需求文档 §范围外 ＋ archive | ✓ 存在 |
+| Testing Decisions | → 需求文档 §验收与测法 | ✓ 存在 |
+| Out of Scope | → 需求文档 §范围外 | ✓ 存在 |
+| Further Notes | → archive ＋ arch §七（决策来源指针） | ✓ 存在 |
+
+**新建的长期权威（用户裁定「新建 docs/architecture.md」）**：
+
+- `docs/architecture.md` —— 本仓**架构正本**，承载横向事实（三层结构、skill 分发两级制、三条流程、文档权威分层、文档地图、决策来源指针）；
+- `docs/requirements/doc-authority-文档权威治理.md` —— **需求文档**，文件名含 effort slug `doc-authority`（可反查 effort 目录）。
+
+**「更新完成」判据实测通过（机械判定）**：
+
+| 检查 | 结果 |
+|:--|:--|
+| spec 节数 vs 归宿行数 | **7 = 7** ✓ |
+| 归宿目标文件存在性 | `docs/architecture.md` ✓、需求文档 ✓ |
+| 归宿行指向的小节存在性 | §Problem／§Solution／§用户故事／§验收与测法／§范围外 **5/5 存在** ✓ |
+
+**spec 已作废**：状态头 `active` → **`closed`**，并在头部加作废声明，明示「自此不再承担权威」与三处去向。**这正是本方案要根治的「旧文档仍自称有效」——本次由 spec 自己执行，自指闭环成立。**
+
+**诚实边界**：spec 文件**原地保留**（未移入 `.archive/`）作过程留痕——按本仓惯例，`.plan/` 内已 closed 的文档原地即历史锚点；**其权威身份已由头部声明解除**，不构成「多份文档同时自称有效」。
+
+---
 
 ## 交付什么
 

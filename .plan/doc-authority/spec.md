@@ -1,11 +1,20 @@
 ---
 type: spec
 date: 2026-09-27
-status: active
+status: closed
 origin: retrospective
 ---
 
 # 文档权威治理 · 技术 spec（spec 一次性化与 docs 分层）
+
+> **⚠️ 本 spec 已作废（2026-09-27）**
+>
+> 全部 7 张票已 done；每节均有归宿行且目标已存在（**机械判定通过**），内容已按五类归宿分流：
+> - **横向结论** → `docs/architecture.md`（本仓新建架构正本）
+> - **用户诉求／验收／范围外** → `docs/requirements/doc-authority-文档权威治理.md`
+> - **过程物** → 原地保留为过程留痕
+>
+> **本文件自此不再承担权威**。要读「现在是什么」请看 `docs/architecture.md`；要读「用户要什么」请看需求文档；本文件只作「为什么这么定」的**决策来源**。
 
 > **Effort**：`.plan/doc-authority/`（本 spec 所属 effort，slug=`doc-authority`）
 > **决策正本**：`.plan/待拍板-文档权威治理-20260927.md`（`closed`，2026-09-27 结算）
@@ -24,6 +33,7 @@ origin: retrospective
 ---
 
 ## Problem Statement
+> **归宿（2026-09-27）**：→ 需求文档 docs/requirements/doc-authority-文档权威治理.md §Problem
 
 `.plan/` 体系里的 spec 在 effort 关闭后仍然留在仓里，与 `docs/` 下的长期文档（架构正本、领域 schema）**同时自称有效**。同一片领域被多张 effort 先后触碰时，新旧两份 spec 的结论会不一致，而**后续会话读到哪一份是随机的**——它会照旧 spec 实现，把已被取代的方案重新引入。这一现象在 novel 仓造成了 **66 处文档冲突（30 高危）**，其中实现工单最密集（21 处，且**验收清单已全部打勾、打勾的是旧口径**）。
 
@@ -34,6 +44,7 @@ origin: retrospective
 **用户视角的问题**：我花多轮整治废弃标记，但下次仍然会用废弃方案；我不确定这套方案本身是不是有积弊。
 
 ## Solution
+> **归宿（2026-09-27）**：→ 需求文档 docs/requirements/doc-authority-文档权威治理.md §Solution
 
 **让 spec 退化为一次性实施文档，让 `docs/` 成为唯一长期权威。**
 
@@ -47,6 +58,7 @@ origin: retrospective
 **需求文档命名（用户 2026-09-27 敲定）**：文档名**必须包含 effort 的名字**，便于关联。命名形态见 §Implementation Decisions 决策 2。
 
 ## User Stories
+> **归宿（2026-09-27）**：→ 需求文档 docs/requirements/doc-authority-文档权威治理.md §用户故事
 
 1. 作为协议维护者，我希望 spec 有明确的生命周期终点（effort 关闭即作废），以便它不再与长期文档争夺权威。
 2. 作为协议维护者，我希望 spec 作废前有一次确定的分流动作，以便其中仍有价值的内容不会随作废丢失。
@@ -70,6 +82,7 @@ origin: retrospective
 20. 作为协议维护者，我希望 status 字段的归属（原版/自有）有定论，以便决定是撤回扩展还是把它写进契约。
 
 ## Implementation Decisions
+> **归宿（2026-09-27）**：→ arch docs/architecture.md §二/§五（横向：三层结构与文档分层） ＋ 需求文档 §范围外（决策 9 范围边界） ＋ archive（决策过程与逐条裁定留痕）
 
 **决策 1：文档分层（五层，两类生命周期）**
 
@@ -375,6 +388,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 
 
 ## Testing Decisions
+> **归宿（2026-09-27）**：→ 需求文档 docs/requirements/doc-authority-文档权威治理.md §验收与测法
 
 **本 spec 的「被测量对象」是协议条款，不是运行代码**，故测试形态为**条款可执行性核验**，而非单元测试。
 
@@ -395,6 +409,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 **不测什么**：不测协议文风的优劣（那是评审事项）；不测 novel 存量文档的当前正确性（本 spec 不实施改动）。
 
 ## Out of Scope
+> **归宿（2026-09-27）**：→ 需求文档 docs/requirements/doc-authority-文档权威治理.md §范围外
 
 - **对 novel 仓库的任何实际改动**——7 份 spec 的作废、4 份领域 schema 的「真相源」反置修正，均**不在本 spec 范围**（用户已定「不是现在实施」）；
 - **用批量替换解决术语残留**——已被实测推翻（旧词「强制定稿」非归档区现存 141 处、仅 34 处带合法留痕，且 2026-09-27 仍在被新写入），不进本方案；
@@ -413,6 +428,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 **仍不在范围**：对 `to-spec` / `implement` skill 的**实际代码改动**——本 spec 只定义协议条款；skill 改动待协议定稿后另批（决策 7 的条款 7 若经裁定乙，亦同此例）。
 
 ## Further Notes
+> **归宿（2026-09-27）**：→ archive（过程物：与既有文档的关系、自指说明） ＋ arch docs/architecture.md §七（决策来源指针）
 
 **本 spec 自身的归宿（按本方案的自指要求）**：本 spec 是 `.plan/doc-authority/` 的一次性实施文档；其产物是协议条款。**协议条款落地后**，本 spec 按五类归宿分流（决策类→arch 或领域文档；过程物→归档），随后作废。
 
