@@ -44,14 +44,23 @@
 
 ## 三、skill 分发的两级制（2026-09-27 定）
 
-`install-skills.sh` 把 `.optional/` 下的 skill 分两档——
+`install-skills.sh` 按**目录位置**分两档——
 
-| 档位 | 成员 | 行为 | 理由 |
+| 档位 | 位置 | 成员 | 行为 |
 |:--|:--|:--|:--|
-| **受管** | `implement`、`implement-spec`、`to-spec` | **每次覆盖同步** | 本仓持有其正本，且含上游没有的项目规则（落地即翻票、读时检查、归宿行）；不覆盖就会与正本漂移 |
-| **播种** | 其余 `.optional/*` | **只播一次、不覆盖** | 上游 skill，用户可就地定制；覆盖会毁掉本地改动 |
+| **必装** | `skills/`（主循环） | 全部顶层 skill，含 `implement`、`implement-spec`、`to-spec` | **每次安装全量更新**（覆盖同步） |
+| **播种** | `skills/.optional/` | `codebase-design`、`handoff`、`review-code`、`writing-great-skills` | **只播一次、不覆盖**（目标已存在则跳过） |
 
-**id 约定**：主 `skills/` 下默认用原名；需 `mp-` 前缀的在脚本 `case` 里显式列出（**不得用 `sed` 猜**——`sed 's/-//g'` 会把 `implement-spec` 错拼成 `implementspec`，导致装不到）。
+**判据：这个 skill 是不是 plan 流程的一环？**
+
+- **是 → 放 `skills/`**：plan 流程少一个环节就跑不通（没有 `implement` 就无法落地、没有 `to-spec` 就无法出 spec），所以**后续 install 必须安装**，且必须与正本同步——不覆盖就会漂移。
+- **否 → 放 `skills/.optional/`**：通用上游 skill，用户可能就地定制；覆盖会毁掉本地改动，故只在缺失时播种。
+
+**2026-09-27 变更留痕**：`implement`、`implement-spec`、`to-spec` **原在 `.optional/`**，曾以脚本内「受管档位」特判实现覆盖同步。用户拍板「去掉 `.optional` 这层，改为后续 install 必须安装」后，三者**移入主 `skills/` 循环**，脚本特判随之删除——**位置即档位**，不再需要脚本里的名单。
+
+**id 约定**：主 `skills/` 下默认用原名；需 `mp-` 前缀的（含 `implement`→`mp-implement`、`implement-spec`→`mp-implement-spec`、`to-spec`→`mp-to-spec`）在脚本 `case` 里**显式列出**（**不得用 `sed` 猜**——`sed 's/-//g'` 会把 `implement-spec` 错拼成 `implementspec`，导致装不到）。
+
+**必装自检**：脚本末尾断言 `mp-implement`、`mp-implement-spec`、`mp-to-spec` 的 `SKILL.md` 存在，缺任一即安装失败——「必须安装」由脚本强制，不靠约定。
 
 ## 四、plan 生态的三条流程
 

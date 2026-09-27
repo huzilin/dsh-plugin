@@ -22,10 +22,26 @@ status: done
 
 | # | 动作 |
 |:--|:--|
-| 1 | 在本仓建源正本 `skills/.optional/implement/SKILL.md`、`skills/.optional/implement-spec/SKILL.md`（**保留用户既有定制**：落地即翻票、plan-lint 收口等，逐条并入，未丢弃） |
+| 1 | 在本仓建源正本 `skills/implement/SKILL.md`、`skills/implement-spec/SKILL.md`（**保留用户既有定制**：落地即翻票、plan-lint 收口等，逐条并入，未丢弃）。**初建于 `skills/.optional/`，同日按用户拍板移入主 `skills/`——见下方「后续变更」** |
 | 2 | 读时检查写入两个正本（`implement-spec` 升为**必做步骤 2**；`implement` 置于正文首段） |
-| 3 | `install-skills.sh` 增加**受管档位**：`implement`/`implement-spec`/`to-spec` 改为**每次覆盖同步**（原为「已存在则跳过」，且 id 生成 `sed 's/-//g'` 会把 `implement-spec` 错拼成 `implementspec`，**根本装不到**） |
+| 3 | `install-skills.sh`：`implement`/`implement-spec`/`to-spec` 改为**每次覆盖同步**；并修正 id 生成缺陷（`sed 's/-//g'` 把 `implement-spec` 错拼成 `implementspec`，**根本装不到**） |
 | 4 | 其余 `.optional` skill 维持「只播一次、不覆盖」——它们是用户可就地定制的上游 skill，覆盖会毁掉本地改动 |
+
+**后续变更（2026-09-27，用户拍板）**：
+
+> **用户原话（照抄）**：「7、8、9 去掉 optional 这层，改为后续 install 必须安装」
+
+**语义**：`implement`、`implement-spec`、`to-spec`**离开 `.optional/`，移入主 `skills/` 循环**——位置即档位，脚本内的「受管名单」特判随之删除。三者属 **plan 流程的一环**（少一个流程就跑不通），故**后续 install 必须安装**，不再作可选播种项。
+
+| 落点 | 变化 |
+|:--|:--|
+| 目录 | `skills/.optional/{implement,implement-spec,to-spec}` → `skills/{implement,implement-spec,to-spec}`（`git mv`，历史保留） |
+| 脚本主循环 | `case` 增 `implement`→`mp-implement`、`implement-spec`→`mp-implement-spec`、`to-spec`→`mp-to-spec` 三条映射 |
+| 脚本 `.optional` 段 | 删「受管档位」特判，回归「只播一次」单一行为 |
+| **必装自检（新增）** | 脚本末尾断言三者 `SKILL.md` 存在，**缺任一即安装失败**——「必须安装」由脚本强制，不靠约定 |
+| 文档 | `docs/architecture.md` §三 改写（判据改为「是否 plan 流程的一环」）；`skills/README.md` 更新档位说明与链接，并补录此前未列的 `implement`/`implement-spec` |
+
+**已知残余**：`mp-implement` / `mp-implement-spec` 目录下有脚本注入的 `scripts/plan-lint.sh`，而源仓目录只有 `SKILL.md`——故 `diff -r` 会显示「仅安装态有 scripts」属**预期**，非漂移（脚本本体已核对一致）。
 
 **分发验证**：`mp-implement`／`mp-implement-spec`／`mp-to-spec` **三份双拷贝逐字节一致**；读时检查与归宿段均已入安装态（各 grep 命中 1）。
 

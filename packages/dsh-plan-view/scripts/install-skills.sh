@@ -68,6 +68,9 @@ for src in "$SKILLS_SRC"/*/; do
     grill-with-docs) skill_id="mp-grill-with-docs" ;;
     improve-codebase-architecture) skill_id="mp-improve-codebase-architecture" ;;
     to-tickets)      skill_id="mp-to-tickets" ;;
+    implement)       skill_id="mp-implement" ;;
+    implement-spec)  skill_id="mp-implement-spec" ;;
+    to-spec)         skill_id="mp-to-spec" ;;
     *)               skill_id="$skill" ;;
   esac
   if [ -f "$SKILLS_SRC/$skill/SKILL.md" ]; then
@@ -99,33 +102,16 @@ for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases
   fi
 done
 
-# Copy optional skills.
+# Copy optional skills — seeded once, then left alone.
 #
-# Two tiers, and the difference matters:
-#   * **Managed here** — this repo holds their source of truth, and they are
-#     re-copied on every install so the installed copy cannot drift:
-#       `implement` / `implement-spec` — carry project rules upstream lacks
-#         (ticket-update-on-landing, spec-is-live read-time check, plan-lint close)
-#       `to-spec` — a fork of upstream: plan-ecosystem vocabulary (spec/effort/
-#         `.plan/` paths) plus the "discharge the spec into its long-lived homes"
-#         finalization step (disposition lines, requirements doc)
-#   * everything else under .optional/ is **seeded once** and then left alone —
-#     upstream skills the user may have customized in place; clobbering them
-#     would destroy local edits.
-MANAGED_OPTIONAL="implement implement-spec to-spec"
+# These are upstream skills the user may have customized in place, so a re-copy
+# would destroy local edits; they install only when the target is absent. Skills
+# this repo owns the source of truth for (implement / implement-spec / to-spec,
+# which carry project-specific rules) live in the main `skills/` loop above and
+# are re-synced on every install — do not move them back here.
 for skill in $(ls "$SKILLS_SRC/.optional/" 2>/dev/null); do
-  case "$skill" in
-    implement)       skill_id="mp-implement" ;;
-    implement-spec)  skill_id="mp-implement-spec" ;;
-    to-spec)         skill_id="mp-to-spec" ;;
-    *)               skill_id="mp-$(echo "$skill" | sed 's/-//g')" ;;
-  esac
-  if echo " $MANAGED_OPTIONAL " | grep -q " $skill "; then
-    rm -rf "$SKILLS_DST/$skill_id"
-    cp -R "$SKILLS_SRC/.optional/$skill" "$SKILLS_DST/$skill_id"
-    chmod -R a+rX "$SKILLS_DST/$skill_id"
-    echo "Installed (managed): $skill -> $SKILLS_DST/$skill_id"
-  elif [ ! -d "$SKILLS_DST/$skill_id" ]; then
+  skill_id="mp-$(echo "$skill" | sed 's/-//g')"
+  if [ ! -d "$SKILLS_DST/$skill_id" ]; then
     cp -R "$SKILLS_SRC/.optional/$skill" "$SKILLS_DST/$skill_id"
     chmod -R a+rX "$SKILLS_DST/$skill_id"
     echo "Installed (optional): $skill -> $SKILLS_DST/$skill_id"
@@ -134,13 +120,23 @@ done
 
 # Post-install self-check (ticket 04): the plan gate must exist in the install
 # state, otherwise plan-approve/plan-sync step 1 is a dangling reference again.
-# 只断言有源仓正本、由本脚本管理的 skill；implement* 无正本不在此列。
-for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases plan-loop; do
+# 只断言有源仓正本、由本脚本管理的 skill。
+for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases plan-loop mp-implement mp-implement-spec; do
   if [ ! -f "$SKILLS_DST/$skill_id/scripts/plan-lint.sh" ]; then
     echo "Error: $SKILLS_DST/$skill_id/scripts/plan-lint.sh missing after install" >&2
     exit 1
   fi
 done
-echo "Self-check: plan-lint.sh present in mp-plan-approve, mp-plan-sync, mp-diagnosing-bugs, run-qa-testcases, plan-loop."
+echo "Self-check: plan-lint.sh present in mp-plan-approve, mp-plan-sync, mp-diagnosing-bugs, run-qa-testcases, plan-loop, mp-implement, mp-implement-spec."
+
+# 必装 skill 自检：implement / implement-spec / to-spec 已从 .optional/ 移入主
+# 循环，属「后续 install 必须安装」——缺任一即安装失败（不再是可选的播种项）。
+for skill_id in mp-implement mp-implement-spec mp-to-spec; do
+  if [ ! -f "$SKILLS_DST/$skill_id/SKILL.md" ]; then
+    echo "Error: $SKILLS_DST/$skill_id/SKILL.md missing after install" >&2
+    exit 1
+  fi
+done
+echo "Self-check: required skills present (mp-implement, mp-implement-spec, mp-to-spec)."
 
 echo "Done. Skills installed to $SKILLS_DST"

@@ -13,7 +13,7 @@ General-purpose agent skills, adapted from [Matt Pocock's skills](https://github
 
 ## Skills
 
-Most skills live directly in this directory and install by default. The rest are optional extras under [`.optional/`](./.optional/) — copy over whichever you want.
+Skills in this directory **install by default and are re-synced on every install** (they are flow members — the plan ecosystem breaks without them). Extras under [`.optional/`](./.optional/) are seeded once and left alone: upstream skills you may have customized in place.
 
 **User-invoked** — reached by typing their name; their job is to orchestrate a session.
 
@@ -21,13 +21,15 @@ Most skills live directly in this directory and install by default. The rest are
 - **[grill-with-docs](./grill-with-docs/SKILL.md)** — grill-me plus live domain-model upkeep: updates `CONTEXT.md` and ADRs as decisions crystallise.
 - **[handoff](./.optional/handoff/SKILL.md)** — compact the current conversation into a handoff document (`.plan/handoffs/`) so a fresh agent can continue.
 - **[improve-codebase-architecture](./improve-codebase-architecture/SKILL.md)** — scan for deepening opportunities, present as a visual HTML report, then grill through the chosen one.
-- **[to-spec](./.optional/to-spec/SKILL.md)** — synthesize the current conversation into a spec at `.plan/<slug>/spec.md`.
+- **[to-spec](./to-spec/SKILL.md)** — synthesize the current conversation into a spec at `.plan/<slug>/spec.md`, then discharge it into its long-lived homes (architecture charter, domain docs, requirements doc) so the spec can be voided once the effort closes.
 - **[to-tickets](./to-tickets/SKILL.md)** — break a plan or spec into tracer-bullet tickets at `.plan/<slug>/tickets.md`.
+- **[implement](./implement/SKILL.md)** — implement a piece of work from a spec or set of tickets: check the spec is still live first, then build it and flip the ticket in the same pass as the commit.
+- **[implement-spec](./implement-spec/SKILL.md)** — implement an entire spec on a single branch, working the ticket graph's frontier with implementer subagents.
 - **[to-approval](./to-approval/SKILL.md)** — expand a decision stated too tersely to act on into a readable approval document at `.plan/`, carrying a status header so it stays trackable.
 - **[plan-approve](./plan-approve/SKILL.md)** — work the set of `.plan/` documents waiting on the human: re-verify each `pending` item, report the ones already settled, put the live ones in one batch, then record the rulings and advance each document's status.
 - **[plan-archive](./plan-archive/SKILL.md)** — archive completed plan work one round at a time: a finished round is `git mv`'d whole into `.archive/rounds/<round-id>/`, out-of-round references swept, superseded conclusions marked in place. Run manually when a round has shipped.
 - **[plan-sync](./plan-sync/SKILL.md)** — reconcile `.plan/` tickets with what actually shipped: judge from git and the code, write back statuses and acceptance ticks, end green on plan-lint.
-- **[wayfinder](./wayfinder/SKILL.md)** — chart a big, foggy effort as a map of investigation tickets, resolved one per session. Storage is adapter-specific; the default is [local markdown](./wayfinder/TRACKER-MARKDOWN.md) under `.plan/<slug>/`.
+- **[wayfinder](./wayfinder/SKILL.md)** — chart a big, foggy effort as a map of investigation tickets, one settled per session. Storage is adapter-specific; the default is [local markdown](./wayfinder/TRACKER-MARKDOWN.md) under `.plan/<slug>/`.
 - **[writing-great-skills](./.optional/writing-great-skills/SKILL.md)** — reference for writing and editing skills well.
 
 **Model-invoked** — reachable by the agent on its own (and by other skills), or by typing their name.
