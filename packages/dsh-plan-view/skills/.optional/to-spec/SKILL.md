@@ -82,3 +82,34 @@ The spec is one layer down from the architecture charter. If the repo keeps a si
 - **Extend or correct** the charter's facts if the spec introduces new layering, a new domain, a state-machine change, a new contract, or a changed dependency edge. Keep its document map (e.g. "§12 文档地图") pointing at the spec you just wrote and at any other new documents — the map is a pointer layer, and a broken pointer there is how decisions get lost.
 - **Leave a pointer, not a copy.** Add or update the one line that references this effort; the charter must stay the single source of truth, not a second spec.
 - If the spec did not change any architectural fact, say so and touch nothing. Do not churn the charter on every spec write.
+
+## After writing: discharge the spec into its long-lived homes
+
+**The charter is only one of three long-lived homes, and the spec is a one-shot document.** A `spec.md` describes *what this batch will do*; it is void once the effort closes. Anything in it that must outlive the effort has to be written into a document that persists — **at the moment the spec is finalized, not later** (by the time the effort closes, the context is gone and nobody can reconstruct where each piece belonged).
+
+This is the same step as above, widened. For every section of the spec you just wrote, decide its **disposition** and write a **disposition line** under that section heading:
+
+```markdown
+> **归宿（<YYYY-MM-DD>）**：→ arch §7.5 ＋ docs/<file> §3
+```
+
+The line's value is exactly one of four kinds, and it may point at several targets when a section genuinely spans layering and domain:
+
+| Spec content | Goes to |
+|:--|:--|
+| Testing decisions (seams, gates, why tested this way) | **Requirements doc** — under an "验收与测法" section |
+| Out of scope (what this deliberately will not do) | **Requirements doc** — under a "范围外" section |
+| Implementation detail | **`docs`** — horizontal (how parts connect) → charter; vertical (how this domain defines/computes) → **domain doc** |
+| Data-layer DDL | **Domain doc** — the data model is part of the domain model |
+| Open-item backfill records and other process matter | **Archive** (`.archive/`) — process matter carries no authority |
+
+Horizontal vs vertical is the judgment that decides charter-or-domain-doc: **"how do the parts of the system connect" → charter; "how is this defined or computed inside this domain" → domain doc.** DDL always goes to the domain doc.
+
+**Requirements doc** (`type: requirements`, path `docs/requirements/<effort>-<topic>.md`): a long-lived home for *what the user wants* — user stories, problem, solution, acceptance and test approach, out-of-scope. **The filename must contain the effort slug** (the `.plan/<slug>/` directory name) so the requirements doc and the effort remain findable from each other. One effort may split across several by topic; every one carries the slug.
+
+**A spec section with no disposition line is unfinished work, not a stylistic gap.** When every section carries one and every target exists, the spec is dischargeable and may be voided — that is the mechanical test for "the spec has been fully absorbed". Until then it may not be archived away.
+
+Two prohibitions worth stating outright, because both are how this goes wrong:
+
+- **Do not point a long-lived doc at the spec as its "source of truth".** The long-lived document *is* the authority — it states what is true now. A pointer from a permanent doc to a temporary one goes stale the moment the spec is voided, and the permanent doc is left standing on nothing. Point at it as a **"决策来源"** (why this was decided) instead, and repoint to the archive path once the spec is archived.
+- **Do not copy the spec's prose wholesale into the charter.** If it isn't part of "what the architecture is now", it belongs in the domain doc or the requirements doc — or it was process matter all along.

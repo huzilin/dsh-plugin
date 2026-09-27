@@ -1,10 +1,35 @@
 ---
 type: task
 blocked_by: [01, 02]
-status: open
+status: done
 ---
 
 # 03 `implement*` / `to-spec` 落「读时检查 + 定稿即更新 docs」
+
+## 执行记录（2026-09-27 完成）
+
+**⚠️ 本票执行中发现的一个重大前提错误，已当场纠正（用户指正）**
+
+本票原写「锚点：`packages/dsh-plan-view/skills/implement/SKILL.md`」——**这个路径不存在**。实测：`implement` / `implement-spec` **在本仓没有源正本**，`install-skills.sh` 自己写明「implement* 无正本不在此列」，它们只存在于上游仓与安装态。
+
+**用户裁定（原话照抄）**：
+
+> 「2 是标准，必须这么实现，已经第二次这个问题 ，上次我严正声明过禁止」
+
+**裁定语义**：**凡我方要改的 skill，必须先在本仓建源正本、再经 `install-skills.sh` 分发**；**禁止直接改安装态**（`~/.dsh/.agent-presets/...`）——那是散落的第二份拷贝，改它等于绕开单一真相源。**此类错误已是第二次，用户此前已严正声明禁止。**
+
+**已按标准落地**：
+
+| # | 动作 |
+|:--|:--|
+| 1 | 在本仓建源正本 `skills/.optional/implement/SKILL.md`、`skills/.optional/implement-spec/SKILL.md`（**保留用户既有定制**：落地即翻票、plan-lint 收口等，逐条并入，未丢弃） |
+| 2 | 读时检查写入两个正本（`implement-spec` 升为**必做步骤 2**；`implement` 置于正文首段） |
+| 3 | `install-skills.sh` 增加**受管档位**：`implement`/`implement-spec`/`to-spec` 改为**每次覆盖同步**（原为「已存在则跳过」，且 id 生成 `sed 's/-//g'` 会把 `implement-spec` 错拼成 `implementspec`，**根本装不到**） |
+| 4 | 其余 `.optional` skill 维持「只播一次、不覆盖」——它们是用户可就地定制的上游 skill，覆盖会毁掉本地改动 |
+
+**分发验证**：`mp-implement`／`mp-implement-spec`／`mp-to-spec` **三份双拷贝逐字节一致**；读时检查与归宿段均已入安装态（各 grep 命中 1）。
+
+---
 
 ## 交付什么
 

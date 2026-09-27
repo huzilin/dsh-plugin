@@ -1,7 +1,7 @@
 ---
 type: task
 blocked_by: []
-status: open
+status: done
 ---
 
 # 02 协议落「spec 生命周期与归宿行」条款

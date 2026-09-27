@@ -99,10 +99,33 @@ for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases
   fi
 done
 
-# Copy optional skills (only if they don't already exist)
+# Copy optional skills.
+#
+# Two tiers, and the difference matters:
+#   * **Managed here** — this repo holds their source of truth, and they are
+#     re-copied on every install so the installed copy cannot drift:
+#       `implement` / `implement-spec` — carry project rules upstream lacks
+#         (ticket-update-on-landing, spec-is-live read-time check, plan-lint close)
+#       `to-spec` — a fork of upstream: plan-ecosystem vocabulary (spec/effort/
+#         `.plan/` paths) plus the "discharge the spec into its long-lived homes"
+#         finalization step (disposition lines, requirements doc)
+#   * everything else under .optional/ is **seeded once** and then left alone —
+#     upstream skills the user may have customized in place; clobbering them
+#     would destroy local edits.
+MANAGED_OPTIONAL="implement implement-spec to-spec"
 for skill in $(ls "$SKILLS_SRC/.optional/" 2>/dev/null); do
-  skill_id=$(echo "$skill" | sed 's/-//g')
-  if [ ! -d "$SKILLS_DST/$skill_id" ]; then
+  case "$skill" in
+    implement)       skill_id="mp-implement" ;;
+    implement-spec)  skill_id="mp-implement-spec" ;;
+    to-spec)         skill_id="mp-to-spec" ;;
+    *)               skill_id="mp-$(echo "$skill" | sed 's/-//g')" ;;
+  esac
+  if echo " $MANAGED_OPTIONAL " | grep -q " $skill "; then
+    rm -rf "$SKILLS_DST/$skill_id"
+    cp -R "$SKILLS_SRC/.optional/$skill" "$SKILLS_DST/$skill_id"
+    chmod -R a+rX "$SKILLS_DST/$skill_id"
+    echo "Installed (managed): $skill -> $SKILLS_DST/$skill_id"
+  elif [ ! -d "$SKILLS_DST/$skill_id" ]; then
     cp -R "$SKILLS_SRC/.optional/$skill" "$SKILLS_DST/$skill_id"
     chmod -R a+rX "$SKILLS_DST/$skill_id"
     echo "Installed (optional): $skill -> $SKILLS_DST/$skill_id"
