@@ -400,6 +400,28 @@ const KIND_META: Record<TicketKind, { label: string; icon: string; color: string
   note: { label: '说明', icon: '📄', color: TEXT_FAINT },
 }
 
+// ─── 推演票型标识（2026-09-29 票 11）────────────────────────────────────────
+//
+// research / prototype / grilling 属 wayfinder 推演票（HITL/AFK 分工见 wayfinder
+// 票型节），ticketKind 把它们归入工单 kind——但四票型同住 issues/、类型只差
+// frontmatter 一词，渲染不区分则推演票与执行票不可辨。此表给推演票自己的
+// 徽标身份；普通 task 票仍走工单默认。
+const SPECULATION_TICKET_META: Record<string, { label: string; icon: string; color: string }> = {
+  research: { label: '调研票', icon: '🔍', color: '#b48ef7' },
+  prototype: { label: '原型票', icon: '🧩', color: '#ff9f6e' },
+  grilling: { label: '拷问票', icon: '🔥', color: '#5ad8cd' },
+}
+
+/** Render meta for a ticket: speculation types carry their own badge, others use the kind default. */
+function ticketDisplayMeta(t: ParsedTicket): { label: string; icon: string; color: string } {
+  const k = ticketKind(t)
+  if (k === 'ticket') {
+    const m = SPECULATION_TICKET_META[(t.type ?? '').trim().toLowerCase()]
+    if (m) return m
+  }
+  return KIND_META[k]
+}
+
 // ─── Map kinds: 推演图 vs 实施图 ─────────────────────────────────────────────
 //
 // 一个 effort 是推演图（wayfinder：票型 research/grilling/prototype，终点=决策
@@ -904,7 +926,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
         </div>
         <div style={{ padding: '0 20px 12px', display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, borderBottom: `1px solid ${BORDER_LIGHT}` }}>
           <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: '#888', border: `1px solid ${BORDER}` }}>#{shortId(ticket)}</span>
-          <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${KIND_META[ticketKind(ticket)].color}22`, color: KIND_META[ticketKind(ticket)].color }}>{KIND_META[ticketKind(ticket)].icon} {KIND_META[ticketKind(ticket)].label}</span>
+          <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${ticketDisplayMeta(ticket).color}22`, color: ticketDisplayMeta(ticket).color }}>{ticketDisplayMeta(ticket).icon} {ticketDisplayMeta(ticket).label}</span>
           {ticket.type && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${typeTheme(ticket.type).color}22`, color: typeTheme(ticket.type).color }}>{ticket.type}</span>}
           <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: DOT[displayStatus(ticket)], border: `1px solid ${BORDER}` }}>{STATUS_LABELS[displayStatus(ticket)]}</span>
           {ticket.claimedBy && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#f0a50022', color: '#f7ad31' }}>👤 {ticket.claimedBy}</span>}
@@ -988,11 +1010,11 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
                 <div key={t.file} style={{ padding: 8, borderRadius: 8, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer' }} onClick={() => setFocus(t)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#888', background: CHIP_BG, borderRadius: 999, minWidth: 20, height: 20, padding: '0 4px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{shortId(t)}</span>
-                    <span style={{ fontSize: 12 }}>{KIND_META[ticketKind(t)].icon}</span>
+                    <span style={{ fontSize: 12 }}>{ticketDisplayMeta(t).icon}</span>
                     <span style={{ flex: 1, fontSize: 12, fontWeight: 600, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${KIND_META[ticketKind(t)].color}22`, color: KIND_META[ticketKind(t)].color }}>{KIND_META[ticketKind(t)].icon} {KIND_META[ticketKind(t)].label}</span>
+                    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${ticketDisplayMeta(t).color}22`, color: ticketDisplayMeta(t).color }}>{ticketDisplayMeta(t).icon} {ticketDisplayMeta(t).label}</span>
                     {t.type && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${typeTheme(t.type).color}22`, color: typeTheme(t.type).color }}>{t.type}</span>}
                     {isPending(t) && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#ffa94d33', color: '#f7ad31' }}>{ageLabel(t) ?? '待拍板'}</span>}
                     {t.claimedBy && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#f0a50022', color: '#f7ad31' }}>👤 {t.claimedBy}</span>}
@@ -1139,7 +1161,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
                     <tr key={t.file} style={{ cursor: 'pointer' }} onClick={() => setDetail(t)}>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}`, fontFamily: 'monospace', color: TEXT_FAINT, fontSize: 11 }}>{shortId(t)}</td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}`, fontWeight: 600, color: TEXT, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</td>
-                      <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}` }}><span style={{ padding: '1px 6px', borderRadius: 999, background: `${KIND_META[ticketKind(t)].color}1e`, color: KIND_META[ticketKind(t)].color, border: `1px solid ${KIND_META[ticketKind(t)].color}44`, fontSize: 11 }}>{KIND_META[ticketKind(t)].icon} {KIND_META[ticketKind(t)].label}</span></td>
+                      <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}` }}><span style={{ padding: '1px 6px', borderRadius: 999, background: `${ticketDisplayMeta(t).color}1e`, color: ticketDisplayMeta(t).color, border: `1px solid ${ticketDisplayMeta(t).color}44`, fontSize: 11 }}>{ticketDisplayMeta(t).icon} {ticketDisplayMeta(t).label}</span></td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}` }}><span style={{ padding: '1px 6px', borderRadius: 999, background: `${th.color}1e`, color: th.color, border: `1px solid ${th.color}44`, fontSize: 11 }}>{th.icon} {t.type ?? '（无 type）'}</span></td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}` }}><span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: DOT[displayStatus(t)] }} />{STATUS_LABELS[displayStatus(t)]}</span></td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}`, color: t.claimedBy ? '#f7ad31' : TEXT_FAINT }}>{t.claimedBy ?? '—'}</td>
@@ -1288,7 +1310,7 @@ function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
                 <div style={{ padding: '7px 8px 7px 8px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#888', background: CHIP_BG, borderRadius: 999, minWidth: 18, height: 18, padding: '0 4px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{shortId(t)}</span>
-                    <span style={{ fontSize: 12 }}>{KIND_META[ticketKind(t)].icon}</span>
+                    <span style={{ fontSize: 12 }}>{ticketDisplayMeta(t).icon}</span>
                     <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</span>
                   </div>
                   <div style={{ fontSize: 9, color: TEXT_FAINT, display: 'flex', gap: 6 }}>{STATUS_LABELS[displayStatus(t)]}{t.claimedBy && <> 👤 {t.claimedBy}</>}</div>
@@ -2022,7 +2044,8 @@ function GuideView({ scope }: { scope: SessionScope }) {
           &nbsp;&nbsp;issues/<br />
           &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
           &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md<br />
-          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 审批档（待拍板-*.md）＋全局 qa/、ledger/</span>
+          &nbsp;&nbsp;approval/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内审批档（待拍板-*.md，grill / wayfinder 生成）</span><br />
+          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局审批档（待拍板-*.md）＋全局 qa/、ledger/</span>
         </div>
         <P>
           <strong style={{ color: TEXT }}>为什么必须一票一文件</strong>：把多张票写进同一个文件（如 <Code>tickets.md</Code>），
@@ -2037,6 +2060,15 @@ function GuideView({ scope }: { scope: SessionScope }) {
             票是<strong style={{ color: TEXT }}>等被做</strong>的活（<Code>status: open/done</Code>）；
             待拍板是<strong style={{ color: TEXT }}>等你做决定</strong>的文档（<Code>status: pending</Code>）。
             拍板结论若要干活，就该当场生成票——两者不是同一个东西，但会接力。
+          </div>
+          <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>四种票型怎么认？</strong><br />
+            <Code>task</Code>＝执行票（🛠️ 落码验收，实施图的原子）；
+            <Code>research</Code>＝调研票（🔍 查证并产出引用式笔记进 assets/）；
+            <Code>prototype</Code>＝原型票（🧩 做粗糙实物给讨论反应）；
+            <Code>grilling</Code>＝拷问票（🔥 逐题拍板）。
+            推演图（后三种组成）终点是<strong style={{ color: TEXT }}>决策清零</strong>，实施图（task）终点是<strong style={{ color: TEXT }}>落码验收</strong>；
+            卡片上的彩色徽标即票型身份。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />

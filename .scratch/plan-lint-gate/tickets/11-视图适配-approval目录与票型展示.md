@@ -1,7 +1,7 @@
 ---
 type: task
 blocked_by: []
-status: open
+status: done
 ---
 
 # 11: 视图适配——approval 目录发现 + research/prototype 票型展示
@@ -21,8 +21,14 @@ status: open
 
 ## Acceptance
 
-- [ ] 手工样例验证：effort `approval/` 下的待拍板档出现在对应图待拍板 tab
-- [ ] research / prototype / grilling 票在卡片与详情有类型标识，与 task 视觉可区分
-- [ ] 推演图/实施图分组在 issues/ 布局下正确（含 legacy tickets/ 存量图回归）
-- [ ] plan-lint 双根全绿无新增误报
-- [ ] GuideView 待拍板/票型说明同步 approval/ 与票型口径
+- [x] 手工样例验证：effort `approval/` 下的待拍板档可被发现——实况更正：`collectTicketFiles` 本就通用扫描 effort 全部子目录（PlanView.tsx:535-537），`approval/` 档凭 `type: approval` 走 :366 路由进待拍板，**零代码即工作**；transient 样例（approval/ 待拍板 + tickets/12 research 票）过 lint 69 文件全绿后已清理
+- [x] research / prototype / grilling 票在卡片与详情有类型标识——新增 `SPECULATION_TICKET_META` + `ticketDisplayMeta`（PlanView.tsx:403-420），五个渲染点（DetailModal/ViewA×2/ViewC/ViewD）统一切换：🔍调研票 🧩原型票 🔥拷问票 彩色徽标，task 仍走工单默认
+- [x] 推演图/实施图分组在 issues/ 布局下正确——`mapKind` 按 frontmatter type 判定、目录无关（:418-429），`issues/tickets` 双目录均被 `TICKET_DIR_NAMES` 覆盖（:515）
+- [x] plan-lint 双根全绿无新增误报——带样例 69 / 清理后 67 文件零漂移
+- [x] GuideView 待拍板/票型说明同步——布局图补 `approval/` 行、新增「四种票型怎么认」段（PlanView.tsx:2041-2057、2063-2071）
+
+## 落地注
+
+- 2026-09-29 implement-spec 降级模式（当前分支直推）完成：src/PlanView.tsx + lib 重建（npx tsdown；tsdown 不在 devDependencies 且本机未装，npm install 328 包后仍经 npx 运行；**package-lock.json 未入库已删**；lib/server.js 为旧产物未动）。commit 见本票收口批。
+- 预设更正：What-to-build 第 1 项原以为「待拍板 tab 不发现 approval/」——实况通用子目录扫描已覆盖，无需新代码；本票实际新增只有票型徽标与文案。
+- UI 视觉确认（徽标观感、approval/ 档入 tab）待用户开面板过目——代码路径与 lint 证据如上，如观感需调色/改字随时说。

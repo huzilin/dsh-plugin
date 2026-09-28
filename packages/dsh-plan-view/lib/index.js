@@ -140,13 +140,12 @@ function registerInputBridge(ctx) {
 //#endregion
 //#region src/client/PlanView.tsx
 /**
-* Plan view v2: reads .plan/ wayfinder maps, derives ticket status per
-* the TRACKER-MARKDOWN contract, and renders three views:
-*   A — Kanban (grouped list with destination banner + progress)
-*   C — Table (filterable/sortable data grid)
-*   D — Relation graph (tiered DAG with Start/End nodes)
+* Plan view v2: reads the governance roots (.scratch/ migrated layout +
+* .plan/ legacy & global), derives ticket status per the TRACKER-MARKDOWN
+* contract, and renders the tabbed surface:
+*   总览 · 地图（Kanban / Table / Relation DAG）· 测例&缺陷 · 台账 · 说明
 *
-* All three share a unified dark theme and markdown-rendered detail panels.
+* All views share a unified dark theme and markdown-rendered detail panels.
 * Self-contained: uses its own api module, inline styles, zero CSS deps.
 */
 function parseFrontmatter(raw) {
@@ -207,14 +206,14 @@ function upsertFrontmatterKey(raw, key, value) {
 	}
 	return `---\n${key}: ${value}\n---\n\n${raw}`;
 }
-const DONE_STATUS = new Set([
+const DONE_STATUS = /* @__PURE__ */ new Set([
 	"done",
 	"closed",
 	"complete",
 	"completed",
 	"shipped"
 ]);
-const OUT_STATUS = new Set([
+const OUT_STATUS = /* @__PURE__ */ new Set([
 	"abandoned",
 	"rejected",
 	"wontfix",
@@ -223,7 +222,7 @@ const OUT_STATUS = new Set([
 	"canceled",
 	"superseded"
 ]);
-const CLAIMED_STATUS = new Set([
+const CLAIMED_STATUS = /* @__PURE__ */ new Set([
 	"doing",
 	"in_progress",
 	"in-progress",
@@ -472,7 +471,7 @@ const STATUS_ORDER = [
 	"done",
 	"out_of_scope"
 ];
-const TICKET_TYPES = new Set([
+const TICKET_TYPES = /* @__PURE__ */ new Set([
 	"task",
 	"research",
 	"prototype",
@@ -523,12 +522,38 @@ const KIND_META = {
 		color: TEXT_FAINT
 	}
 };
-const SPECULATION_TYPES = new Set([
+const SPECULATION_TICKET_META = {
+	research: {
+		label: "调研票",
+		icon: "🔍",
+		color: "#b48ef7"
+	},
+	prototype: {
+		label: "原型票",
+		icon: "🧩",
+		color: "#ff9f6e"
+	},
+	grilling: {
+		label: "拷问票",
+		icon: "🔥",
+		color: "#5ad8cd"
+	}
+};
+/** Render meta for a ticket: speculation types carry their own badge, others use the kind default. */
+function ticketDisplayMeta(t) {
+	const k = ticketKind(t);
+	if (k === "ticket") {
+		const m = SPECULATION_TICKET_META[(t.type ?? "").trim().toLowerCase()];
+		if (m) return m;
+	}
+	return KIND_META[k];
+}
+const SPECULATION_TYPES = /* @__PURE__ */ new Set([
 	"research",
 	"grilling",
 	"prototype"
 ]);
-const IMPL_TYPES = new Set(["task"]);
+const IMPL_TYPES = /* @__PURE__ */ new Set(["task"]);
 function mapKind(dir, tickets) {
 	let speculation = false, impl = false;
 	for (const t of tickets) {
@@ -610,7 +635,7 @@ async function loadRounds(scope, root) {
 }
 const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
 const ROOT_GROUP = "\0root";
-const TICKET_DIR_NAMES = new Set(["tickets", "issues"]);
+const TICKET_DIR_NAMES = /* @__PURE__ */ new Set(["tickets", "issues"]);
 async function collectTicketFiles(scope, effortDir) {
 	const tree = await fsTree(scope, effortDir);
 	const inTicketDirs = tree.entries.filter((e) => e.isDir && TICKET_DIR_NAMES.has(e.name));
@@ -913,15 +938,17 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 	});
 	const actions = [];
 	if (!readOnly) {
-		if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
-			actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
-			actions.push(btn("取消", () => {
-				setRebind(false);
-				setMsg(null);
-			}, "cancel", "#666"));
-		} else {
-			if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
-			actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+		if (kind === "ticket") {
+			if (ticket.session !== void 0 && rebind) {
+				actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
+				actions.push(btn("取消", () => {
+					setRebind(false);
+					setMsg(null);
+				}, "cancel", "#666"));
+			} else {
+				if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
+				actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+			}
 		}
 		if (kind === "approval" && pending) actions.push(btn("✅ 拍板（预填 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 	}
@@ -1063,13 +1090,13 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 								fontSize: 11,
 								padding: "2px 9px",
 								borderRadius: 999,
-								background: `${KIND_META[ticketKind(ticket)].color}22`,
-								color: KIND_META[ticketKind(ticket)].color
+								background: `${ticketDisplayMeta(ticket).color}22`,
+								color: ticketDisplayMeta(ticket).color
 							},
 							children: [
-								KIND_META[ticketKind(ticket)].icon,
+								ticketDisplayMeta(ticket).icon,
 								" ",
-								KIND_META[ticketKind(ticket)].label
+								ticketDisplayMeta(ticket).label
 							]
 						}),
 						ticket.type && /* @__PURE__ */ jsx("span", {
@@ -1476,7 +1503,7 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
 									}),
 									/* @__PURE__ */ jsx("span", {
 										style: { fontSize: 12 },
-										children: KIND_META[ticketKind(t)].icon
+										children: ticketDisplayMeta(t).icon
 									}),
 									/* @__PURE__ */ jsx("span", {
 										style: {
@@ -1504,13 +1531,13 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
 											fontSize: 10,
 											padding: "1px 5px",
 											borderRadius: 999,
-											background: `${KIND_META[ticketKind(t)].color}22`,
-											color: KIND_META[ticketKind(t)].color
+											background: `${ticketDisplayMeta(t).color}22`,
+											color: ticketDisplayMeta(t).color
 										},
 										children: [
-											KIND_META[ticketKind(t)].icon,
+											ticketDisplayMeta(t).icon,
 											" ",
-											KIND_META[ticketKind(t)].label
+											ticketDisplayMeta(t).label
 										]
 									}),
 									t.type && /* @__PURE__ */ jsx("span", {
@@ -1614,7 +1641,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) 
 		return tickets.some((t) => !t.type) ? [...named, NO_TYPE] : named;
 	}, [tickets]);
 	const [typeSet, setTypeSet] = useState(() => new Set(Object.keys(TYPE_THEME)));
-	const [kindSet, setKindSet] = useState(() => new Set([
+	const [kindSet, setKindSet] = useState(() => /* @__PURE__ */ new Set([
 		"ticket",
 		"approval",
 		"note"
@@ -1903,7 +1930,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) 
 								setQuery("");
 								setStatusSet(new Set(OUTSTANDING));
 								setTypeSet(new Set(allTypes));
-								setKindSet(new Set([
+								setKindSet(/* @__PURE__ */ new Set([
 									"ticket",
 									"approval",
 									"note"
@@ -2074,15 +2101,15 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) 
 											style: {
 												padding: "1px 6px",
 												borderRadius: 999,
-												background: `${KIND_META[ticketKind(t)].color}1e`,
-												color: KIND_META[ticketKind(t)].color,
-												border: `1px solid ${KIND_META[ticketKind(t)].color}44`,
+												background: `${ticketDisplayMeta(t).color}1e`,
+												color: ticketDisplayMeta(t).color,
+												border: `1px solid ${ticketDisplayMeta(t).color}44`,
 												fontSize: 11
 											},
 											children: [
-												KIND_META[ticketKind(t)].icon,
+												ticketDisplayMeta(t).icon,
 												" ",
-												KIND_META[ticketKind(t)].label
+												ticketDisplayMeta(t).label
 											]
 										})
 									}),
@@ -2163,9 +2190,15 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) 
 		]
 	});
 }
-const NODE_W = 176, STEP_X = 200, NODE_H = 44;
-const RUNG_TOP = 140, RUNG_STEP = 110;
-const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100;
+const NODE_W = 176;
+const STEP_X = 200;
+const NODE_H = 44;
+const RUNG_TOP = 140;
+const RUNG_STEP = 110;
+const START_Y = 36;
+const END_GAP = 110;
+const CAP_H = 30;
+const CAP_W = 100;
 const START = "\0start";
 const END = "\0end";
 function layoutGraph(tickets) {
@@ -2218,7 +2251,8 @@ function layoutGraph(tickets) {
 	const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN;
 	const pos = /* @__PURE__ */ new Map();
 	layers.forEach((o, li) => {
-		const left = (W_MAIN - (o.length * STEP_X - 24)) / 2;
+		const lw = o.length * STEP_X - 24;
+		const left = (W_MAIN - lw) / 2;
 		o.forEach((t, i) => {
 			const x = left + i * STEP_X;
 			pos.set(t.id, {
@@ -2430,7 +2464,7 @@ function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) 
 											}),
 											/* @__PURE__ */ jsx("span", {
 												style: { fontSize: 12 },
-												children: KIND_META[ticketKind(t)].icon
+												children: ticketDisplayMeta(t).icon
 											}),
 											/* @__PURE__ */ jsx("span", {
 												style: {
@@ -4125,10 +4159,16 @@ function GuideView({ scope }) {
 						/* @__PURE__ */ jsx("br", {}),
 						"\xA0\xA0\xA0\xA002-<slug>.md",
 						/* @__PURE__ */ jsx("br", {}),
+						"\xA0\xA0approval/ \xA0",
+						/* @__PURE__ */ jsx("span", {
+							style: { color: TEXT_FAINT },
+							children: "← 图内审批档（待拍板-*.md，grill / wayfinder 生成）"
+						}),
+						/* @__PURE__ */ jsx("br", {}),
 						".plan/ \xA0",
 						/* @__PURE__ */ jsx("span", {
 							style: { color: TEXT_FAINT },
-							children: "← 审批档（待拍板-*.md）＋全局 qa/、ledger/"
+							children: "← 全局审批档（待拍板-*.md）＋全局 qa/、ledger/"
 						})
 					]
 				}),
@@ -4177,6 +4217,34 @@ function GuideView({ scope }) {
 								"的文档（",
 								/* @__PURE__ */ jsx(Code, { children: "status: pending" }),
 								"）。 拍板结论若要干活，就该当场生成票——两者不是同一个东西，但会接力。"
+							]
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							style: { margin: "10px 0" },
+							children: [
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "四种票型怎么认？"
+								}),
+								/* @__PURE__ */ jsx("br", {}),
+								/* @__PURE__ */ jsx(Code, { children: "task" }),
+								"＝执行票（🛠️ 落码验收，实施图的原子）；",
+								/* @__PURE__ */ jsx(Code, { children: "research" }),
+								"＝调研票（🔍 查证并产出引用式笔记进 assets/）；",
+								/* @__PURE__ */ jsx(Code, { children: "prototype" }),
+								"＝原型票（🧩 做粗糙实物给讨论反应）；",
+								/* @__PURE__ */ jsx(Code, { children: "grilling" }),
+								"＝拷问票（🔥 逐题拍板）。 推演图（后三种组成）终点是",
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "决策清零"
+								}),
+								"，实施图（task）终点是",
+								/* @__PURE__ */ jsx("strong", {
+									style: { color: TEXT },
+									children: "落码验收"
+								}),
+								"； 卡片上的彩色徽标即票型身份。"
 							]
 						}),
 						/* @__PURE__ */ jsxs("div", {
@@ -4880,7 +4948,7 @@ function parseDefectEntries(body) {
 	}
 	return [];
 }
-const DEFECT_CLOSED = new Set([
+const DEFECT_CLOSED = /* @__PURE__ */ new Set([
 	"已关闭",
 	"关闭",
 	"挂起"
@@ -5664,8 +5732,9 @@ function ChainView({ tickets, defects, ledgers, cases, planDir, scope, ctx, sess
 							const sx = a.x + NODE_W, sy = a.y + NODE_H / 2;
 							const ex = b.x, ey = b.y + NODE_H / 2;
 							const slotX = ex - 18;
+							const d = ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`;
 							return /* @__PURE__ */ jsx("path", {
-								d: ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`,
+								d,
 								fill: "none",
 								stroke: on ? st.color : "rgba(255,255,255,.16)",
 								strokeWidth: on ? 2.2 : 1.4,
