@@ -1,7 +1,6 @@
 ---
 name: plan-protocol
-description: The plan-ecosystem contract — where each plan skill sits, what it owns, and how they hand off. Load when any of to-spec / to-tickets / implement / implement-spec / plan-sync / to-approval / plan-approve / plan-archive / to-qa-testcases / run-qa-testcases / diagnosing-bugs / plan-loop is invoked, when explaining the flows or the QA defect loop, or when asked to init a fresh `.plan/` workspace in a repo.
-disable-model-invocation: true
+description: The plan-ecosystem contract — where each plan skill sits, what it owns, and how they hand off. Load when any of to-spec / to-tickets / implement / implement-spec / plan-sync / to-approval / plan-approve / plan-archive / to-qa-testcases / run-qa-testcases / diagnosing-bugs / plan-loop is invoked, when explaining the flows or the QA defect loop, when asked to init a fresh `.plan/` workspace in a repo, or whenever a session involves code development or code retrieval that reads or writes plan documents (`.plan/` specs, tickets, ledgers, QA files, and their `.scratch/` counterparts after the directory migration).
 ---
 
 # Plan 流程协议（计划生态契约）
