@@ -57,7 +57,7 @@ Upstream's own layering is preserved. The skill is tracker-agnostic method; stor
 
 ## Maintenance: source repo vs installed skills
 
-- **源仓是唯一修改入口**。`packages/dsh-plan-view/skills/` 下的 skill 正本只在 git 里改（Edit 定点改 + commit）；安装态（zcode 的 `~/.zcode/skills/`、DSH 的 `~/.dsh/.agent-presets/full/skills/` 等分发目标）是**分发产物，只读**。
+- **源仓是唯一修改入口**。`packages/dsh-plan-view/skills/` 下的 skill 正本只在 git 里改（Edit 定点改 + commit）；安装态（zcode 的 `~/.zcode/skills/`、DSH 的 `~/.dsh/skills/` 等分发目标）是**分发产物，只读**。
 - **流向单向**：源仓 commit → 复制分发到安装态。安装态上若发现领先内容（其他会话绕过源仓直改所致），先逐处审查、用 Edit 定点回填源仓入库，再统一下发；**禁止从安装态整文件 `cp` 覆盖源仓**——分发侧的未审改动会随 cp 污染正本。
 - **分发后必须 `diff -r` 全树校验零 gap**（双侧同步靠记忆不可靠：case-library.md 曾漏同步两轮才发现）。
 - **写作纪律：skill 只写做法，不叙历史**——skill 正文与 references 示例一律正面陈述怎么做；历史做法、事故叙事归 `case-library.md`（教训正本）与 git 历史，不进示范材料。

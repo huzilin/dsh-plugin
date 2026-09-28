@@ -14,7 +14,7 @@
 |:--|:--|:--|
 | **协议文本** | `packages/dsh-plan-view/skills/` | plan 一套 skill 的**共享契约**与各自的方法 |
 | **渲染插件** | `packages/dsh-plan-view/src/` | 计划视图（只读为主的渲染方） |
-| **分发脚本** | `packages/dsh-plan-view/scripts/install-skills.sh` | 把 skills 装到 `~/.dsh/.agent-presets/full/skills/` |
+| **分发脚本** | `packages/dsh-plan-view/scripts/install-skills.sh` | 把 skills 装到 `~/.dsh/skills/`（DSH 现行 skills 目录，`~/.zcode/skills` 软链指向它） |
 
 另有两个独立包：`packages/dsh-report-hook/`（汇报规范提醒钩子）、`packages/dsh-restart/`（重启宿主半身）。
 
@@ -33,7 +33,7 @@
       └─────────┬──────────┘
                 ↓
         安装态（分发产物，非真相源）
-   ~/.dsh/.agent-presets/full/skills/mp-*
+   ~/.dsh/skills/mp-*
 ```
 
 **三条硬规则**：

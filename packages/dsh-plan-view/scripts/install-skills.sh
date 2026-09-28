@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Install plan-view skills into the DSH agent-presets install state.
+# Install plan-view skills into the DSH skills directory.
 # Called by postinstall or manually: bash scripts/install-skills.sh
 #
-# Destination is ~/.dsh/.agent-presets/full/skills (ticket 04): the live install
-# state that ~/.zcode/skills symlinks point at. The old ~/.dsh/skills target was
-# a dead directory — installs went nowhere. Backfill check (ticket 04): no DSH
-# process repopulates agent-presets; this script (or manual copy) is the only
-# sync path, so installing here is final.
+# Destination is ~/.dsh/skills (2026-09-29): DSH 现行 skills 安装目录——DSH 已把
+# 安装态迁到此处，~/.zcode/skills 的软链也直接指向 ~/.dsh/skills/*。
+# History: ticket 04 chose ~/.dsh/.agent-presets/full/skills because the then
+# ~/.dsh/skills was a dead directory nothing repopulated. On 2026-09-29 DSH
+# itself moved the live install state back to ~/.dsh/skills (agent-presets
+# full/skills emptied, zcode symlinks re-pointed), so agent-presets is a dead
+# drop again and the default follows the new home. Override with SKILLS_DST
+# if a different target is ever needed.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILLS_SRC="$SCRIPT_DIR/../skills"
-SKILLS_DST="${SKILLS_DST:-$HOME/.dsh/.agent-presets/full/skills}"
+SKILLS_DST="${SKILLS_DST:-$HOME/.dsh/skills}"
 
 if [ ! -d "$SKILLS_SRC" ]; then
   echo "Error: skills directory not found at $SKILLS_SRC" >&2
