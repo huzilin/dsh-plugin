@@ -126,7 +126,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **状态头四字段**（待拍板 / spec / map 等文档）：`type` / `date` / `status` / `origin`。
   - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
   - `origin`：产生原因（`readability-rescue` / `proactive` / `review` / `retrospective`）。
-- **审批文档归属**：审批档一律落 **`.plan/` 根层**，命名 `待拍板-<slug>-<date>.md`（2026-09-29 目录迁移后 `.plan/` 下不再新建 effort 子目录——tracker 图已去 `.scratch/`，审批档与图的关联靠命名 slug 与行文，视图据此归图展示）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量 `.plan/<effort>/待拍板-*`（旧布局）原地只读兼容；既有根层已 closed 的历史拍板不强制回迁（相对引用密集、不再进拍板流，原地即历史锚点）。
+- **审批文档归属（两级，2026-09-29 拍板）**：**grill-with-doc / wayfinder 生成**的审批档落**所属 effort** 的 `.scratch/<effort-slug>/approval/待拍板-<slug>-<date>.md`（独立 `approval/` 目录——随图归组展示、随 effort 归档）；**全局性审批**（跨图 / 无 effort 归属，如治理类拍板）落 **`.plan/` 根层**同名形状。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量兼容：`.plan/<effort>/待拍板-*`（旧布局）与 09-29 迁移提根层至 `.plan/` 根的档均原地只读兼容，回迁归入用户单独推进的存量迁移批次；既有根层已 closed 的历史拍板不强制回迁（原地即历史锚点）。
 - **effort 标志**：`.scratch/` 下目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `issues/` 目录不被读取（2026-09-29 议题①裁定：map.md = 文件、effort = 目录、判据 = 目录含 map.md，判据不变、目录根从 `.plan/` 改 `.scratch/`）。
 - **非治理目录**：一次性交接 / 审计产物落 `.tmp/handoffs/`、`.tmp/audits/`（2026-09-28 拍板 6b）——不属 plan 生态，视图不加载、`plan-lint` 不扫（`.tmp/` 在仓根，本就在两个治理目录之外）；存量 `.plan/handoffs/`（历史轮快照）只读兼容，plan-lint 豁免（不查缺 map / 状态头 / 同票双档）。
 - **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`，终点=落码验收）。落地工单 `type` 一律写 `task`——**唯一合法值**（2026-09-27 拍板：`impl` 不支持、不识别）。
