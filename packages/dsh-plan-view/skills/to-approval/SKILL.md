@@ -55,18 +55,14 @@ The header is what makes an approval document findable and trackable later. Five
 | `status` | Means |
 |:--|:--|
 | `pending` | Genuinely still waiting on the human. |
-| `closed` | Every item decided, and each one either done or filed as a ticket. |
+| `closed` | Every item decided, and each one either done or registered for downstream work（影响域清单已登记，清单驱动）. |
 | `superseded-by:<path>` | A later decision replaced this document's content. Name the replacement. |
 | `active` | Not a decision document — a spec, map, or plan still in use. |
 | `abandoned` | No longer relevant; nothing replaced it. |
 
-**A ruling that calls for work becomes a ticket, right then.** The `closed` row above says "either done or filed as a ticket" — that clause is an action, not a label. When the human's ruling is *"do X"*, the ruling is not recorded until the ticket exists:
+**A ruling that calls for work is registered, right then — not ticketed**（2026-09-28 拍板：拍板结算不再主动调 `to-tickets`）. The `closed` row above says "either done or registered for downstream work" — that clause is an action, not a label. When the human's ruling is *"do X"*, the ruling is not recorded until the work item is in the ruling's **影响域清单**: each entry carries `条目 → 影响域/归宿 + ☐`（spec / CONTEXT.md 词条 / ADR / 落票）. Tickets are cut later, checklist-driven — by the plan-loop「决策已定案但工单未拆」action row or an implement session working the checklist item — **always through the `to-tickets` skill**（格式独占：one file per ticket at `.plan/<effort>/tickets/<id>-<slug>.md`, frontmatter `type` / `blocked_by` / `status`; never a hand-written or combined `tickets.md` — the shape and vocabulary are owned by plan-protocol and `to-tickets`; do not invent a second format）. **Name the registered item in the record** beside the quoted ruling. When every checklist item has landed（回填 ☑ 附落地路径），the last hand flips the archive mark（`archived: <主归宿>`）.
 
-1. **Invoke the `to-tickets` skill** with the ruling as its input. Do not hand-write the ticket file, and do not paraphrase the ruling into a bullet in this document and call it filed — a ruling noted in prose is not filed.
-2. **Follow the ticket shape the plan-protocol contract fixes** — one file per ticket, at `.plan/<effort>/tickets/<id>-<slug>.md`, with frontmatter `type` / `blocked_by` / `status`. `to-tickets` writes a single combined `tickets.md` by default; **override that here** — a view that reads tickets file-by-file counts a combined file as one ticket and silently loses every ticket inside it. The shape and vocabulary are owned by plan-protocol and `to-tickets`; do not invent a second format.
-3. **Name the ticket in the record** and link it, with the ruling quoted verbatim beside it.
-
-If no ruling calls for work — every item was a question of fact, or a choice among existing options — there is nothing to file and this step is skipped. The rule is only that *when* work is called for, the ticket comes from the skill that owns ticket format rather than being invented here.
+If no ruling calls for work — every item was a question of fact, or a choice among existing options — the checklist is empty and nothing is registered; `closed` is a legal terminal state (随轮归档按 R1 打 `archived: <round-id>`).
 
 **Never leave a document at `pending` when its items are gone.** A document whose decisions were all overtaken, still reading `pending`, tells the next session there is work waiting that does not exist. When a later decision supersedes a document, update it in the same pass — set `superseded-by:<path>` and mark the affected section in the body with three things: what replaced it, when, and what the document is still good for.
 

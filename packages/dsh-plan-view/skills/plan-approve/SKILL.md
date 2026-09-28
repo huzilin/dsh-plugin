@@ -4,7 +4,7 @@ description: Settle the plan documents waiting on you — read every pending doc
 disable-model-invocation: true
 ---
 
-**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（to-tickets；整轮归档归 plan-archive）、交接契约与文档形态约定，见 `plan-protocol` skill（公共协议层，先读那份再读本文件的 how）。
+**本 skill 是 plan 流程的环节之一。** 它的位置、上游（to-approval）、下游（无——落票等下游动作由影响域清单驱动，本 skill 不主动触发；整轮归档归 plan-archive）、交接契约与文档形态约定，见 `plan-protocol` skill（公共协议层，先读那份再读本文件的 how）。
 
 You have decisions waiting. They are scattered across the `.plan/` documents that carry `status: pending`, some written days ago, some overtaken by later work, some still live. Reading them one at a time to find out which is which is the work this skill removes.
 
@@ -49,15 +49,15 @@ You have decisions waiting. They are scattered across the `.plan/` documents tha
 
    - Quote the human's words verbatim — never paraphrase a ruling. Their phrasing carries the constraint.
    - Mark the item settled, with the date and what settled it.
-   - **When the ruling calls for work, produce the ticket by invoking `to-tickets`** — not by hand-writing a file, and not by noting the follow-up in prose and calling it filed. The ruling is not recorded until the ticket exists; name it in the record and link it beside the quoted ruling. A ticket invented by the settling session is shaped by whatever that session felt like, which is how one repo accumulates several incompatible ticket formats that no view can read. Tickets go one file each at `.plan/<effort>/tickets/<id>-<slug>.md`, frontmatter `type` / `blocked_by` / `status` — per the plan-protocol contract; override `to-tickets`' combined-file default.
-   - When no ruling calls for work (a question of fact, a choice among existing options), there is nothing to file.
+   - **When the ruling calls for work, register it in the ruling's 影响域清单 — do not invoke `to-tickets` here**（2026-09-28 拍板：本 skill 摘除主动落票）. Each work item is registered as `条目 → 影响域/归宿 + ☐`（spec / CONTEXT.md 词条 / ADR / 落票）; the checklist is the completeness ledger, and the archive mark（`archived: <主归宿>`）is flipped by the last hand once every item has landed（回填 ☑ 附落地路径）. Tickets are cut later, checklist-driven — by the plan-loop「决策已定案但工单未拆」action row or an implement session working the checklist item — **always through `to-tickets`**（格式独占不变：one file per ticket, frontmatter `type` / `blocked_by` / `status`, never a hand-written or combined file）.
+   - When no ruling calls for work (a question of fact, a choice among existing options), the checklist is empty — a `closed` document with an empty checklist is a legal terminal state (随轮归档按 R1 打 `archived: <round-id>`).
    - **If the ruling changes an architectural fact, update the charter.** When a ruling settles a bug, gap, or design question whose answer alters the system's layering, domain boundaries, state machines, contracts, or dependency edges — and the repo keeps a single architecture source of truth (e.g. `docs/architecture.md`, self-declared "全局架构唯一正本") — correct that document in the same pass. This is the architecture-charter touchpoint for the *supplementary flow* (problem report → to-approval → plan-approve): a bug fix that silently contradicts the charter is how the charter rots. Do not duplicate the ruling into the charter; update the facts and keep its document map pointing at the approval document that decided it. If the ruling changes no architectural fact, skip this step.
 
    A ruling written only in chat is lost the moment the session ends.
 
 7. **Advance each document's status.** After its items are all resolved, set the frontmatter:
 
-   - `closed` — every item decided, and each either done or filed as a ticket.
+   - `closed` — every item decided, and each either done or registered in the 影响域清单（下游动作清单驱动，不要求结算当场完成）.
    - `superseded-by:<path>` — a later decision replaced the document's content; name the replacement.
    - `abandoned` — no longer relevant, nothing replaced it.
 

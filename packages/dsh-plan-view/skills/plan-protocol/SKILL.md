@@ -32,13 +32,13 @@ grill / wayfinder → to-approval → plan-approve      ← ① 决策循环（�
 ### 补充流程（需要拍板的问题 / 缺口）
 
 ```
-问题发现（用户反馈 / code review / 走查 / QA 缺陷升级）→ to-approval → plan-approve →（依据）→ to-tickets → implement / implement-spec → plan-sync
+问题发现（用户反馈 / code review / 走查 / QA 缺陷升级）→ to-approval → plan-approve（结算＋影响域清单） ──清单驱动──> to-tickets → implement / implement-spec → plan-sync
                                              ↑
                                  依据 = 那份待拍板文档本身
                                  （不追加 spec、不新建 spec）
 ```
 
-**两条流的分界**：主流程是「**已知要做**，把需求写成 spec 再拆票」；补充流程是「**发现一个问题 / 缺口**，先拍板定论，依据就是拍板文档」。汇合点相同：**拍板结论若要干活，当场落成标准票**（`to-approval` 调 `plan-approve`，`plan-approve` 调 `to-tickets`），接回落地链 ②。落票时机不限结算当场——挂账恢复转票、修复会话按拍板档立返工票同为合法时刻（见二·硬规则 1），格式一律同源 `to-tickets`。
+**两条流的分界**：主流程是「**已知要做**，把需求写成 spec 再拆票」；补充流程是「**发现一个问题 / 缺口**，先拍板定论，依据就是拍板文档」。汇合点相同：**拍板结论若要干活，由 plan-approve 在影响域清单登记票项**（`to-approval` 调 `plan-approve`；2026-09-28 拍板——plan-approve **只结算、不落票**），落票由**清单驱动后置**执行：plan-loop「决策已定案但工单未拆」行动行或实施会话按清单项调 `to-tickets`，接回落地链 ②。其余合法落票时机——挂账恢复转票、修复会话按拍板档立返工票——见二·硬规则 1；无论哪个时机，格式一律同源 `to-tickets`。
 
 ### QA 流程（测试与缺陷闭环）
 
@@ -61,7 +61,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | `grill` / `grilling` | 主流程 ① 输入端 | 用户想法 | `to-approval` | 把模糊决策拷问清楚、问题落文档 | 不写票、不拍板 |
 | `wayfinder` | 主流程 ① 输入端（推演地图） | 用户探索 | `to-approval` | `.plan/<effort>/` 推演地图（map + tickets/ + assets） | 不写 spec、不拍板 |
 | `to-approval` | ① 与 ② 之间 | grill / 发现的问题 / 裸 id | `plan-approve` | 待拍板文档（`status: pending` + 四字段头 + 原文照抄 + 四要件） | 不拍板、不手写票 |
-| `plan-approve` | ① 出口 / ② 入口 | `to-approval` | `to-tickets` | 逐项核定、录结论、**按 ruling 调 `to-tickets`**、推进文档状态（只翻状态、不搬文件） | 不发明票格式、不散件归档 |
+| `plan-approve` | ① 出口 | `to-approval` | 无（下游由影响域清单驱动） | 逐项核定、录结论、**登记影响域清单（含票项）**、推进文档状态（只翻状态、不搬文件、**不当场落票**——2026-09-28 拍板） | 不发明票格式、不散件归档、不当场调 `to-tickets` |
 | `to-spec` | ② 起点 | 决策定案 | `to-tickets` | `spec.md`（整体写）；**写前读架构正本、写完更新架构正本** | 不拆票 |
 | `to-tickets` | ② 第二环（**票格式正本**） | spec / 待拍板文档 / 推演地图 | `implement*` | **一票一文件** `tickets/<NN>-<slug>.md` + `map.md`（若无） | 不写 spec、不实现 |
 | `implement` / `implement-spec` | ② 第三环 | 票 | `plan-sync` | 实现 + **合并落地时当场回写票** | 不读盘批量翻状态 |
@@ -74,10 +74,10 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 
 **交接契约（硬规则）**：
 
-1. **票的格式由 `to-tickets` 独占**——它是落地链的票格式正本 + 被 `plan-approve` 调用的生成器（wayfinder 图内的推演票不走 to-tickets，走 §三的同构 TRACKER-MARKDOWN 契约），输入必须是 spec / 待拍板文档 / 推演地图，不能是裸结论；调它时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件。**落票的时机是合法集合**，不限字面调用本 skill：①拍板结算（`plan-approve` 调 `to-tickets`）；②挂账恢复转票（见 §三 挂账台账「恢复口径」）；③修复会话按拍板档立返工票。无论哪个时机落票，格式必须与 `to-tickets` 产出一致（一票一文件 + frontmatter `type` / `blocked_by` / `status`），plan-lint 兜底校验。
+1. **票的格式由 `to-tickets` 独占**——它是落地链的票格式正本 + 被 `plan-approve` 调用的生成器（wayfinder 图内的推演票不走 to-tickets，走 §三的同构 TRACKER-MARKDOWN 契约），输入必须是 spec / 待拍板文档 / 推演地图，不能是裸结论；调它时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件。**落票的时机是合法集合**，不限字面调用本 skill：①**定案拆票（清单驱动）**——plan-loop「决策已定案但工单未拆」行动行或实施会话按拍板档影响域清单票项（2026-09-28 拍板：`plan-approve` 不再当场调 `to-tickets`）；②挂账恢复转票（见 §三 挂账台账「恢复口径」）；③修复会话按拍板档立返工票。无论哪个时机落票，格式必须与 `to-tickets` 产出一致（一票一文件 + frontmatter `type` / `blocked_by` / `status`），plan-lint 兜底校验。
 2. **回写发生在两处，是同一件事的两种时机**：`implement*` 在每张票合并落地时**当场**翻状态；`plan-sync` 事后对账补齐。两者不是两套流程。
 3. **执行登记（多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——frontmatter 形态票写 `status: claimed` + `claimed_by: <agent 名>` + `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）；wayfinder 推导形态票写 `claimed_by` + `claimed_at`，不写 `status`（格式契约见 TRACKER-MARKDOWN）。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
-4. **`plan-approve` 是「决策 → 票」的主转化点**：拍板结论是「做 X」时，必须调 `to-tickets` 落票，否则结论只是聊天记录，下次会话丢失。挂账恢复转票与修复返工票是另外两个合法落票时机（见规则 1），不需要先有拍板文档在手——依据分别是台账「恢复口径」与拍板档结论。
+4. **`plan-approve` 是「决策 → 影响域清单」的结算点**（2026-09-28 拍板：摘除主动落票）：拍板结论是「做 X」时，必须在影响域清单登记票项（条目 → 归宿 + ☐），否则结论只是聊天记录，下次会话丢失；落票由清单驱动后置执行——plan-loop「决策已定案但工单未拆」行动行或实施会话按清单项调 `to-tickets`（格式独占不变）。挂账恢复转票与修复返工票是另外两个合法落票时机（见规则 1），不需要先有拍板文档在手——依据分别是台账「恢复口径」与拍板档结论。
 5. **架构正本（如 `docs/architecture.md`，项目自declare「全局架构唯一正本」者）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，也在末步更新。它不新建——已存在就维护。
 6. **QA 缺陷环不经过拍板**：缺陷档（`DEF-NN`）是返工依据，修复交 `diagnosing-bugs`（按 E 节「最小复现入口」契约，修复只回写 C 节），复测回 `run-qa-testcases` 用同一条命令翻绿；票面 `qa_cases` / `qa_tested` / `qa_accepted` 三标记由测试两 skill 写入，验收条件 = AC 全过 + 该票无未关闭缺陷；缺陷暴露需求级分歧时才转 `to-approval`。
 
