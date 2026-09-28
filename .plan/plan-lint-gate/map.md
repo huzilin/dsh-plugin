@@ -19,3 +19,4 @@
 - 2026-09-28 triage+grill 拍板：取代登记机械判据=「effort 票全 done ⇒ spec 必带 superseded-by 或已归档」（Q1=A），含存量补标（Q2=A）——立 [票 07](tickets/07-取代登记完备性校验.md)。plan-loop-rewrite 票 01 延后至全量 skills 盘点（老 matt 工具+plan 族）之后。
 - 2026-09-28 拍板确认（「好继续」）：梳理文档 29 条处置 + 断链 L1-L5 全数确认——立 [票 08](tickets/08-收编tdd-code-review-codebase-design.md)（收编 tdd/code-review/codebase-design，解 L5）；L1/L3 契约补条款并入 plan-loop-rewrite 票 01；施工顺序=票 07 → 08 → 01。
 - 2026-09-28 目录迁移令（用户裁定）：tracker 类对象迁回原版 .scratch/ 布局（审批档留 .plan/）——立 [票 09](tickets/09-目录迁移-tracker类对象迁回原版scratch布局.md)（大票，先 grill 三项 ☐ 议题）；处置表 #6/#8/#9/#22-26 涉 .plan 落位项改判「待迁移」。wayfinder 状态表示与获取机制说明已当轮回复（派生态 + frontier grep + plan view 同规则）。
+- 2026-09-28 plan-approve 三轮拍板（审批档吸纳归档统一标记 Q1/Q2/Q4）：翻标机制 = **影响域清单 → 各域依次（可并发）处理回填 → 全部落地后翻 `archived: <主归宿>`**（取代「各吸纳者当场翻」；不嵌入状态机）；知识层（ADR/CONTEXT.md）免标、domain 内部自理与 plan-archive 无关；Q3 主体澄清后悬置待拍——立 [票 10](tickets/10-审批档吸纳归档机制-影响域清单与完成翻标.md)。
