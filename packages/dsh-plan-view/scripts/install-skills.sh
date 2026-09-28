@@ -40,9 +40,11 @@ except ValueError:
 block = lines[1:close]
 for line in block:
     if line.startswith('name:') or line.startswith('description:'):
-        value = line.split(':', 1)[1]
-        # A colon followed by a space inside an unquoted scalar starts a nested
-        # mapping in YAML and aborts the parse.
+        value = line.split(':', 1)[1].strip()
+        # A quoted scalar may legally contain ": " — only a bare unquoted
+        # value starts a nested mapping and aborts the parse.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            continue
         if re.search(r':\s', value):
             sys.exit(f'{path}: unquoted colon in "{line.split(":",1)[0]}" breaks YAML — quote the value or drop the colon')
 for key in ('name', 'description'):
@@ -71,6 +73,11 @@ for src in "$SKILLS_SRC"/*/; do
     implement)       skill_id="mp-implement" ;;
     implement-spec)  skill_id="mp-implement-spec" ;;
     to-spec)         skill_id="mp-to-spec" ;;
+    # 票 08 收编（断链 L5）：implement 依赖 tdd/code-review、improve-codebase-architecture
+    # 依赖 codebase-design；安装 id 沿用既有 mp-* 名（覆盖旧副本，软链与用户视图不变）
+    tdd)             skill_id="mp-tdd" ;;
+    code-review)     skill_id="mp-code-review" ;;
+    codebase-design) skill_id="mp-codebase-design" ;;
     *)               skill_id="$skill" ;;
   esac
   if [ -f "$SKILLS_SRC/$skill/SKILL.md" ]; then
