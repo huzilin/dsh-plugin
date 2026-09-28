@@ -24,3 +24,4 @@
 - 2026-09-29 票 10 v2 简化（用户拍板「approval 文件的清单回填，不做，之前说过交给 grill 来做。grill 完全对话完成再 to-spec」）：状态化清单撤销；翻标改**双挂点**——结算即翻（纯知识档）/ to-spec 完成翻（`archived: <spec 落点>`）；to-spec 输入面条款同日撤销（恢复原版文档行为，不扫 `.plan/`）；lint 收敛为单 warn（closed 无标超 7 天）；plan-approve/to-approval 正本 v2 文本已随批落进。
 - 2026-09-29 lint warn 撤销（用户拍板「这个就不通知了」）：审批档零检查——implemented 必已翻标无需通知、补充流程档无翻标挂点会永久误报、漏 to-spec 提醒归 plan-loop Brief；7 天参数作废。
 - 2026-09-29 票 09 议题③④裁定：**存量迁移撤出施工范围**（实现全毕后用户单独推进）；**G2 撤销**（归档 = effort 全消后的轮归档，全局 qa/ledger 常驻 `.plan/qa|ledger/`）。议题①（to-tickets 自动建 map）②（assets/ 强化条款）解释已发，待用户定方向。
+- 2026-09-29 票 09 议题①②裁定（**四议题全清，转纯施工**）：to-tickets **删自动建 map 补丁**（无 map 目录不加载，lint[2] 守门）；assets/ 保留随迁、强化条款（72h/串行/派生）维持；to-spec **窄解释维持**（宽解释不采纳）。
