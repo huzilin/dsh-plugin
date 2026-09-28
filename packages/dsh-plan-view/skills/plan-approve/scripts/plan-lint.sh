@@ -9,7 +9,7 @@
 # 未迁移图仍按旧布局留在 .plan/。两个目录各跑一遍全量检查，发现数累计。
 # 票目录名 issues/（新）与 tickets/（存量）双认。
 #
-# 抓五类漂移：
+# 抓六类漂移：
 #   1. 同票双档：同一票 id 多处落点，且多于一份未标 superseded-by
 #      （map/readme 豁免；type: ledger 是台账登记簿不是票，2026-09-21 拍板；
 #      qa/ 下的缺陷/测例档不是票，整目录豁免）
@@ -33,6 +33,11 @@
 #      必带 superseded-by 注记或已随轮归档（2026-09-28 拍板 Q1=A/Q2=A，
 #      票 07；spec 一次性化收口——防走完的 effort 留下无取代声明的 spec
 #      被后续会话当现行权威照做）
+#   6. .plan 根层白名单：.plan/ 只放全局件封闭三件套（根层审批档 + qa/ +
+#      ledger/，定义正本 = plan-protocol §三「全局件」条，2026-09-29 拍板）；
+#      清单外新子目录即报（novel .plan/research/ 旧病——判据须机械守门）。
+#      豁免：handoffs（存量历史轮快照）、含 map.md 的子目录（存量旧布局
+#      effort，只读兼容，迁移归存量批次）
 #
 # 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
 # assets / handoffs / ledger / 一切隐藏目录与隐藏文件。
@@ -275,6 +280,30 @@ for PD in $PLAN_DIRS; do
   [ "$unmarked" -eq 0 ] && note "✓ 无"
   findings=$((findings + unmarked))
   echo
+
+  # ── 6. .plan 根层白名单 ───────────────────────────────────────────────────
+  # 判据正本 = plan-protocol §三「全局件」条（2026-09-29 拍板）：.plan/ 只放
+  # 全局件封闭三件套——根层审批档（文件，不归本查）+ qa/ + ledger/。清单外
+  # 子目录即报；豁免：handoffs（存量历史轮快照）、含 map.md 的子目录（存量
+  # 旧布局 effort，只读兼容，迁移归存量批次）。仅当本遍历目录名为 .plan 时生效。
+  case "${PD##*/}" in .plan)
+    echo "[6] .plan 根层白名单（全局件封闭清单：qa/ ledger/；豁免 handoffs 与含 map.md 的存量 effort 目录）"
+    stray=0
+    for d in "$PD"/*/; do
+      [ -d "$d" ] || continue
+      name=$(basename "$d")
+      case "$name" in
+        qa|ledger|handoffs|assets|node_modules) continue ;;
+      esac
+      [ -f "${d}map.md" ] && continue
+      stray=$((stray + 1))
+      note "✗ ${d}: plan-root-whitelist — .plan/ 根层清单外子目录「${name}」（调研/复盘落 docs/research/，一次性交接落 .tmp/，tracker 类落 .scratch/<slug>/）"
+    done
+    [ "$stray" -eq 0 ] && note "✓ 无"
+    findings=$((findings + stray))
+    echo
+    ;;
+  esac
 
   # ── 汇总（本目录） ─────────────────────────────────────────────────────────
   total=$(wc -l < "$TMP/files.txt" | tr -d ' ')
