@@ -5,7 +5,7 @@
 # 规则改动先改协议。口径与 plan-lint.mjs 逐条对拍一致（票 02；mjs 已退役，
 # 本文件是唯一实现）。
 #
-# 抓三类漂移：
+# 抓五类漂移：
 #   1. 同票双档：同一票 id 多处落点，且多于一份未标 superseded-by
 #      （map/readme 豁免；type: ledger 是台账登记簿不是票，2026-09-21 拍板；
 #      qa/ 下的缺陷/测例档不是票，整目录豁免）
@@ -25,6 +25,10 @@
 #      解析、不查（研究型票 status 暂不设门，留观察）。
 #      impl 已于 2026-09-27 废弃（历史别名，三处正本从未列它为合法票型）；
 #      存量票由「形态契约变更回扫」迁移，本脚本不作拦截。
+#   5. 取代登记：effort 票已全终态（done/out_of_scope）⇒ 该 effort 的 spec.md
+#      必带 superseded-by 注记或已随轮归档（2026-09-28 拍板 Q1=A/Q2=A，
+#      票 07；spec 一次性化收口——防走完的 effort 留下无取代声明的 spec
+#      被后续会话当现行权威照做）
 #
 # 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
 # assets / handoffs / ledger / 一切隐藏目录与隐藏文件。
@@ -210,6 +214,47 @@ while IFS=$'\t' read -r d id f hh ty st; do
 done < "$TMP/meta.tsv"
 [ "$bad4" -eq 0 ] && note "✓ 无"
 findings=$((findings + bad4))
+echo
+
+# ── 5. 取代登记 ──────────────────────────────────────────────────────────────
+echo "[5] 取代登记（effort 票全终态 ⇒ spec 必带 superseded-by 注记或已归档）"
+# 判据正本 = 2026-09-28 拍板（Q1=A/Q2=A，plan-lint-gate 票 07）：「effort 票全
+# done ⇒ spec 必带 superseded-by 或已归档」。spec 已归档时整文件随轮搬进
+# .archive/（本脚本遍历剪枝区），自然不在校验面——留在 .plan/ 的 spec 才查。
+# 终态词 = done/out_of_scope（done 允许附日期）；存在 open/claimed/空 status
+# 的票 = effort 未走完，不触发。无 tickets/ 目录或零票 = 无「票尽」判据，跳过。
+unmarked=0
+while IFS=$'\t' read -r d id f hh ty st; do
+  [ "$id" = "spec" ] || continue
+  [ "$d" = "$PLAN_DIR" ] && continue          # 根层散件 spec 不属任何 effort
+  tk="$d/tickets"
+  [ -d "$tk" ] || continue
+  all_done=1; ntk=0
+  while IFS=$'\t' read -r td tid tf tth tty tst; do
+    [ "$td" = "$tk" ] || continue
+    ntk=$((ntk + 1))
+    case "$tst" in
+      done|done\ *|out_of_scope) : ;;
+      *) all_done=0 ;;
+    esac
+  done < "$TMP/meta.tsv"
+  [ "$ntk" -eq 0 ] && continue
+  [ "$all_done" -eq 1 ] || continue
+  marked=0
+  case "$(fm_field "$f" status)" in
+    superseded-by*) marked=1 ;;
+  esac
+  # 头部 10 行内的「superseded-by:」注记也认（取代声明必须头部机械可检索——
+  # 埋正文的标记 agent 读不到，doc-authority 复盘实证 23% 可检索率教训）。
+  # 不做全文 grep：正文「提及」他人被取代（引用性出现）不算自身已标，2026-09-29 实测误放行。
+  if [ "$marked" -eq 0 ] && head -10 "$f" | grep -q 'superseded-by' 2>/dev/null; then marked=1; fi
+  if [ "$marked" -eq 0 ]; then
+    note "✗ $f: superseded-register — effort 票已全部终态（done/out_of_scope），spec.md 仍无 superseded-by 注记且未归档（按五类归宿分流后补标或归档）"
+    unmarked=$((unmarked + 1))
+  fi
+done < "$TMP/meta.tsv"
+[ "$unmarked" -eq 0 ] && note "✓ 无"
+findings=$((findings + unmarked))
 echo
 
 # ── 汇总 ─────────────────────────────────────────────────────────────────────

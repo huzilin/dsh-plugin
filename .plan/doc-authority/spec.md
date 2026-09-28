@@ -1,7 +1,7 @@
 ---
 type: spec
 date: 2026-09-27
-status: closed
+status: superseded-by:docs/architecture.md
 origin: retrospective
 ---
 

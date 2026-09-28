@@ -115,6 +115,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
     > **归宿（<YYYY-MM-DD>）**：→ arch §7.5 ＋ docs/<file> §3
     ```
   - **「更新完成」＝ spec 每节都有归宿行，且指向的目标确实存在。** 语义判断仍要做一次（不可免），但**完成与否由此可机械判定**，且**它同时就是「spec 可否作废」的凭据**——归宿行齐全 ⇒ 可作废；缺失 ⇒ 不可作废；
+  - **取代登记（可作废的第二凭据 · 2026-09-28 拍板 Q1=A/Q2=A，plan-lint 校验[5]）**：effort 票已全终态（`done`/`out_of_scope`）⇒ 该 effort 的 `spec.md` 必带 `superseded-by:` 注记**或**已随轮归档——「effort 票尽则必标」。注记写 **frontmatter `status: superseded-by:<归宿>`**（首选）或**头部 10 行内**引用块——取代声明必须头部机械可检索，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。未满足即 plan-lint 报 `superseded-register`；存量欠账按拍板 Q2=A 一次性补标；
   - **时点**：docs 更新钉在「**spec 定稿那一刻**」，与 `to-spec` 现有动作合并——**不等到「关闭 effort 后」**（那时上下文已散）。
 - **状态头四字段**（待拍板 / spec / map 等文档）：`type` / `date` / `status` / `origin`。
   - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
