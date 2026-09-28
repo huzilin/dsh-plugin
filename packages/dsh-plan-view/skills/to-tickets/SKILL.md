@@ -1,6 +1,6 @@
 ---
 name: to-tickets
-description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, saved to `.plan/`.
+description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, saved to `.scratch/<feature-slug>/issues/`.
 disable-model-invocation: true
 ---
 
@@ -14,7 +14,7 @@ Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet 
 
 ### 1. Gather context
 
-Work from whatever is already in the conversation context. If the user passes a reference (a spec path such as `.plan/<slug>/spec.md`, or any other document) as an argument, fetch it and read it in full.
+Work from whatever is already in the conversation context. If the user passes a reference (a spec path such as `.scratch/<slug>/spec.md`, or any other document) as an argument, fetch it and read it in full.
 
 ### 2. Explore the codebase (optional)
 
@@ -57,7 +57,7 @@ Iterate until the user approves the breakdown.
 
 ### 5. Save the tickets
 
-Write **one file per ticket**, under `.plan/<slug>/tickets/`, named `<NN>-<slug>.md` (numbered from 01 in dependency order, blockers first). `<slug>` is a short kebab-case name for the work — if the tickets came from a spec at `.plan/<slug>/spec.md`, use the same directory. Create the directories if needed; `.plan/` is committed to version control. Tell the user the paths.
+Write **one file per ticket**, under `.scratch/<slug>/issues/`, named `<NN>-<slug>.md` (numbered from 01 in dependency order, blockers first). `<slug>` is a short kebab-case name for the work — if the tickets came from a spec at `.scratch/<slug>/spec.md`, use the same directory. Create the directories if needed; `.scratch/` is committed to version control. Tell the user the paths.
 
 Each file carries frontmatter the tracker reads, then the ticket's own body:
 
@@ -65,7 +65,7 @@ Each file carries frontmatter the tracker reads, then the ticket's own body:
 ---
 type: task
 blocked_by: []          # ticket ids that gate this one, or [] when none — bare values, never quoted（格式正本=plan-protocol §三「blocked_by 格式」）
-status: open            # open（待领）→ claimed（执行中）→ done；推演图票（research/prototype/grilling）终态 resolved
+status: open            # open（待领）→ claimed（执行中）→ done；全票型统一 done（允许附日期 done <YYYY-MM-DD>，词表正本=plan-protocol §三）
 ---
 
 # <NN>: <title>
@@ -82,28 +82,9 @@ status: open            # open（待领）→ claimed（执行中）→ done；�
 - [ ] <criterion>
 ```
 
-**Why one file per ticket, not one combined file.** A combined `tickets.md` looks tidier in a directory listing, but anything that reads tickets file-by-file counts it as **a single ticket** and silently loses every ticket inside it. That is not hypothetical — it is how a plan view shows "1 ticket" for a file holding nine. One file per ticket is the shape the wayfinder contract uses, so both readers agree.
+**Why one file per ticket, not one combined file.** A combined `issues.md` looks tidier in a directory listing, but anything that reads tickets file-by-file counts it as **a single ticket** and silently loses every ticket inside it. That is not hypothetical — it is how a plan view shows "1 ticket" for a file holding nine. One file per ticket is the shape the wayfinder contract uses, so both readers agree.
 
-**Also create `.plan/<slug>/map.md`** if the directory has none, so the effort is recognised as an effort rather than a loose folder:
-
-```markdown
-# <short name of the work> · 路线图
-
-## Destination
-
-<one or two lines: what reaching the end of this work looks like>
-
-## Notes
-
-- **Source spec**: <path>
-- 工单形态：实施工单（`type: task`，frontmatter 存 `status`），非 wayfinder 推演地图。
-
-## Decisions so far
-
-<!-- one line per resolved ticket: gist + link -->
-```
-
-If the work came from an existing spec or plan document, reference it in each ticket's `Source spec:` line and in the map's Notes — do NOT modify or delete the source document.
+**Do not create `map.md`.** (2026-09-29 拍板「to-tickets 不自动补 map」，撤销本 skill 旧有的自动建 map 补丁.) The map is the wayfinder's artifact: an effort directory is only loaded by the plan view when it contains a `map.md`, and a bare `issues/` directory without one is invisible to the view and reported by plan-lint check [2]. If this ticket set needs a map (e.g. it outgrew a spec-only flow), let the user or a wayfinder session create it — do not synthesize one here.
 
 Keep the ordering in mind when numbering: the frontier is any ticket whose blockers are all done. For a purely linear chain that means 01 runs first.
 

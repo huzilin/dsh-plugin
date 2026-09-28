@@ -1,7 +1,7 @@
 ---
 type: task
 blocked_by: []
-status: open
+status: done
 ---
 
 # 06: 协议与 wayfinder 状态契约对齐（重新定性版）
@@ -155,4 +155,4 @@ status: open
 - [x] 裁定落盘（含用户原话）——三轮定性全部留痕，含被推翻的两轮及根因
 - [x] 指明接班人（票 04）与回扫归属（另立票）
 - [x] 独立完成项（`impl` 清理、`blocked_by` 统一）标注不受影响
-- [ ] 收尾 plan-lint 零漂移
+- [x] 收尾 plan-lint 零漂移（2026-09-29 本仓收口实跑 0 发现，票 09 批次）

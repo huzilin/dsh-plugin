@@ -8,7 +8,7 @@ General-purpose agent skills, adapted from [Matt Pocock's skills](https://github
 
 ## Shared conventions
 
-- **`.plan/`** — the project's planning memory, committed to version control. Specs (`.plan/<slug>/spec.md`), ticket breakdowns (`.plan/<slug>/tickets.md`), wayfinder maps (`.plan/<slug>/map.md` + `.plan/<slug>/tickets/NN-<slug>.md`), and handoffs (`.plan/handoffs/`).
+- **`.scratch/`** — the project's planning memory (tracker layer), committed to version control: wayfinder maps and specs (`.scratch/<slug>/map.md`, `.scratch/<slug>/spec.md`) and ticket breakdowns (`.scratch/<slug>/issues/NN-<slug>.md`, one file per ticket). **`.plan/`** — approval documents (`.plan/待拍板-*.md`) plus the global defect/ledger registers (`.plan/qa/`, `.plan/ledger/`). One-off handoffs go to `.tmp/handoffs/`; closed rounds are archived by `plan-archive` into `.archive/rounds/<round-id>/`.
 - **`CONTEXT.md`** at the repo root — the domain glossary; **`docs/adr/`** — architecture decision records. Both created lazily by `domain-modeling`; skills that read them proceed silently when they don't exist.
 
 ## Skills

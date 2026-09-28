@@ -136,4 +136,4 @@ Required before declaring done:
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
 - [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
 - [ ] The hypothesis that turned out correct is stated in the commit / PR message, so the next debugger learns
-- [ ] If this pass wrote to `.plan/` (defect file, ticket, ledger), re-run plan-lint — `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.plan` — and end green, or fix what it finds in the same pass
+- [ ] If this pass wrote to the plan dirs (defect file, ticket, ledger), re-run plan-lint — `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan` (pass whichever of the two exists) — and end green, or fix what it finds in the same pass

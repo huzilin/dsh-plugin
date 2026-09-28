@@ -22,7 +22,7 @@ The map is the canonical artifact. Its tickets hang off it, one per ticket.
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
-**Where the map, its tickets, blocking, claims, and frontier queries physically live is adapter-specific.** Consult the adapter for this repo before writing anything. Absent one, default to the local-markdown adapter: [`TRACKER-MARKDOWN.md`](TRACKER-MARKDOWN.md), which stores the map under `.plan/` and states its own shapes, invariants, and verification checklist.
+**Where the map, its tickets, blocking, claims, and frontier queries physically live is adapter-specific.** Consult the adapter for this repo before writing anything. Absent one, default to the local-markdown adapter: [`TRACKER-MARKDOWN.md`](TRACKER-MARKDOWN.md), which stores the map under `.scratch/` and states its own shapes, invariants, and verification checklist.
 
 Two rules keep the index honest, because a map that has drifted misleads every session that trusts it, and it does so silently:
 

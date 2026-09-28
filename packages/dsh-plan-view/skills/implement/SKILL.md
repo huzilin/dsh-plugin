@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 Implement the work described by the user in the spec or tickets.
 
-**Before implementing from a spec, check that the spec is still live.** A spec under `.plan/` is a one-shot document — it is voided once its effort closes. Look for a supersession notice (`superseded-by:`, or an equivalently worded statement) and check whether it has already been archived. If either holds, read the current long-lived authority first (the architecture charter, the domain doc, or the requirements doc the spec's disposition lines point to), record `已核新正本：<path>` on the ticket, and only then start. Building a superseded decision is the most expensive failure this flow has, and the old spec still reads as authoritative right up until someone checks.
+**Before implementing from a spec, check that the spec is still live.** A spec (under `.scratch/<slug>/spec.md`; legacy efforts keep it under `.plan/<slug>/`) is a one-shot document — it is voided once its effort closes. Look for a supersession notice (`superseded-by:`, or an equivalently worded statement) and check whether it has already been archived. If either holds, read the current long-lived authority first (the architecture charter, the domain doc, or the requirements doc the spec's disposition lines point to), record `已核新正本：<path>` on the ticket, and only then start. Building a superseded decision is the most expensive failure this flow has, and the old spec still reads as authoritative right up until someone checks.
 
 Use /tdd where possible, at pre-agreed seams.
 
@@ -14,7 +14,7 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 Once done, use /code-review to review the work.
 
-**Update the ticket when the work lands.** If this work came from a ticket under `.plan/`, the ticket is not finished until its file says so — do this in the same pass as the commit, never "later", because later is a session that never comes:
+**Update the ticket when the work lands.** If this work came from a ticket under `.scratch/` (legacy efforts: `.plan/`), the ticket is not finished until its file says so — do this in the same pass as the commit, never "later", because later is a session that never comes:
 
 - set its `status` to `done`
 - tick the acceptance boxes the work satisfies, leaving unticked any box you did not actually demonstrate

@@ -610,21 +610,22 @@ async function loadRounds(scope, root) {
 }
 const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
 const ROOT_GROUP = "\0root";
+const TICKET_DIR_NAMES = new Set(["tickets", "issues"]);
 async function collectTicketFiles(scope, effortDir) {
 	const tree = await fsTree(scope, effortDir);
-	const inTickets = tree.entries.find((e) => e.isDir && e.name === "tickets");
+	const inTicketDirs = tree.entries.filter((e) => e.isDir && TICKET_DIR_NAMES.has(e.name));
 	const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i;
 	const subDirs = tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules");
 	const groups = await Promise.all([
-		inTickets ? fsTree(scope, inTickets.path).then((t) => mdEntries(t).map((f) => ({
+		...inTicketDirs.map((d) => fsTree(scope, d.path).then((t) => mdEntries(t).map((f) => ({
 			file: f,
-			group: "tickets"
-		}))) : Promise.resolve([]),
+			group: d.name
+		})))),
 		Promise.resolve(mdEntries(tree).map((f) => ({
 			file: f,
 			group: ROOT_GROUP
 		}))),
-		...subDirs.filter((d) => d.name !== "tickets").map(async (d) => mdEntries(await fsTree(scope, d.path)).map((f) => ({
+		...subDirs.filter((d) => !TICKET_DIR_NAMES.has(d.name)).map(async (d) => mdEntries(await fsTree(scope, d.path)).map((f) => ({
 			file: f,
 			group: d.name
 		})))
@@ -693,6 +694,25 @@ async function loadPlan(scope, planDir) {
 		tickets,
 		effortDir: primary?.dir ?? planDir,
 		mapRaw: primary?.mapRaw ?? null,
+		efforts
+	};
+}
+async function loadPlanMerged(scope, dirs) {
+	const ok = (await Promise.all(dirs.map((d) => loadPlan(scope, d).catch(() => null)))).filter((p) => !!p);
+	if (ok.length === 0) return null;
+	const seen = /* @__PURE__ */ new Set();
+	const tickets = ok.flatMap((p) => p.tickets).filter((t) => {
+		const k = t.path ?? t.file;
+		if (seen.has(k)) return false;
+		seen.add(k);
+		return true;
+	});
+	const efforts = ok.flatMap((p) => p.efforts);
+	const primary = ok.find((p) => p.mapRaw) ?? ok[0];
+	return {
+		tickets,
+		effortDir: primary.effortDir,
+		mapRaw: primary.mapRaw,
 		efforts
 	};
 }
@@ -3214,9 +3234,8 @@ function PlanView(props) {
 		setLoading(true);
 		setError(null);
 		const base = scope.cwd ? `${scope.cwd}/` : "";
-		const dir = round === null ? `${base}.plan` : `${base}.archive/rounds/${round}`;
 		try {
-			const r = await loadPlan(scope, dir);
+			const r = round === null ? await loadPlanMerged(scope, [`${base}.scratch`, `${base}.plan`]) : await loadPlan(scope, `${base}.archive/rounds/${round}`);
 			if (!r) {
 				setError("empty");
 				setLoading(false);
@@ -3306,7 +3325,7 @@ function PlanView(props) {
 		type: "button",
 		onClick: () => void load(),
 		disabled: loading,
-		title: "重新读取 .plan（别处改了文件时用）",
+		title: "重新读取治理目录 .scratch/.plan（别处改了文件时用）",
 		style: {
 			padding: "5px 10px",
 			border: `1px solid ${BORDER}`,
@@ -3342,7 +3361,7 @@ function PlanView(props) {
 			background: BG,
 			color: "#888"
 		},
-		children: [/* @__PURE__ */ jsx("span", { children: round === null ? "No .plan found in current directory." : `轮次 ${round} 读取失败（目录可能已被移动或删除）。` }), refreshBtn("⟳ 重新读取")]
+		children: [/* @__PURE__ */ jsx("span", { children: round === null ? "No .scratch/.plan found in current directory." : `轮次 ${round} 读取失败（目录可能已被移动或删除）。` }), refreshBtn("⟳ 重新读取")]
 	});
 	const planDir = data.effortDir;
 	const readOnly = round !== null;
@@ -3473,7 +3492,7 @@ function PlanView(props) {
 						},
 						children: [/* @__PURE__ */ jsx("option", {
 							value: "",
-							children: "📍 现行（.plan）"
+							children: "📍 现行（.scratch + .plan）"
 						}), rounds.map((r) => /* @__PURE__ */ jsxs("option", {
 							value: r.id,
 							children: [
@@ -3760,7 +3779,7 @@ function PlanView(props) {
 							justifyContent: "center",
 							color: TEXT_FAINT
 						},
-						children: "`.plan/qa/` 下暂无无图归属的测例 / 缺陷文档。"
+						children: "`.plan/qa/` 下暂无无图归属的测例 / 缺陷文档（全局件常驻 `.plan/qa/`，不随轮迁）。"
 					})
 				]
 			}),
@@ -3885,9 +3904,13 @@ function GuideView({ scope }) {
 			children: [
 				/* @__PURE__ */ jsx(H, { children: "这个页面是什么" }),
 				/* @__PURE__ */ jsxs(P, { children: [
-					"总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的都是在 ",
+					"总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的是两个治理目录下的 markdown：tracker 类 （spec / map / issues 票）在 ",
+					/* @__PURE__ */ jsx(Code, { children: ".scratch/" }),
+					"，审批档与全局缺陷/台账在 ",
 					/* @__PURE__ */ jsx(Code, { children: ".plan/" }),
-					" 下的 markdown。 本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓",
+					"（存量未迁移图仍按旧布局留在 ",
+					/* @__PURE__ */ jsx(Code, { children: ".plan/" }),
+					"，一并显示）。 本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓",
 					/* @__PURE__ */ jsx(Code, { children: "skills/plan-protocol/SKILL.md" }),
 					"，本页是它的可视化速览。"
 				] }),
@@ -4052,13 +4075,11 @@ function GuideView({ scope }) {
 					"」处汇合：拍板结论若要求干活，",
 					/* @__PURE__ */ jsx("strong", {
 						style: { color: TEXT },
-						children: "同一轮就该落成标准票"
+						children: "plan-approve 在影响域清单登记票项"
 					}),
-					"（",
-					/* @__PURE__ */ jsx(Code, { children: "plan-approve" }),
-					" 调 ",
+					"（只结算、不落票——2026-09-28 拍板）， 落票由清单驱动后置执行（plan-loop「定案未拆票」行动行或实施会话调 ",
 					/* @__PURE__ */ jsx(Code, { children: "to-tickets" }),
-					"），而不是把结论留在文档里等人再拆一次。"
+					"）， 而不是把结论留在文档里等人再拆一次。"
 				] }),
 				/* @__PURE__ */ jsx(H, { children: "票的形态约定" }),
 				/* @__PURE__ */ jsxs(P, { children: [
@@ -4082,7 +4103,11 @@ function GuideView({ scope }) {
 						fontFamily: "ui-monospace,Menlo,monospace"
 					},
 					children: [
-						".plan/<effort>/",
+						".scratch/<effort>/ \xA0",
+						/* @__PURE__ */ jsx("span", {
+							style: { color: TEXT_FAINT },
+							children: "← tracker 类（spec/map/issues 票）"
+						}),
 						/* @__PURE__ */ jsx("br", {}),
 						"\xA0\xA0map.md \xA0",
 						/* @__PURE__ */ jsx("span", {
@@ -4090,7 +4115,7 @@ function GuideView({ scope }) {
 							children: "← effort 标志：没有它，整个目录不被加载"
 						}),
 						/* @__PURE__ */ jsx("br", {}),
-						"\xA0\xA0tickets/",
+						"\xA0\xA0issues/",
 						/* @__PURE__ */ jsx("br", {}),
 						"\xA0\xA0\xA0\xA001-<slug>.md \xA0",
 						/* @__PURE__ */ jsx("span", {
@@ -4098,7 +4123,13 @@ function GuideView({ scope }) {
 							children: "← frontmatter: type / blocked_by / status"
 						}),
 						/* @__PURE__ */ jsx("br", {}),
-						"\xA0\xA0\xA0\xA002-<slug>.md"
+						"\xA0\xA0\xA0\xA002-<slug>.md",
+						/* @__PURE__ */ jsx("br", {}),
+						".plan/ \xA0",
+						/* @__PURE__ */ jsx("span", {
+							style: { color: TEXT_FAINT },
+							children: "← 审批档（待拍板-*.md）＋全局 qa/、ledger/"
+						})
 					]
 				}),
 				/* @__PURE__ */ jsxs(P, { children: [
@@ -4157,8 +4188,8 @@ function GuideView({ scope }) {
 								}),
 								/* @__PURE__ */ jsx("br", {}),
 								"结构漂移先用只读脚本查：",
-								/* @__PURE__ */ jsx(Code, { children: "bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.plan" }),
-								"（同票双档、缺 map.md、缺状态头/非法 status）； 再跑 ",
+								/* @__PURE__ */ jsx(Code, { children: "bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan" }),
+								"（同票双档、缺 map.md、缺状态头/非法 status、effort 票尽未标 superseded-by）； 再跑 ",
 								/* @__PURE__ */ jsx(Code, { children: "plan-sync" }),
 								" 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。 两者都只报告、不擅自改。"
 							]
@@ -4524,7 +4555,7 @@ function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, read
 					fontSize: 12,
 					color: TEXT_FAINT
 				},
-				children: "一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.plan/<effort>/ledger/`，frontmatter 带 `type: ledger`。"
+				children: "一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.scratch/<effort>/ledger/`，frontmatter 带 `type: ledger`。"
 			})
 		]
 	});
@@ -4893,7 +4924,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }) {
 					fontSize: 12,
 					color: TEXT_FAINT
 				},
-				children: "`.plan/<effort>/qa/` 下带 `type: qa-defect` 头的缺陷台账会按图列在这里。"
+				children: "`.scratch/<effort>/qa/`（存量图 `.plan/<effort>/qa/`）下带 `type: qa-defect` 头的缺陷台账会按图列在这里。"
 			})
 		]
 	});

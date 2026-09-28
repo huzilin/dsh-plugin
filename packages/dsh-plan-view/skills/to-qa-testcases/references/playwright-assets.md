@@ -13,7 +13,7 @@
 
 | # | 项 | 要求 |
 |---|---|---|
-| 5a | spec 位置 | 仓库 `qa/e2e/`（可执行资产不进 `.plan/`，跟代码走、可进 CI） |
+| 5a | spec 位置 | 仓库 `qa/e2e/`（可执行资产不进治理目录 `.plan/`/`.scratch/`，跟代码走、可进 CI） |
 | 5b | 用例编号绑定 | test 标题以用例编号开头（`test('P-12 提交按钮占位文案', …)`）；单跑 `npx playwright test --grep P-12`；**不引入 testTag 机制** |
 | 5c | 驱动入口 | 薄壳 `qa/run-e2e.sh` 统一「一键复跑」：内部调 playwright（json reporter 输出 `qa/results/`）+ 汇总 PASS/FAIL/SKIP。软失败收全与退出码 FAIL>0 非 0 由 playwright 原生提供 |
 | 5d | 截图落点 | `qa/screenshots/<用例编号>-<步骤>.png`，test 内代码显式落盘（不依赖 trace viewer）；文案类截图须能看清文字 |

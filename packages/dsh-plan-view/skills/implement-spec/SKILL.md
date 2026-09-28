@@ -18,7 +18,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 1. Read the spec and tickets. Read enough to understand the task graph.
 
-2. **(required) Check the spec is live before implementing it.** A spec under `.plan/` is a **one-shot document** — it is voided once its effort closes. Implementing a spec that has already been superseded or archived means building the *old* decision, which is the single most expensive failure this flow has. Before any implementation work:
+2. **(required) Check the spec is live before implementing it.** A spec (under `.scratch/<slug>/spec.md`; legacy efforts keep it under `.plan/<slug>/`) is a **one-shot document** — it is voided once its effort closes. Implementing a spec that has already been superseded or archived means building the *old* decision, which is the single most expensive failure this flow has. Before any implementation work:
 
    - **Look for a supersession notice**: a `superseded-by:` field or an equivalently worded statement in the spec, or in a doc that points at it.
    - **Check whether it is already archived** (e.g. under `.archive/`).
@@ -47,7 +47,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 9. Mark the PR as ready for review.
 
-10. Clean up all **implementer subagent** worktrees. Before finishing, confirm every ticket's file reflects what happened — no ticket left `open` whose work is in the PR, and no acceptance box ticked on evidence you cannot point at. Then close the pass with plan-lint: run `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.plan` (injected into this skill at install time from the plan skill family) — zero findings, or fix what it finds before reporting done.
+10. Clean up all **implementer subagent** worktrees. Before finishing, confirm every ticket's file reflects what happened — no ticket left `open` whose work is in the PR, and no acceptance box ticked on evidence you cannot point at. Then close the pass with plan-lint: run `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan` (pass whichever of the two exists; injected into this skill at install time from the plan skill family) — zero findings, or fix what it finds before reporting done.
 
 ## When this flow does not fit
 

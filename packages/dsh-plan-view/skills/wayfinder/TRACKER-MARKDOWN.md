@@ -1,6 +1,6 @@
 # Tracker: local markdown
 
-The default adapter for [`wayfinder`](SKILL.md), and the one to use when the repo has no issue tracker wired up. The map and its tickets are files under `.plan/`, committed to version control — the shared memory that future sessions orient to, so commit map and ticket changes promptly.
+The default adapter for [`wayfinder`](SKILL.md), and the one to use when the repo has no issue tracker wired up. The map and its tickets are files under `.scratch/`, committed to version control — the shared memory that future sessions orient to, so commit map and ticket changes promptly. (2026-09-29 directory migration: the tracker layer moved from `.plan/` to `.scratch/<effort-slug>/`; approval documents stay in `.plan/`.)
 
 The skill holds the method. This file holds everything the method defers: where files live, what carries structure, how status is read, what a claim is, and the checklist to run before committing. **A tool that reads a map reads it by this file.**
 
@@ -17,13 +17,13 @@ If a merge happens anyway, that induction is void. **Verify the whole graph, not
 ## Layout
 
 ```
-.plan/<effort-slug>/
+.scratch/<effort-slug>/
   map.md                    the map body — see the skill
-  tickets/NN-<slug>.md      one file per ticket, numbered from 01
+  issues/NN-<slug>.md       one file per ticket, numbered from 01
   assets/                   research notes, approved markup, prototypes
 ```
 
-The map's Decisions-so-far and Out-of-scope sections link tickets as `[<title>](./tickets/NN-slug.md)`.
+The map's Decisions-so-far and Out-of-scope sections link tickets as `[<title>](./issues/NN-slug.md)`.
 
 ## Tickets
 
@@ -78,7 +78,7 @@ The rule cuts one way only: a closing section whose entire body is a code fence 
 Finding the frontier is one scan. The grep below is fence-blind, so it is a convenience and not the contract — a tool must strip fences first:
 
 ```sh
-grep -LE '^## (Answer|Ruled out)' tickets/*.md    # every ticket still open or claimed
+grep -LE '^## (Answer|Ruled out)' issues/*.md    # every ticket still open or claimed
 ```
 
 ### Claims
@@ -103,7 +103,7 @@ But these invariants held at the last commit, and one session touches few files.
 
 Checks 1, 2, 4 and 6 are a grep. Checks 3 and 5 need judgment, and no tool can supply it.
 
-1. **Edges.** Every `blocked_by` you wrote names a ticket that exists, and not itself. No cycle — the whole edge set is one grep over `tickets/`.
+1. **Edges.** Every `blocked_by` you wrote names a ticket that exists, and not itself. No cycle — the whole edge set is one grep over `issues/`.
 2. **Closure.** No ticket carries both an `## Answer` and a `## Ruled out`, and no closing heading is left empty.
 3. **The index.** The ticket you resolved appears exactly once in **Decisions so far**, and its gist says what its answer says. A ticket you ruled out appears once in **Out of scope**, and nowhere in Decisions-so-far.
 4. **Claims.** Any ticket still carrying `claimed_by` also carries `claimed_at`, and that claim is under 72 hours old.
@@ -111,4 +111,4 @@ Checks 1, 2, 4 and 6 are a grep. Checks 3 and 5 need judgment, and no tool can s
 6. **Numbers.** Each ticket number is used once, and no ticket file was deleted.
 7. **Counts.** Progress is written down nowhere; it is derived. Grep the repo for a stated count before you commit one.
 
-Where the repo has a tool that performs these, run it — but the skill needs no tool and assumes none. A tool's job here is `fsck`, not verification: it re-establishes the base case after the things a delta check cannot see, which are edits made outside this protocol and any merge that happened despite the rule above. It runs after the fact, and its absence costs you recovery, not correctness. A tool reading only `.plan/` also cannot see check 7's grep, nor make the judgments in checks 3 and 5.
+Where the repo has a tool that performs these, run it — but the skill needs no tool and assumes none. A tool's job here is `fsck`, not verification: it re-establishes the base case after the things a delta check cannot see, which are edits made outside this protocol and any merge that happened despite the rule above. It runs after the fact, and its absence costs you recovery, not correctness. A tool reading only `.scratch/` also cannot see check 7's grep, nor make the judgments in checks 3 and 5.

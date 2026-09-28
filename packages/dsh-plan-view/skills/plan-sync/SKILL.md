@@ -1,6 +1,6 @@
 ---
 name: plan-sync
-description: Reconcile `.plan/` tickets with what actually shipped — read every ticket, judge from git and the code whether it is really done, then write back the status, the acceptance ticks, and a landing note. Use when a ticket's state is suspected stale, or before closing a batch out.
+description: Reconcile `.scratch/` tickets with what actually shipped — read every ticket, judge from git and the code whether it is really done, then write back the status, the acceptance ticks, and a landing note. Use when a ticket's state is suspected stale, or before closing a batch out.
 disable-model-invocation: true
 ---
 
@@ -14,9 +14,9 @@ This skill closes that loop. It is the fourth step of the lifecycle the plan vie
 
 ## Process
 
-1. **Run the drift lint first.** The lint script ships inside the `plan-approve` skill's package and is injected here at install time: `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.plan` (resolve the directory from where you loaded this SKILL.md). It catches the structural problems that make reconciliation unreliable: a ticket id with more than one home, an effort holding `tickets/` with no `map.md`, status-header violations. Fix or report those before reading tickets — a ticket that cannot be found cannot be reconciled. If the script is missing, the skill install itself is broken — report that drift, do not silently degrade to a manual check.
+1. **Run the drift lint first.** The lint script ships inside the `plan-approve` skill's package and is injected here at install time: `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan` (resolve the directory from where you loaded this SKILL.md; pass whichever of the two exists — `.scratch/` holds the trackers, `.plan/` the approvals). It catches the structural problems that make reconciliation unreliable: a ticket id with more than one home, a directory holding `issues/` with no `map.md`, status-header violations, an exhausted effort whose spec carries no supersession mark. Fix or report those before reading tickets — a ticket that cannot be found cannot be reconciled. If the script is missing, the skill install itself is broken — report that drift, do not silently degrade to a manual check.
 
-2. **Collect the open tickets.** Every ticket file under `.plan/` that is *not* already `done`/`closed`, plus any marked done whose acceptance boxes are still empty. The second group matters as much as the first: "done with nothing ticked" is the common shape of work that shipped but was never recorded, and it is exactly what this skill exists to fix.
+2. **Collect the open tickets.** Every ticket file under `.scratch/` that is *not* already `done`/`closed`, plus any marked done whose acceptance boxes are still empty. The second group matters as much as the first: "done with nothing ticked" is the common shape of work that shipped but was never recorded, and it is exactly what this skill exists to fix.
 
 3. **Verify each ticket against reality, one at a time.** The ticket states what it delivers; find out whether that exists. Sources, strongest first:
 

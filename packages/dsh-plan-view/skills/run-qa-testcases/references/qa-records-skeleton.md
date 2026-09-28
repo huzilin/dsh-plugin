@@ -5,9 +5,9 @@
 
 ---
 
-## 一、《执行验收记录》`.plan/<effort>/qa/test.md`
+## 一、《执行验收记录》`.scratch/<effort>/qa/test.md`
 
-> 落点：`.plan/<effort>/qa/test.md`。**本文件不加 frontmatter 状态头**——qa 三件套中只有 `DEF-NN-*.md` 缺陷档加头，本文件保持纯正文形态，不被 plan 视图识别。
+> 落点：`.scratch/<effort>/qa/test.md`（存量未迁移图在 `.plan/<effort>/qa/test.md`）。**本文件不加 frontmatter 状态头**——qa 三件套中只有 `DEF-*.md` 缺陷档加头，本文件保持纯正文形态，不被 plan 视图识别。
 
 ### §0 基本信息
 被测对象 / 阶段 / 环境 / 执行方式（协议通道 + 呈现通道）/ 轮次（以末轮为准）/ 报告日期。
@@ -54,9 +54,9 @@ P-1 UI 呈现与 P-2 使用交互分两表落三态，逐条挂截图（落 `qa/
 
 ---
 
-## 二、《缺陷条目》`.plan/<effort>/qa/DEF-NN-<slug>.md`（一缺陷一文件）
+## 二、《缺陷条目》`.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md`（一缺陷一文件）
 
-> 落点：每条缺陷独立一个文件 `.plan/<effort>/qa/DEF-NN-<slug>.md`（原单文件 `defect.md` 多小节形态**只读兼容**——归档轮快照是旧形态，现行一律拆文件）。文件名 slug 取标题短语（去标点空格，≤14 字）。
+> 落点：每条缺陷独立一个文件 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md`（编号全局唯一 `DEF-<effort-slug>-NN`，2026-09-28 拍板；存量 `DEF-NN` 短号等价兼容。存量未迁移图在 `.plan/<effort>/qa/`；无图归属缺陷落根层 `.plan/qa/`。原单文件 `defect.md` 多小节形态**只读兼容**——归档轮快照是旧形态，现行一律拆文件）。文件名 slug 取标题短语（去标点空格，≤14 字）。
 
 ### 文件状态头（必须是真 frontmatter）
 

@@ -10,7 +10,7 @@ disable-model-invocation: false
 
 # to-qa-testcases（构建测例）
 
-本 skill 只做**构建测例**一件事：设计依据盘点 → 用例设计（六组）→ 可执行资产三原则。产物 = `.plan/<effort>/qa/cases.md`（无 effort 的项目按其 docs 惯例放 `qa/cases.md`）+ 仓库 `qa/` 下可执行资产（环境一键重建 + 驱动一键复跑 + 结果可对比）。 无图归属的回测测例（SOP 回测 / 整页回测，挂不到具体工单/图）落 `.plan/qa/cases-<主题>.md`，进 plan 第一层「测例&缺陷」tab。 cases.md 落盘后给**被测票** frontmatter 回写 `qa_cases: true`（票卡「🧪 测例」徽标的数据源；后续 `qa_tested`/`qa_accepted` 由 run-qa-testcases 写）。**不执行测例、不出验收结论、不登缺陷**——那半截在 `run-qa-testcases`（跑测例 → 验收记录 → 缺陷台账 → 返工闭环）。
+本 skill 只做**构建测例**一件事：设计依据盘点 → 用例设计（六组）→ 可执行资产三原则。产物 = `.scratch/<effort>/qa/cases.md`（无 effort 的项目按其 docs 惯例放 `qa/cases.md`）+ 仓库 `qa/` 下可执行资产（环境一键重建 + 驱动一键复跑 + 结果可对比）。 无图归属的回测测例（SOP 回测 / 整页回测，挂不到具体工单/图）落 `.plan/qa/cases-<主题>.md`，进 plan 第一层「测例&缺陷」tab。 cases.md 落盘后给**被测票** frontmatter 回写 `qa_cases: true`（票卡「🧪 测例」徽标的数据源；后续 `qa_tested`/`qa_accepted` 由 run-qa-testcases 写）。**不执行测例、不出验收结论、不登缺陷**——那半截在 `run-qa-testcases`（跑测例 → 验收记录 → 缺陷台账 → 返工闭环）。
 
 > **标准权威说明**：本 skill 承载《用例设计》cases.md 章节骨架与资产三原则的**权威版本**（正文见 `references/testsuite-skeleton.md`）。项目内若有同名模板（如 `qa-acceptance-template.md`），以本 skill 为准，模板退役或改为指针。
 > **分工**：`run-qa-testcases` 管执行与缺陷（本 skill 产出的测例集与资产就是它的执行武器，验收记录/缺陷台账骨架也在它的 references/）；`diagnosing-bugs` 管失败用例根因定位；测试场景协议层（造数禁令/验收五维 DoD/真模型 E2E/替身语义）5 个正本在 `run-qa-testcases/references/`，造数前必读 `run-qa-testcases/references/data-construction.md`。
@@ -25,7 +25,7 @@ disable-model-invocation: false
 
 列出本次测试的全部预期来源，逐源标注「已列入 / 不适用（写明原因）/ 缺失（补齐后才开跑）」，原样写进 cases.md §1：
 
-1. **spec 的 AC**（`.plan/<effort>/spec.md`）；
+1. **spec 的 AC**（`.scratch/<effort>/spec.md`；存量未迁移图在 `.plan/<effort>/spec.md`）；
 2. **spec 全文行为性明文**——不只 AC 章：状态机行、联动条款、「X 时必须 Y」句式逐条抽成行为清单。AC 章之外的明文要求最容易整类漏测；
 3. **契约真相源**（api proto / openapi）；
 4. **原型 / mockup / 设计稿**——凡有 UI 的需求必列，逐页面、逐元素、逐交互形态；没有这个源，「实现 vs 应有形态」的差距整类不可见；
@@ -53,7 +53,7 @@ disable-model-invocation: false
 
 | 输入 | 何时有 / 用于什么 |
 |---|---|
-| `spec`（`.plan/<effort>/spec.md`）的 AC | AC → 验收用例逐条映射（B/C 组主骨架） |
+| `spec`（`.scratch/<effort>/spec.md`；存量未迁移图在 `.plan/<effort>/spec.md`）的 AC | AC → 验收用例逐条映射（B/C 组主骨架） |
 | spec / 架构文档全文 | 抽「行为性明文」清单（状态机、联动条款、「X 时必须 Y」）——**不只 AC 章** |
 | 契约真相源（api proto / openapi） | A 组接口专项：每接口正常/拦截/幂等/负路径 |
 | 架构正本（`docs/architecture.md`）与设计定稿 | 接口口径、数据可测性、边界态说明 → 联调场景与数据构造 |
@@ -105,7 +105,7 @@ disable-model-invocation: false
    资产随需求入库；**下一轮不重写数据与脚本**。
    > 有 UI 的项目：呈现通道可执行资产以 **Playwright 形态**为标准（spec 落 `qa/e2e/`、用例编号 grep 绑定、薄壳驱动、截图/登录约定 + 无视觉降级口径），正本见 [references/playwright-assets.md](references/playwright-assets.md)；P 组设计时按其探针口径把呈现层断言写成可判定的文本断言。
 
-4. **落盘 + 自检**：cases.md 与资产落盘（`.plan/<effort>/qa/cases.md` + 仓库 `qa/`）→ 按本 skill「自检」逐条过 → 按项目产物登记惯例登记 cases.md 与资产 link。执行、验收记录、缺陷登记交 `run-qa-testcases`。
+4. **落盘 + 自检**：cases.md 与资产落盘（`.scratch/<effort>/qa/cases.md` + 仓库 `qa/`）→ 按本 skill「自检」逐条过 → 按项目产物登记惯例登记 cases.md 与资产 link。执行、验收记录、缺陷登记交 `run-qa-testcases`。
 
 ## 调用形态（自然语言触发语，非 CLI 参数）
 

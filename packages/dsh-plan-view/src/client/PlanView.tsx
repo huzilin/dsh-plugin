@@ -507,18 +507,22 @@ const mdEntries = (tree: { entries: FsEntry[] }) => tree.entries.filter((e: FsEn
 const ROOT_GROUP = '\u0000root'
 
 // Ticket files live in different shapes across repos:
-//   wayfinder : <effort>/tickets/*.md      (its own directory, the original contract)
+//   wayfinder : <effort>/issues/*.md       (2026-09-29 目录迁移后的原版布局)
+//   legacy    : <effort>/tickets/*.md      (存量旧布局，plan-protocol 旧约定)
 //   novel     : <effort>/*.md              (beside map.md)
 //               <effort>/impl-fe/*.md      (one level down, grouped by workstream)
 // Read all that exist rather than assuming one, so a repo only has to match
 // *a* convention instead of this view's.
+const TICKET_DIR_NAMES = new Set(['tickets', 'issues'])
+
 async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<{ file: FsEntry; group: string }[]> {
   const tree = await fsTree(scope, effortDir)
-  const inTickets = tree.entries.find((e: FsEntry) => e.isDir && e.name === 'tickets')
+  const inTicketDirs = tree.entries.filter((e: FsEntry) => e.isDir && TICKET_DIR_NAMES.has(e.name))
   // Read every ticket source this effort has, rather than stopping at the first
-  // one found. An effort commonly holds both the wayfinder-native `tickets/` and
-  // workstream directories beside it (`impl/`, `impl-fe/`); returning early on
-  // `tickets/` would silently hide every ticket in the others.
+  // one found. An effort commonly holds both the wayfinder-native `issues/`
+  // (legacy: `tickets/`) and workstream directories beside it (`impl/`,
+  // `impl-fe/`); returning early on the first hit would silently hide every
+  // ticket in the others.
   //
   // Each file keeps the name of the subdirectory it came from, so a view can
   // separate e.g. design tickets from implementation ones.
@@ -527,10 +531,10 @@ async function collectTicketFiles(scope: SessionScope, effortDir: string): Promi
   const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
   const subDirs = tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules')
   const groups = await Promise.all([
-    inTickets ? fsTree(scope, inTickets.path).then(t => mdEntries(t).map(f => ({ file: f, group: 'tickets' }))) : Promise.resolve([]),
+    ...inTicketDirs.map(d => fsTree(scope, d.path).then(t => mdEntries(t).map(f => ({ file: f, group: d.name })))),
     Promise.resolve(mdEntries(tree).map(f => ({ file: f, group: ROOT_GROUP }))),
     ...subDirs
-      .filter((d: FsEntry) => d.name !== 'tickets')
+      .filter((d: FsEntry) => !TICKET_DIR_NAMES.has(d.name))
       .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path)).map(f => ({ file: f, group: d.name }))),
   ])
   const seen = new Set<string>()
@@ -624,6 +628,29 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
   return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
+}
+
+// 现行数据横跨两个治理目录（2026-09-29 目录迁移）：tracker 类在 `.scratch/`
+//（map/spec/issues 票＋图内 qa/ledger/assets），审批档与全局 qa/ledger 在 `.plan/`；
+// 存量未迁移图也还在 `.plan/` 旧布局下。对每个目录各跑一次 loadPlan（目录缺失
+// 或为空按 null 跳过），票按路径去重后拼接、efforts 顺序拼接——一条路线页同时
+// 看得到新布局图、存量图与审批档。
+async function loadPlanMerged(scope: SessionScope, dirs: string[]): Promise<PlanData | null> {
+  const parts = await Promise.all(dirs.map(d =>
+    loadPlan(scope, d).catch(() => null),
+  ))
+  const ok = parts.filter((p): p is PlanData => !!p)
+  if (ok.length === 0) return null
+  const seen = new Set<string>()
+  const tickets = ok.flatMap(p => p.tickets).filter(t => {
+    const k = t.path ?? t.file
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  const efforts = ok.flatMap(p => p.efforts)
+  const primary = ok.find(p => p.mapRaw) ?? ok[0]
+  return { tickets, effortDir: primary.effortDir, mapRaw: primary.mapRaw, efforts }
 }
 
 // ─── Shared detail modal + action layer ──────────────────────────────────────
@@ -1612,17 +1639,19 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   // Session snapshot for the C1 status chips; refetched alongside the plan so
   // post-dispatch refreshes see the new running flags too.
   const [sessions, setSessions] = useState<Map<string, SessionSummary>>(() => new Map())
-  // 历史轮次：round === null 看现行 `.plan/`；选中轮 id 后数据源切到
-  // `.archive/rounds/<id>/`（plan-archive 的轮目录就是当时 `.plan/` 的快照，
-  // 加载逻辑原样复用），整页进入只读。
+  // 历史轮次：round === null 看现行治理目录（`.scratch/` + `.plan/` 双面合并，
+  // 2026-09-29 目录迁移）；选中轮 id 后数据源切到 `.archive/rounds/<id>/`
+  //（plan-archive 的轮目录就是当时源目录的快照——tracker 成员与随轮审批档平铺，
+  // 单目录加载原样复用），整页进入只读。
   const [rounds, setRounds] = useState<RoundInfo[]>([])
   const [round, setRound] = useState<string | null>(null)
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     const base = scope.cwd ? `${scope.cwd}/` : ''
-    const dir = round === null ? `${base}.plan` : `${base}.archive/rounds/${round}`
     try {
-      const r = await loadPlan(scope, dir)
+      const r = round === null
+        ? await loadPlanMerged(scope, [`${base}.scratch`, `${base}.plan`])
+        : await loadPlan(scope, `${base}.archive/rounds/${round}`)
       if (!r) { setError('empty'); setLoading(false); return }
       setData(r)
     } catch { setError('failed') } finally { setLoading(false) }
@@ -1715,7 +1744,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       type="button"
       onClick={() => void load()}
       disabled={loading}
-      title="重新读取 .plan（别处改了文件时用）"
+      title="重新读取治理目录 .scratch/.plan（别处改了文件时用）"
       style={{ padding: '5px 10px', border: `1px solid ${BORDER}`, borderRadius: 6, background: 'transparent', color: loading ? '#555' : '#aaa', cursor: loading ? 'default' : 'pointer', fontSize: 12 }}
     >
       {loading ? '读取中…' : label}
@@ -1728,7 +1757,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
   if (error || !data) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: BG, color: '#888' }}>
-        <span>{round === null ? 'No .plan found in current directory.' : `轮次 ${round} 读取失败（目录可能已被移动或删除）。`}</span>
+        <span>{round === null ? 'No .scratch/.plan found in current directory.' : `轮次 ${round} 读取失败（目录可能已被移动或删除）。`}</span>
         {refreshBtn('⟳ 重新读取')}
       </div>
     )
@@ -1784,7 +1813,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               title="按轮查看历史归档（.archive/rounds，只读）"
               style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${round !== null ? '#7a4a15' : BORDER}`, background: HEADER_BG, color: round !== null ? '#f7ad31' : TEXT_DIM, fontSize: 12, outline: 'none', maxWidth: 280, cursor: 'pointer' }}
             >
-              <option value="">📍 现行（.plan）</option>
+              <option value="">📍 现行（.scratch + .plan）</option>
               {rounds.map(r => (
                 <option key={r.id} value={r.id}>🗄️ {r.id}{r.topic ? ` · ${r.topic}` : ''}</option>
               ))}
@@ -1865,7 +1894,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           )}
           {rootDefects.length === 0 && rootCases.length === 0 && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>
-              `.plan/qa/` 下暂无无图归属的测例 / 缺陷文档。
+              `.plan/qa/` 下暂无无图归属的测例 / 缺陷文档（全局件常驻 `.plan/qa/`，不随轮迁）。
             </div>
           )}
         </div>
@@ -1921,7 +1950,9 @@ function GuideView({ scope }: { scope: SessionScope }) {
 
         <H>这个页面是什么</H>
         <P>
-          总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的都是在 <Code>.plan/</Code> 下的 markdown。
+          总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的是两个治理目录下的 markdown：tracker 类
+          （spec / map / issues 票）在 <Code>.scratch/</Code>，审批档与全局缺陷/台账在 <Code>.plan/</Code>
+          （存量未迁移图仍按旧布局留在 <Code>.plan/</Code>，一并显示）。
           本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓
           <Code>skills/plan-protocol/SKILL.md</Code>，本页是它的可视化速览。
         </P>
@@ -1978,18 +2009,21 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </Box>
         </div>
         <P>
-          两条流在「<strong style={{ color: TEXT }}>结论 = 要做某件事</strong>」处汇合：拍板结论若要求干活，<strong style={{ color: TEXT }}>同一轮就该落成标准票</strong>
-          （<Code>plan-approve</Code> 调 <Code>to-tickets</Code>），而不是把结论留在文档里等人再拆一次。
+          两条流在「<strong style={{ color: TEXT }}>结论 = 要做某件事</strong>」处汇合：拍板结论若要求干活，
+          <strong style={{ color: TEXT }}>plan-approve 在影响域清单登记票项</strong>（只结算、不落票——2026-09-28 拍板），
+          落票由清单驱动后置执行（plan-loop「定案未拆票」行动行或实施会话调 <Code>to-tickets</Code>），
+          而不是把结论留在文档里等人再拆一次。
         </P>
 
         <H>票的形态约定</H>
         <P>一个 effort 目录下，票按<strong style={{ color: TEXT }}>一票一文件</strong>放：</P>
         <div style={{ fontSize: 12, lineHeight: 1.9, color: TEXT_DIM, background: '#141416', border: `1px solid ${BORDER_LIGHT}`, borderRadius: 8, padding: '10px 14px', margin: '8px 0', fontFamily: 'ui-monospace,Menlo,monospace' }}>
-          .plan/&lt;effort&gt;/<br />
+          .scratch/&lt;effort&gt;/ &nbsp;<span style={{ color: TEXT_FAINT }}>← tracker 类（spec/map/issues 票）</span><br />
           &nbsp;&nbsp;map.md &nbsp;<span style={{ color: TEXT_FAINT }}>← effort 标志：没有它，整个目录不被加载</span><br />
-          &nbsp;&nbsp;tickets/<br />
+          &nbsp;&nbsp;issues/<br />
           &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
-          &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md
+          &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md<br />
+          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 审批档（待拍板-*.md）＋全局 qa/、ledger/</span>
         </div>
         <P>
           <strong style={{ color: TEXT }}>为什么必须一票一文件</strong>：把多张票写进同一个文件（如 <Code>tickets.md</Code>），
@@ -2007,8 +2041,8 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
-            结构漂移先用只读脚本查：<Code>bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.plan</Code>
-            （同票双档、缺 map.md、缺状态头/非法 status）；
+            结构漂移先用只读脚本查：<Code>bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan</Code>
+            （同票双档、缺 map.md、缺状态头/非法 status、effort 票尽未标 superseded-by）；
             再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
             两者都只报告、不擅自改。
           </div>
@@ -2207,7 +2241,7 @@ function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, read
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
         没有台账条目。
         <br />
-        <span style={{ fontSize: 12, color: TEXT_FAINT }}>一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.plan/&lt;effort&gt;/ledger/`，frontmatter 带 `type: ledger`。</span>
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.scratch/&lt;effort&gt;/ledger/`，frontmatter 带 `type: ledger`。</span>
       </div>
     )
   }
@@ -2374,7 +2408,7 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
         当前图没有缺陷台账。
         <br />
-        <span style={{ fontSize: 12, color: TEXT_FAINT }}>{'`.plan/<effort>/qa/` 下带 `type: qa-defect` 头的缺陷台账会按图列在这里。'}</span>
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>{'`.scratch/<effort>/qa/`（存量图 `.plan/<effort>/qa/`）下带 `type: qa-defect` 头的缺陷台账会按图列在这里。'}</span>
       </div>
     )
   }

@@ -1,6 +1,6 @@
 ---
 name: to-spec
-description: Turn the current conversation into a spec, saved to `.plan/` — no interview, just synthesis of what you've already discussed.
+description: Turn the current conversation into a spec, saved to `.scratch/<feature-slug>/spec.md` — no interview, just synthesis of what you've already discussed.
 disable-model-invocation: true
 ---
 
@@ -16,7 +16,7 @@ This skill takes the current conversation context and codebase understanding and
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then save it to `.plan/<slug>/spec.md`, where `<slug>` is a short kebab-case name for the work (reuse the directory if one already exists for this effort). Create the directory if needed — `.plan/` is committed to version control; it is the project's shared planning memory. Tell the user the path.
+3. Write the spec using the template below, then save it to `.scratch/<slug>/spec.md`, where `<slug>` is a short kebab-case name for the work (reuse the directory if one already exists for this effort). Create the directory if needed — `.scratch/` is committed to version control; it is the project's shared planning memory (tracker layer; approvals live in `.plan/`). Tell the user the path.
 
 <spec-template>
 
@@ -105,11 +105,13 @@ The line's value is exactly one of four kinds, and it may point at several targe
 
 Horizontal vs vertical is the judgment that decides charter-or-domain-doc: **"how do the parts of the system connect" → charter; "how is this defined or computed inside this domain" → domain doc.** DDL always goes to the domain doc.
 
-**Requirements doc** (`type: requirements`, path `docs/requirements/<effort>-<topic>.md`): a long-lived home for *what the user wants* — user stories, problem, solution, acceptance and test approach, out-of-scope. **The filename must contain the effort slug** (the `.plan/<slug>/` directory name) so the requirements doc and the effort remain findable from each other. One effort may split across several by topic; every one carries the slug.
+**Requirements doc** (`type: requirements`, path `docs/requirements/<effort>-<topic>.md`): a long-lived home for *what the user wants* — user stories, problem, solution, acceptance and test approach, out-of-scope. **The filename must contain the effort slug** (the `.scratch/<slug>/` directory name) so the requirements doc and the effort remain findable from each other. One effort may split across several by topic; every one carries the slug.
 
 **A spec section with no disposition line is unfinished work, not a stylistic gap.** When every section carries one and every target exists, the spec is dischargeable and may be voided — that is the mechanical test for "the spec has been fully absorbed". Until then it may not be archived away.
 
+**After discharging: flip the approval docs this spec consumed** (翻标挂点②, plan-lint-gate 票 10). Any approval document under `.plan/` whose items this spec absorbed gets `archived: <spec 落点>` added to its frontmatter at this moment — that mark is what lets `plan-archive` move it with the round while unmarked approvals stay in `.plan/`. Do not touch its `status` (the `archived:` mark sits outside the status machine); `superseded-by:` keeps its own meaning (replaced by a later ruling).
+
 Two prohibitions worth stating outright, because both are how this goes wrong:
 
-- **Do not point a long-lived doc at the spec as its "source of truth".** The long-lived document *is* the authority — it states what is true now. A pointer from a permanent doc to a temporary one goes stale the moment the spec is voided, and the permanent doc is left standing on nothing. Point at it as a **"决策来源"** (why this was decided) instead, and repoint to the archive path once the spec is archived.
+- **Do not hold a live pointer from a long-lived doc into the tracker layer.** The charter states *what the architecture is now*; specs, maps and tickets in `.scratch/` (approvals in `.plan/`) are temporary by design and move to `.archive/` when their effort closes. Record *where the decision came from* inside the spec's own disposition lines and the approval doc — both travel with the round into the archive — not as a pointer that breaks on that move.
 - **Do not copy the spec's prose wholesale into the charter.** If it isn't part of "what the architecture is now", it belongs in the domain doc or the requirements doc — or it was process matter all along.

@@ -9,4 +9,4 @@ The job:
 
 1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.
 2. Write the findings to a single Markdown file, citing each claim's source.
-3. Save it where the repo already keeps such notes; match the existing convention. If there is no convention, save to `.plan/research/<slug>.md` and say where.
+3. Save it where the repo already keeps such notes; match the existing convention. If there is no convention, save effort-tied notes to `.scratch/<slug>/assets/` (linked from the ticket's `assets:` field) and standalone research to `docs/research/<slug>.md` — and say where.
