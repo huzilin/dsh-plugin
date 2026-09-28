@@ -356,9 +356,9 @@ type TicketKind = 'ticket' | 'approval' | 'ledger' | 'defect' | 'cases' | 'note'
 // type 值按「说明 / 杂项」解析，不作单据校验对象（2026-09-24 协议补条）。
 //
 // `impl` 不再是票型（2026-09-27 用户拍板「不必支持 impl」）——本集合不收录它。
-// 后果如实说明：存量 `type: impl` 票（nvwa `.plan/dna-ab-full/` 15 张，其中 3 张
-// status: open）会被判为 'note'、不出现在工单视图，**直到它们按「形态契约变更
-// 回扫」条款迁移为 `type: task`**。这是该拍板的既定语义：不支持即不识别。
+// 存量 15 张 `type: impl` 票（nvwa `.plan/dna-ab-full/`）已于 2026-09-29 按
+// 「形态契约变更回扫」条款全部迁移为 `type: task`（plan-lint-gate 票 07），
+// 全 workdir 词表外票型清零；此后再遇 `type: impl` 即真漂移，按杂项解析即可。
 const TICKET_TYPES = new Set(['task', 'research', 'prototype', 'grilling'])
 
 /** Approval documents are `type: approval`, or any doc carrying a pending-style status. */
@@ -996,8 +996,8 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
   const OUTSTANDING: TicketStatus[] = ['open', 'claimed']
   const [statusSet, setStatusSet] = useState<Set<TicketStatus>>(() => new Set(OUTSTANDING))
   // Filter over the types actually in the data, not a hardcoded four. A repo
-  // carrying legacy `type: impl` tickets (nvwa, not yet swept) must not start
-  // with every row filtered out.
+  // carrying any type value outside the current vocabulary (a historical sweep
+  // mid-flight) must not start with every row filtered out.
   // A file with no `type` is a real case (23 such files in novel), not an error.
   // Bucket it under NO_TYPE so it is visible and filterable — leaving it out of
   // the set silently hid every such file from this view.

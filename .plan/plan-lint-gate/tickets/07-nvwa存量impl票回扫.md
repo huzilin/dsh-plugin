@@ -1,7 +1,7 @@
 ---
 type: task
 blocked_by: []
-status: open
+status: done
 ---
 
 # 07: nvwa 存量 `type: impl` 票回扫为 `task`
@@ -63,10 +63,15 @@ nvwa 15 票回扫完成、`type: impl` 全 workdir 清零后，**回 dsh-plugin 
 
 ## Acceptance
 
-- [ ] nvwa 15 张票 `type:` 全部为 `task`，正文零改动
-- [ ] `grep -rn '^type: impl' ~/workdir/*/.plan` 全 workdir 零命中
-- [ ] nvwa `map.md` 补迁移注记
-- [ ] dsh-plugin 插件 `LEGACY_TICKET_TYPES` 已删除，`TICKET_TYPES` / `IMPL_TYPES` 收为 `task` 单一值
-- [ ] `MapKind='impl'` 与 `impl/`、`impl-fe/` 路径支持**仍在**（未被误删）
-- [ ] 插件重新构建通过；`install-skills.sh` 后源仓与安装态 md5 一致
-- [ ] 两侧 plan-lint 收尾零漂移
+- [x] nvwa 15 张票 `type:` 全部为 `task`，正文零改动（仅 frontmatter `type:` 行 sed 替换，逐文件核验）
+- [x] `^type: impl` 全 workdir 四仓 `.plan`（含 `.archive/` 归档区，--hidden 显式扫描）零命中
+- [x] nvwa `map.md` 补迁移注记（日期 + 范围 + 依据本票）
+- [x] dsh-plugin 插件容错已收口：`LEGACY_TICKET_TYPES` 已于先前批次删除；`TICKET_TYPES`/`IMPL_TYPES` 现状即 `task` 单一值（本次核验确认）
+- [x] `MapKind='impl'` 与 `impl/`、`impl-fe/` 路径支持**仍在**（PlanView.tsx:410-414 注释与 resolveEfforts workstream 分支未动）
+- [x] 插件重新构建通过（tsdown 三产物）；`install-skills.sh` 后源仓与安装态一致（票 08 批次核验，同批构建）
+- [x] 两侧 plan-lint 收尾零漂移（dsh-plugin 65 md 全绿；nvwa 侧随回扫后实跑核验）
+
+## 落地注
+
+- 2026-09-29 实施。nvwa 侧改动独立 commit（nvwa 仓）；dsh-plugin 侧仅注释更新（`TICKET_TYPES` 注释块「直到迁移」悬置解除、ViewC 过滤注释 nvwa 案例改一般化表述）——代码行为与先前批次收口版一致，无逻辑 diff。
+- 注释更新后 tsdown 重建通过，lib 部署副本随 install-skills.sh 同批核验。
