@@ -97,6 +97,7 @@ QA 流程： to-qa-testcases → run-qa-testcases →（有缺陷）diagnosing-b
 | `CONTEXT.md` | **词汇正本**（glossary）——只收词与一句定义 |
 | `docs/adr/` | 架构决策记录（单次决策的取舍与理由） |
 | `packages/dsh-plan-view/skills/plan-protocol/SKILL.md` | **契约正本**——单据形态、流程、交接契约 |
+| `docs/requirements/` | 需求文档（文件名含 effort slug）；在役：`global-items-全局件治理.md` |
 | `.plan/` | 规划共享记忆（effort／票／拍板档）；契约见 `plan-protocol` |
 
 ## 七、决策来源
@@ -109,5 +110,6 @@ QA 流程： to-qa-testcases → run-qa-testcases →（有缺陷）diagnosing-b
 | skill 分发两级制 | `.scratch/doc-authority/tickets/03-implement-to-spec落读时检查.md` |
 | 文档权威五层 | `.scratch/doc-authority/spec.md` 决策 1~5 |
 | 票态词表与四套状态机 | `.scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`、`.scratch/doc-authority/tickets/04-status与协议全局对齐.md` |
+| 全局件概念（封闭三件套/判据豁免/根层白名单） | `.plan/待拍板-全局件概念与全局目录-20260929.md`（已翻 `archived:`，随轮可达）；需求面 `docs/requirements/global-items-全局件治理.md` |
 
 > spec 归档后，上表指针须改指 `.archive/` 路径。
