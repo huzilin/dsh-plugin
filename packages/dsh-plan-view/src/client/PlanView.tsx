@@ -1,11 +1,10 @@
 /**
- * Plan view v2: reads .plan/ wayfinder maps, derives ticket status per
- * the TRACKER-MARKDOWN contract, and renders three views:
- *   A — Kanban (grouped list with destination banner + progress)
- *   C — Table (filterable/sortable data grid)
- *   D — Relation graph (tiered DAG with Start/End nodes)
+ * Plan view v2: reads the governance roots (.scratch/ migrated layout +
+ * .plan/ legacy & global), derives ticket status per the TRACKER-MARKDOWN
+ * contract, and renders the tabbed surface:
+ *   总览 · 地图（Kanban / Table / Relation DAG）· 测例&缺陷 · 台账 · 说明
  *
- * All three share a unified dark theme and markdown-rendered detail panels.
+ * All views share a unified dark theme and markdown-rendered detail panels.
  * Self-contained: uses its own api module, inline styles, zero CSS deps.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
