@@ -16,7 +16,7 @@ origin: retrospective
 >
 > **本文件自此不再承担权威**。要读「现在是什么」请看 `docs/architecture.md`；要读「用户要什么」请看需求文档；本文件只作「为什么这么定」的**决策来源**。
 
-> **Effort**：`.plan/doc-authority/`（本 spec 所属 effort，slug=`doc-authority`）
+> **Effort**：`.scratch/doc-authority/`（本 spec 所属 effort，slug=`doc-authority`）
 > **决策正本**：`.plan/待拍板-文档权威治理-20260927.md`（`closed`，2026-09-27 结算）
 > **证据与归因**：`.plan/复盘-废弃方案复活为何多轮整治未解-20260927.md`（`closed`）
 > **分层口径**：`.plan/待拍板-文档权威分层-20260927.md`（`closed`，重写版）
@@ -277,7 +277,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 | 5 | 存量票回扫 | **另立**——先定协议单一词表，回扫才有判据 |
 | 6 | 旧「阻塞于 Ⅰ/Ⅱ/Ⅲ」 | **解除** |
 
-**承载票**：`.plan/doc-authority/tickets/04-status与协议全局对齐.md`（正本）、`05-插件读取层适配status统一.md`。
+**承载票**：`.scratch/doc-authority/tickets/04-status与协议全局对齐.md`（正本）、`05-插件读取层适配status统一.md`。
 
 **未闭合的技术判断点（已在票 04 内解决，见下）**：wayfinder 推导词表为 `resolved` / `out_of_scope` / `claimed` / `open`，**无 `done`**；协议第 104 行给实施图票 `task` 终态定为 `done`，存量 103 张票正用 `done`。
 
@@ -306,7 +306,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 
 **〔2026-09-27 用户裁定：lint 随即收口（原话「也要改」）〕** ✅ **已完成**——`plan-lint.sh` 词表移除 `resolved`，并单独给出废弃词报错。**实测验证**：探针票 `status: resolved` 被拦（`✗ …为已废弃词：resolved 已退出票态词表…请改为 done`），`status: done` 放行；探针已清理。双拷贝 md5 `f7486b55b70dfcd7925774832b57f49c` 一致。
 
-**〔2026-09-27 用户裁定：回扫立票（原话「立」）〕** 存量回扫立票 = `.plan/doc-authority/tickets/07-存量票status词表回扫.md`。**【实测】真实回扫量 20 张**（novel 15 ＋ nvwa 5 ＋ dsh-plugin 0），**非 103 张**——103 张用的正是 `done`，无需改词。跨仓执行**待用户放行**。
+**〔2026-09-27 用户裁定：回扫立票（原话「立」）〕** 存量回扫立票 = `.scratch/doc-authority/tickets/07-存量票status词表回扫.md`。**【实测】真实回扫量 20 张**（novel 15 ＋ nvwa 5 ＋ dsh-plugin 0），**非 103 张**——103 张用的正是 `done`，无需改词。跨仓执行**待用户放行**。
 
 **〔2026-09-27 拍板：四套状态机互不套用〕** `plan-protocol` §三新增子条款，明示 `task`/推演票（票态，`open`/`claimed`/`done`）、`approval`（文档生命周期态）、`ledger`（挂账态）、`qa-defect`（缺陷态）**分属四个坐标系，词表不得互相套用**；并给出「同一坐标系才可统一」判据与两条「不得统一」理由（`approval` 的 `superseded-by`/`abandoned` 区分、`ledger` 的「已还清 vs 已转移」）。
 
@@ -384,7 +384,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 - 本会话早前基于 `~/workdir/wayfinder-maps` 的**全部结论作废**——该路径**当前不存在**（【实测】`ls -d ~/workdir/*wayfinder*` 为空）；
 - **票 06 已按此重新定性**：冲突从「我方协议 vs 外部工具」改为「**本仓内部两 skill 契约互相矛盾**」（`plan-protocol` 要求 frontmatter `status`；`wayfinder/TRACKER-MARKDOWN.md` 明文否定该字段）；
 - **待复核清单**（不得再引用）：「`wayfinder-maps status` 读成 4 open」「novel 17 图零通过 lint」「上游原文 There is no status field（实为本仓文件）」；
-- 契约正本 = `.plan/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`（重写版）；原 `待拍板-协议与wayfinder状态契约对齐-20260927.md` 已标 `superseded-by` 并加更正声明。
+- 契约正本 = `.scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`（重写版）；原 `待拍板-协议与wayfinder状态契约对齐-20260927.md` 已标 `superseded-by` 并加更正声明。
 
 
 ## Testing Decisions
@@ -430,7 +430,7 @@ spec 每节须有一行归宿行，取值只能是四种之一：
 ## Further Notes
 > **归宿（2026-09-27）**：→ archive（过程物：与既有文档的关系、自指说明） ＋ arch docs/architecture.md §七（决策来源指针）
 
-**本 spec 自身的归宿（按本方案的自指要求）**：本 spec 是 `.plan/doc-authority/` 的一次性实施文档；其产物是协议条款。**协议条款落地后**，本 spec 按五类归宿分流（决策类→arch 或领域文档；过程物→归档），随后作废。
+**本 spec 自身的归宿（按本方案的自指要求）**：本 spec 是 `.scratch/doc-authority/` 的一次性实施文档；其产物是协议条款。**协议条款落地后**，本 spec 按五类归宿分流（决策类→arch 或领域文档；过程物→归档），随后作废。
 
 **与既有文档的关系**：
 

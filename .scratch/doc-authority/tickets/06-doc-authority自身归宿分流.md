@@ -41,7 +41,7 @@ status: done
 
 ## 交付什么
 
-用本方案自己定的规则**结束本方案**：把 `.plan/doc-authority/spec.md` 按五类归宿分流到长期权威层，随后作废归档。
+用本方案自己定的规则**结束本方案**：把 `.scratch/doc-authority/spec.md` 按五类归宿分流到长期权威层，随后作废归档。
 
 ## 为什么需要
 
@@ -49,7 +49,7 @@ status: done
 
 `spec.md` §Further Notes 已自述此事：
 
-> 本 spec 是 `.plan/doc-authority/` 的一次性实施文档；其产物是协议条款。**协议条款落地后**，本 spec 按五类归宿分流（决策类→arch 或领域文档；过程物→归档），随后作废。
+> 本 spec 是 `.scratch/doc-authority/` 的一次性实施文档；其产物是协议条款。**协议条款落地后**，本 spec 按五类归宿分流（决策类→arch 或领域文档；过程物→归档），随后作废。
 
 ## 具体内容
 
@@ -70,7 +70,7 @@ status: done
 1. `spec.md` **每节都有归宿行**，无遗漏节；
 2. 每条归宿行的**目标确实存在**（脚本可查）；
 3. 分流后**长期权威层可独立读懂本方案结论**——不依赖已作废的 spec；
-4. `.plan/doc-authority/` 内**无 `status: pending` 的残留待拍项**；
+4. `.scratch/doc-authority/` 内**无 `status: pending` 的残留待拍项**；
 5. 本 effort 全部文档状态真实（无「已作废却仍留 open」）。
 
 ## 诚实边界

@@ -17,7 +17,7 @@ origin: retrospective
 
 ## Notes
 
-- **Source spec**：`.plan/doc-authority/spec.md`（本图的技术规格；决策正本=`待拍板-文档权威治理-20260927.md` closed）
+- **Source spec**：`.scratch/doc-authority/spec.md`（本图的技术规格；决策正本=`待拍板-文档权威治理-20260927.md` closed）
 - **工单形态**：实施工单（`type: task`，frontmatter 存 `status`），非 wayfinder 推演地图。
 - **规则正本**：`skills/plan-protocol/SKILL.md` 第三节「文档形态约定」——本图的产物就是它的条款。
 - **作用范围（用户 2026-09-27 定）**：「我们现在是确定 plan 如何进行项目管理的方案，而不是实施方案」「可以作为方案落协议，但不是现在实施」。**即：本图产物＝协议条款，不动 novel 存量文档。**

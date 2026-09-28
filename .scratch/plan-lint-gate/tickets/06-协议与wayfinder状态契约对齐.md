@@ -72,7 +72,7 @@ status: done
 
 **裁定**：**`plan-protocol` 是 status 的唯一格式正本**；`wayfinder` 改从协议；**不存在「向原版对齐」这件事**（原版工具 `wayfinder-maps` 已废弃，决策 13 旁证）。**不兼容**——推导形态不再作为合法票态。
 
-**本票地位变更**：本裁定的**正本已转入** `.plan/doc-authority/spec.md` 决策 12（最终版），**承载票转为** `.plan/doc-authority/tickets/04-status与协议全局对齐.md`。本票**降为过程留痕**，不再是实施承载。
+**本票地位变更**：本裁定的**正本已转入** `.scratch/doc-authority/spec.md` 决策 12（最终版），**承载票转为** `.scratch/doc-authority/tickets/04-status与协议全局对齐.md`。本票**降为过程留痕**，不再是实施承载。
 
 **回扫范围**：103 张 `status: done`（novel 87 ＋ dsh-plugin 9 ＋ nvwa 7）——**回扫另立票**，判据＝协议单一词表定案后按新词表拉齐；**不再要求补 `## Answer` 节**。
 
@@ -99,7 +99,7 @@ status: done
 
 **故本票 §四 原列的甲/乙/丙三选项作废**——甲（承认扩展）、乙（向原版对齐）、丙（表述分层）**三者均作废**：正确落点是「**以 `plan-protocol` 为准**」，三个选项里没有这一项。原选项表保留于下方存档。
 
-**初版实施归属**：本裁定已并入 `.plan/doc-authority/spec.md` **决策 12**（该版亦已作废）。
+**初版实施归属**：本裁定已并入 `.scratch/doc-authority/spec.md` **决策 12**（该版亦已作废）。
 
 ---
 
@@ -137,15 +137,15 @@ status: done
 
 **这两项独立于「A/B/C 工具之争」，不因本次重新定性而撤销。**
 
-> **〔2026-09-27 追加〕第 3 项亦已完成**：决策 12 的最终定性（**与 `plan-protocol` 全局对齐**）已落盘，承载票为 `.plan/doc-authority/tickets/04-status与协议全局对齐.md`。
+> **〔2026-09-27 追加〕第 3 项亦已完成**：决策 12 的最终定性（**与 `plan-protocol` 全局对齐**）已落盘，承载票为 `.scratch/doc-authority/tickets/04-status与协议全局对齐.md`。
 
 ---
 
 ## 七、关联
 
 - **票 07**（`07-nvwa存量impl票回扫.md`）：`impl` 回扫——本次重新定性不影响，但其中「删插件容错」项**已于 2026-09-27 完成**；
-- **同源议题**：`.plan/doc-authority/`（文档权威治理：spec 一次性化）——**方向一致**，均属「承认我方协议层、不再指向外部正本」；
-- **本票的接班人**：`.plan/doc-authority/tickets/04-status与协议全局对齐.md`（决策 12 最终版承载票）。**本票降为过程留痕**；
+- **同源议题**：`.scratch/doc-authority/`（文档权威治理：spec 一次性化）——**方向一致**，均属「承认我方协议层、不再指向外部正本」；
+- **本票的接班人**：`.scratch/doc-authority/tickets/04-status与协议全局对齐.md`（决策 12 最终版承载票）。**本票降为过程留痕**；
 - **原 handoff**：`.plan/handoffs/2026-09-27-协议与wayfinder状态契约对齐.md`——**其所载实测证据须按 §五 复核后方可引用**。
 
 ## Acceptance

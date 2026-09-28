@@ -9,7 +9,7 @@ origin: review
 
 > **来源**：本交接由 novel 仓会话（2026-09-27 合并前体检）发出，承载用户 `/plan-approve` 决策 **D3**。用户原话：「这个参考 /plan-protocol 是不是有哪里没对齐，如果是协议和 wayfinder 本身没对齐，那需要让协议对齐，然后再适配」。
 > **本交接做什么**：把「协议 ↔ wayfinder 工具」的状态契约未对齐点、实测证据、候选方案与验收口径交代清楚，**交由 dsh-plugin 侧会话修复**。
-> **对应票**：[`.plan/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`](../plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md)（status: open）——**方案与裁定落在那张票，本文只交代上下文与证据，不重复**。
+> **对应票**：[`.scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`](../../.scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md)（status: open）——**方案与裁定落在那张票，本文只交代上下文与证据，不重复**。
 
 ## 一、一句话
 

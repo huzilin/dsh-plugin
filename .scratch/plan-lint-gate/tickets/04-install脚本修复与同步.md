@@ -10,7 +10,7 @@ status: done
 
 **Blocked by:** 03（同步的是含 `scripts/` 的完整 skill 目录，先让脚本进源目录）
 
-**Source spec:** `.plan/plan-lint-gate/待拍板-plan-lint随skill内置分发-20260923.md`（项 3，原话「3 修复」）
+**Source spec:** `.plan/待拍板-plan-lint随skill内置分发-20260923.md`（项 3，原话「3 修复」）
 
 ## Acceptance
 

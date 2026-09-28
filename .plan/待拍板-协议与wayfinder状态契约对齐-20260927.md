@@ -1,7 +1,7 @@
 ---
 type: approval
 date: 2026-09-27
-status: superseded-by: .plan/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md
+status: superseded-by: .scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md
 origin: review
 ---
 
@@ -28,7 +28,7 @@ origin: review
 
    【我的推断】这句话里有一个**条件句**：「如果是协议和 wayfinder 本身没对齐，那需要让协议对齐」。你的措辞默认了「改的是协议、工具是基准」。**本轮的实测结论是：这个默认前提恰好反了**——要对齐的那一侧是工具，不是协议。这是本文最需要你看的一点，详见第五节。
 
-2. **票 06 的待裁定表述**（`.plan/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`）：
+2. **票 06 的待裁定表述**（`.scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`）：
    > 「**〔我的推断〕**推荐 **A**——协议已声明两形态共存，未对齐的是工具实现单边只认一种；改工具比回扫全仓单据更符合「单一真相源」，且不动已验证的 to-tickets 契约。」
 
 3. **handoff 的结论**（第五节）：
@@ -265,7 +265,7 @@ novel 侧已立票 `.plan/merge-prep-adapt/tickets/01-blocked_by形态回扫.md`
 
 **同时厘清的非票型身份**（不可清理，已在协议与代码注释中写明）：`MapKind='impl'`（插件内部类型名／实施图分组标识）、历史目录路径 `impl/`、`impl-fe/`。
 
-**派生**：立票 [`07-nvwa存量impl票回扫.md`](plan-lint-gate/tickets/07-nvwa存量impl票回扫.md)（open；跨仓回扫 15 票＋收尾删插件容错）。
+**派生**：立票 [`07-nvwa存量impl票回扫.md`](../.scratch/plan-lint-gate/tickets/07-nvwa存量impl票回扫.md)（open；跨仓回扫 15 票＋收尾删插件容错）。
 
 **协议两处 md5 一致复核**：`plan-protocol` 源仓＝安装态 `efee23cdba8054dfcec98276bf9adc2a`；`run-qa-testcases` 源仓＝安装态 `c47fab67d5d46ca7378d5f1b7f0ee565`。【实测】
 

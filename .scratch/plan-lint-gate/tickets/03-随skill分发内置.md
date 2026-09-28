@@ -10,7 +10,7 @@ status: done
 
 **Blocked by:** 02（先收口径，再分发——不能把假阳性 lint 装进 novel）
 
-**Source spec:** `.plan/plan-lint-gate/待拍板-plan-lint随skill内置分发-20260923.md`（项 1A + 2A，原话「1A 2A」）
+**Source spec:** `.plan/待拍板-plan-lint随skill内置分发-20260923.md`（项 1A + 2A，原话「1A 2A」）
 
 ## Acceptance
 

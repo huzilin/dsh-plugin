@@ -105,9 +105,9 @@ QA 流程： to-qa-testcases → run-qa-testcases →（有缺陷）diagnosing-b
 
 | 决策 | 来源（决策来源，非真相源） |
 |:--|:--|
-| 三层结构与「契约层唯一」 | `.plan/doc-authority/spec.md` 决策 1／3／6 |
-| skill 分发两级制 | `.plan/doc-authority/tickets/03-implement-to-spec落读时检查.md` |
-| 文档权威五层 | `.plan/doc-authority/spec.md` 决策 1~5 |
-| 票态词表与四套状态机 | `.plan/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`、`.plan/doc-authority/tickets/04-status与协议全局对齐.md` |
+| 三层结构与「契约层唯一」 | `.scratch/doc-authority/spec.md` 决策 1／3／6（决策来源，随轮归档可达） |
+| skill 分发两级制 | `.scratch/doc-authority/tickets/03-implement-to-spec落读时检查.md` |
+| 文档权威五层 | `.scratch/doc-authority/spec.md` 决策 1~5 |
+| 票态词表与四套状态机 | `.scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md`、`.scratch/doc-authority/tickets/04-status与协议全局对齐.md` |
 
 > spec 归档后，上表指针须改指 `.archive/` 路径。

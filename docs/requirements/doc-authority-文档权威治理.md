@@ -7,11 +7,11 @@ origin: retrospective
 
 # doc-authority · 需求文档（spec 一次性化与文档权威治理）
 
-> **本文职能**：本需求（`.plan/doc-authority/`）的**长期权威落点**——写「用户要什么」。承载用户故事、Problem、Solution、验收与测法、范围外。
+> **本文职能**：本需求（`.scratch/doc-authority/`）的**长期权威落点**——写「用户要什么」。承载用户故事、Problem、Solution、验收与测法、范围外。
 >
-> **来源**：`.plan/doc-authority/spec.md` 定稿时按五类归宿分流至此（决策 4：①测试决策→需求文档②Out of Scope→需求文档）。
+> **来源**：`.scratch/doc-authority/spec.md` 定稿时按五类归宿分流至此（决策 4：①测试决策→需求文档②Out of Scope→需求文档）。
 >
-> **本文件名含 effort slug `doc-authority`**，故可从本文反查 `.plan/doc-authority/` 目录。
+> **本文件名含 effort slug `doc-authority`**，故可从本文反查 `.scratch/doc-authority/` 目录。
 
 ## Problem（要解决什么）
 
