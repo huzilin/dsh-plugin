@@ -1899,7 +1899,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
       {top === 'qa' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
-            无图归属的测例与缺陷（SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。
+            全局件的测例与缺陷（无图归属：SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。
           </div>
           {rootDefects.length > 0 && (
             <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderBottom: `1px solid ${BORDER}` }}>
@@ -2045,7 +2045,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
           &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md<br />
           &nbsp;&nbsp;approval/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内审批档（待拍板-*.md，grill / wayfinder 生成）</span><br />
-          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局审批档（待拍板-*.md）＋全局 qa/、ledger/</span>
+          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局件：根层审批档（待拍板-*.md）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——封闭清单，不得新落子目录</span>
         </div>
         <P>
           <strong style={{ color: TEXT }}>为什么必须一票一文件</strong>：把多张票写进同一个文件（如 <Code>tickets.md</Code>），
@@ -2073,7 +2073,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
             结构漂移先用只读脚本查：<Code>bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan</Code>
-            （同票双档、缺 map.md、缺状态头/非法 status、effort 票尽未标 superseded-by）；
+            （同票双档、缺 map.md、缺状态头/非法 status、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单）；
             再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
             两者都只报告、不擅自改。
           </div>
@@ -2272,7 +2272,7 @@ function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, read
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
         没有台账条目。
         <br />
-        <span style={{ fontSize: 12, color: TEXT_FAINT }}>一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.scratch/&lt;effort&gt;/ledger/`，frontmatter 带 `type: ledger`。</span>
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>一账一文件：全局件放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.scratch/&lt;effort&gt;/ledger/`，frontmatter 带 `type: ledger`。</span>
       </div>
     )
   }
