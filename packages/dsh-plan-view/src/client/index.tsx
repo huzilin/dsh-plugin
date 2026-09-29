@@ -9,13 +9,11 @@
  * `ctx.sidebarRight.openTab(kind)`——官方四步（认领 → 聚焦 → 展开列 → 记账）
  * 自带展开，收起态可直接开票（ch12：「用户看不见不算打开」）。
  *
- * fs 读写仍走 better-sidebar 的 `/sidebar/api/*` 路由（server 半区），与
- * tab 接入无关；正文壳用 `session.cwd` 路由服务端解析 cwd。
+ * fs 读写走本插件自己的 `/plan-view/*` 数据面（server 半区 lib/server.js，票 19
+ * 起与 better-sidebar 完全解耦）；会话/网关类走 `/api` 官方 Typert gateway。
  * Zero external process dependencies.
  */
-import { useEffect, useState } from 'react'
-import type { Context } from 'cordis'
-import { sessionCwd } from './api'
+import { type Context } from 'cordis'
 import { PlanView } from './PlanView'
 import { registerPlanEntry } from './entry-button'
 import { registerInputBridge } from './input-bridge'
@@ -48,7 +46,8 @@ export function apply(ctx: Context): void {
   }))
 
   // 正文：官方 slot 只给 sessionId（session scope 标准 props）与 inject face；
-  // cwd 异步经 session.cwd 路由解析，解析完再挂 PlanView。
+  // cwd 由 PlanView 首帧 snapshot 的响应自带（服务端解析，票 19 起 sessionCwd
+  // 预解析链退役——better-sidebar session.cwd 路由整条不再触碰）。
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     {
       name: 'sidebar.right.pane.tab',
@@ -60,26 +59,13 @@ export function apply(ctx: Context): void {
 }
 
 /**
- * 正文壳：sessionId（框架 props）+ planCtx（inject face）→ cwd（session.cwd
- * 路由）→ PlanView。cwd 是 PlanView 读 `{cwd}/.scratch`、`{cwd}/.plan` 的根基，
- * 解析失败给一行诊断而不是白屏。
+ * 正文壳：sessionId（框架 props）+ planCtx（inject face）→ PlanView。加载中的
+ * 目录解析也由 PlanView 内部的 snapshot 响应承担；解析失败给一行诊断而不是白屏。
  */
 function PlanTabBody(props: { sessionId?: string; planCtx?: Context }): JSX.Element {
   const sessionId = props.sessionId
-  const [cwd, setCwd] = useState<string | null | undefined>(null) // null=解析中，undefined=失败
-  useEffect(() => {
-    if (sessionId === undefined) return
-    let alive = true
-    sessionCwd({ sessionId })
-      .then(r => { if (alive) setCwd(r.cwd) })
-      .catch(() => { if (alive) setCwd(undefined) })
-    return () => { alive = false }
-  }, [sessionId])
-  if (sessionId === undefined || cwd === undefined) {
-    return <div style={{ padding: 16, fontSize: 12, color: '#888' }}>Plan：无法解析会话（缺 sessionId 或 cwd 解析失败）。</div>
+  if (sessionId === undefined) {
+    return <div style={{ padding: 16, fontSize: 12, color: '#888' }}>Plan：无法解析会话（缺 sessionId）。</div>
   }
-  if (cwd === null) {
-    return <div style={{ padding: 16, fontSize: 12, color: '#888' }}>Plan：读取会话工作目录…</div>
-  }
-  return <PlanView ctx={props.planCtx as never} scope={{ sessionId, cwd }} />
+  return <PlanView ctx={props.planCtx as never} sessionId={sessionId} />
 }

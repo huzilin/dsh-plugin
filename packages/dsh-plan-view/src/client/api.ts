@@ -1,10 +1,16 @@
 /**
- * Minimal fetch wrappers for a DSH sidebar plugin.
+ * Fetch wrappers for the dsh-plan-view client.
  *
  * Two channels, both same-origin fetches from this page:
- *   /sidebar/api/<method> — better-sidebar's fs surface (read + write .plan/).
- *   /api/<ns>/<method>    — the harness Typert gateway (sessions, commands).
- * Self-contained: does not depend on better-sidebar's internal api module.
+ *   /plan-view/<method>   — this plugin's own data plane (snapshot + ticket
+ *                           write-back; server half in lib/server.js). Since
+ *                           票19 (2026-09-30 拍板「完全解耦」) this replaced the
+ *                           better-sidebar /sidebar/api fs surface, whose
+ *                           per-call cost (~100ms, fully serialized) made the
+ *                           tab load in ~10s; one snapshot request now covers
+ *                           the whole load.
+ *   /api/<ns>/<method>    — the harness Typert gateway (sessions list/liveness).
+ * Self-contained: no better-sidebar dependency remains.
  */
 
 interface SessionScope {
@@ -12,20 +18,17 @@ interface SessionScope {
   cwd?: string
 }
 
-interface FsEntry {
-  name: string
-  path: string
-  isDir: boolean
-  hidden: boolean
-  isSymlink: boolean
-  broken: boolean
+/** One governance snapshot: everything the tab renders, in one response. */
+export interface Snapshot {
+  cwd: string
+  efforts: { dir: string; mapRaw: string; specRaw: string | null }[]
+  files: { path: string; name: string; from: string; group: string; content: string }[]
+  rounds: { ids: string[]; readmeRaw: string | null }
+  contextRaw: string
 }
 
-interface FsTextResult { kind: 'text'; content: string; truncated: boolean }
-interface FsBinaryResult { kind: 'binary'; size: number; truncated: boolean; head: string }
-
-async function call<T>(method: string, payload: Record<string, unknown>): Promise<T> {
-  const resp = await fetch(`/sidebar/api/${method}`, {
+async function planView<T>(method: string, payload: Record<string, unknown>): Promise<T> {
+  const resp = await fetch(`/plan-view/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
@@ -37,39 +40,18 @@ async function call<T>(method: string, payload: Record<string, unknown>): Promis
   return parsed.value as T
 }
 
-function scopePayload(scope: SessionScope, extra: Record<string, unknown>): Record<string, unknown> {
-  return { sessionId: scope.sessionId, ...(scope.cwd != null ? { cwd: scope.cwd } : {}), ...extra }
-}
-
-export async function fsTree(scope: SessionScope, path: string): Promise<{ entries: FsEntry[] }> {
-  return call('fs.tree', scopePayload(scope, { path }))
-}
-
-export async function fsRead(scope: SessionScope, path: string): Promise<FsTextResult | FsBinaryResult> {
-  return call('fs.read', scopePayload(scope, { path }))
-}
-
-export async function fsWrite(scope: SessionScope, path: string, content: string): Promise<void> {
-  await call('fs.write', scopePayload(scope, { path, content }))
+/** Load the whole governance view in one request. cwd comes back server-resolved. */
+export function snapshot(sessionId: string, round?: string): Promise<Snapshot> {
+  return planView<Snapshot>('snapshot', round === undefined ? { sessionId } : { sessionId, round })
 }
 
 /**
- * Resolve the session's working directory. Primary source is the harness
- * gateway's session/list (its items carry `cwd`): the better-sidebar
- * `session.cwd` route, when its header lookup misses, falls into
- * sessionPersistence.open and that read has been observed to hang forever
- * (2026-09-30 真机实测：不带 cwd 的 /sidebar/api 调用无响应挂死，Plan tab
- * 因此永停加载行；带 cwd 的调用全部正常). The route stays as fallback for
- * sessions the list's first page does not cover, capped so the tab degrades
- * to its failure line instead of spinning.
+ * B1 binding write-back: upsert one frontmatter key on a ticket file. The
+ * server does read-modify-write atomically, so the client never needs the
+ * file's current content (fsRead left with the better-sidebar decoupling).
  */
-export async function sessionCwd(scope: SessionScope): Promise<{ sessionId: string; cwd: string }> {
-  const listed = await sessionList().then(items => items.find(s => s.sessionId === scope.sessionId))
-  if (listed?.cwd) return { sessionId: scope.sessionId, cwd: listed.cwd }
-  return Promise.race([
-    call('session.cwd', scopePayload(scope, {})),
-    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('session.cwd timed out')), 10_000)),
-  ])
+export function bindTicket(sessionId: string, path: string, key: string, value: string): Promise<void> {
+  return planView<void>('write', { sessionId, path, key, value })
 }
 
 // ─── /api — harness Typert gateway ───────────────────────────────────────────
@@ -124,4 +106,5 @@ export async function sessionAlive(sessionId: string): Promise<SessionSummary | 
   return (await sessionList()).find(s => s.sessionId === sessionId)
 }
 
-export type { SessionScope, FsEntry, FsTextResult, FsBinaryResult }
+
+export type { SessionScope }

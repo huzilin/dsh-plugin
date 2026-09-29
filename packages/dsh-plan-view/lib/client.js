@@ -7,8 +7,8 @@ window.__ModuleLoader__.load({
 		let react = require("react");
 		let react_jsx_runtime = require("react/jsx-runtime");
 		//#region src/client/api.ts
-		async function call(method, payload) {
-			const resp = await fetch(`/sidebar/api/${method}`, {
+		async function planView(method, payload) {
+			const resp = await fetch(`/plan-view/${method}`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify(payload)
@@ -17,42 +17,25 @@ window.__ModuleLoader__.load({
 			if (!resp.ok || parsed?.ok !== true) throw new Error(parsed?.error?.message ?? `HTTP ${resp.status}`);
 			return parsed.value;
 		}
-		function scopePayload(scope, extra) {
-			return {
-				sessionId: scope.sessionId,
-				...scope.cwd != null ? { cwd: scope.cwd } : {},
-				...extra
-			};
-		}
-		async function fsTree(scope, path) {
-			return call("fs.tree", scopePayload(scope, { path }));
-		}
-		async function fsRead(scope, path) {
-			return call("fs.read", scopePayload(scope, { path }));
-		}
-		async function fsWrite(scope, path, content) {
-			await call("fs.write", scopePayload(scope, {
-				path,
-				content
-			}));
+		/** Load the whole governance view in one request. cwd comes back server-resolved. */
+		function snapshot(sessionId, round) {
+			return planView("snapshot", round === void 0 ? { sessionId } : {
+				sessionId,
+				round
+			});
 		}
 		/**
-		* Resolve the session's working directory. Primary source is the harness
-		* gateway's session/list (its items carry `cwd`): the better-sidebar
-		* `session.cwd` route, when its header lookup misses, falls into
-		* sessionPersistence.open and that read has been observed to hang forever
-		* (2026-09-30 真机实测：不带 cwd 的 /sidebar/api 调用无响应挂死，Plan tab
-		* 因此永停加载行；带 cwd 的调用全部正常). The route stays as fallback for
-		* sessions the list's first page does not cover, capped so the tab degrades
-		* to its failure line instead of spinning.
+		* B1 binding write-back: upsert one frontmatter key on a ticket file. The
+		* server does read-modify-write atomically, so the client never needs the
+		* file's current content (fsRead left with the better-sidebar decoupling).
 		*/
-		async function sessionCwd(scope) {
-			const listed = await sessionList().then((items) => items.find((s) => s.sessionId === scope.sessionId));
-			if (listed?.cwd) return {
-				sessionId: scope.sessionId,
-				cwd: listed.cwd
-			};
-			return Promise.race([call("session.cwd", scopePayload(scope, {})), new Promise((_, reject) => setTimeout(() => reject(/* @__PURE__ */ new Error("session.cwd timed out")), 1e4))]);
+		function bindTicket(sessionId, path, key, value) {
+			return planView("write", {
+				sessionId,
+				path,
+				key,
+				value
+			});
 		}
 		async function rpc(method, args) {
 			const resp = await fetch(`/api/${method}`, {
@@ -261,31 +244,14 @@ window.__ModuleLoader__.load({
 				qaAccepted: fm.qa_accepted === "true"
 			};
 		}
-		/**
-		* Set (or add) one frontmatter key in a raw document, preserving everything
-		* else. This is the B1 write-back: dispatching work from the plan view binds
-		* the session id onto the ticket so the next click jumps back instead of
-		* forking a new session.
-		*/
-		function upsertFrontmatterKey(raw, key, value) {
-			const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-			if (m && m[1] != null) {
-				const lines = m[1].split("\n");
-				const i = lines.findIndex((l) => l.startsWith(`${key}:`));
-				if (i >= 0) lines[i] = `${key}: ${value}`;
-				else lines.push(`${key}: ${value}`);
-				return `---\n${lines.join("\n")}\n---\n${m[2] ?? ""}`;
-			}
-			return `---\n${key}: ${value}\n---\n\n${raw}`;
-		}
-		const DONE_STATUS = /* @__PURE__ */ new Set([
+		const DONE_STATUS = new Set([
 			"done",
 			"closed",
 			"complete",
 			"completed",
 			"shipped"
 		]);
-		const OUT_STATUS = /* @__PURE__ */ new Set([
+		const OUT_STATUS = new Set([
 			"abandoned",
 			"rejected",
 			"wontfix",
@@ -294,7 +260,7 @@ window.__ModuleLoader__.load({
 			"canceled",
 			"superseded"
 		]);
-		const CLAIMED_STATUS = /* @__PURE__ */ new Set([
+		const CLAIMED_STATUS = new Set([
 			"doing",
 			"in_progress",
 			"in-progress",
@@ -610,7 +576,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				children: shown
 			});
 		}
-		const TICKET_TYPES = /* @__PURE__ */ new Set([
+		const TICKET_TYPES = new Set([
 			"task",
 			"research",
 			"prototype",
@@ -691,12 +657,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		function isSpecTicket(t) {
 			return SPECULATION_TYPES.has((t.type ?? "").trim().toLowerCase());
 		}
-		const SPECULATION_TYPES = /* @__PURE__ */ new Set([
+		const SPECULATION_TYPES = new Set([
 			"research",
 			"grilling",
 			"prototype"
 		]);
-		const IMPL_TYPES = /* @__PURE__ */ new Set(["task"]);
+		const IMPL_TYPES = new Set(["task"]);
 		function mapKind(dir, tickets) {
 			let speculation = false, impl = false;
 			for (const t of tickets) {
@@ -764,129 +730,35 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return out;
 		}
-		async function loadRounds(scope, root) {
-			let tree;
-			try {
-				tree = await fsTree(scope, `${root}/.archive/rounds`);
-			} catch {
-				return [];
-			}
-			const ids = tree.entries.filter((e) => e.isDir && /^\d{4}-\d{2}-\d{2}/.test(e.name)).map((e) => e.name).sort().reverse();
-			if (ids.length === 0) return [];
-			const meta = await fsRead(scope, `${root}/.archive/README.md`).then((r) => r.kind === "text" ? parseRoundsIndex(r.content) : /* @__PURE__ */ new Map()).catch(() => /* @__PURE__ */ new Map());
-			return ids.map((id) => meta.get(id) ?? { id });
+		function roundsOf(snap) {
+			const meta = snap.rounds.readmeRaw !== null ? parseRoundsIndex(snap.rounds.readmeRaw) : /* @__PURE__ */ new Map();
+			return snap.rounds.ids.map((id) => meta.get(id) ?? { id });
 		}
-		const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
-		const PLAN_ROOT_ALLOW = /^(?:待拍板|已拍板)-/;
 		const ROOT_GROUP = "\0root";
-		const COLLECT_DIR_NAMES = /* @__PURE__ */ new Set([
-			"issues",
-			"tickets",
-			"approval",
-			"qa",
-			"ledger",
-			"impl",
-			"impl-fe"
-		]);
-		async function collectTicketFiles(scope, effortDir) {
-			const tree = await fsTree(scope, effortDir);
-			const inDirs = tree.entries.filter((e) => e.isDir && !e.hidden && COLLECT_DIR_NAMES.has(e.name));
-			const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i;
-			const groups = await Promise.all([...inDirs.map((d) => fsTree(scope, d.path).then((t) => mdEntries(t).map((f) => ({
-				file: f,
-				group: d.name
-			})))), Promise.resolve(mdEntries(tree).map((f) => ({
-				file: f,
-				group: ROOT_GROUP
-			})))]);
-			const seen = /* @__PURE__ */ new Set();
-			const all = [];
-			for (const e of groups.flat()) {
-				if (NON_TICKET.test(e.file.name) || seen.has(e.file.path)) continue;
-				seen.add(e.file.path);
-				all.push(e);
-			}
-			return all;
-		}
 		function classify(t) {
 			return ticketKind(t);
 		}
-		async function loadPlan(scope, planDir, opts) {
-			const rootTree = await fsTree(scope, planDir);
-			const hasMapHere = opts?.effortScan === false ? false : rootTree.entries.some((e) => e.name === "map.md" && !e.isDir);
-			const effortScan = opts?.effortScan !== false;
-			const subDirs = effortScan ? rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules") : [];
-			const effortDirs = (await Promise.all(subDirs.map(async (d) => {
-				return (await fsTree(scope, d.path)).entries.some((e) => !e.isDir && (e.name === "map.md" || e.name === "spec.md")) ? d.path : null;
-			}))).filter((p) => p !== null);
-			const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs;
-			const [mapRaws, specRaws, ...fileGroups] = await Promise.all([
-				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`).catch(() => null))),
-				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/spec.md`).catch(() => null))),
-				Promise.resolve((effortScan ? mdEntries(rootTree) : mdEntries(rootTree).filter((f) => PLAN_ROOT_ALLOW.test(f.name))).map((f) => ({
-					file: f,
-					from: ROOT_GROUP,
-					group: ROOT_GROUP
-				}))),
-				rootTree.entries.some((e) => e.isDir && e.name === "ledger") ? fsTree(scope, `${planDir}/ledger`).then((t) => mdEntries(t).map((f) => ({
-					file: f,
-					from: ROOT_GROUP,
-					group: "ledger"
-				}))) : Promise.resolve([]),
-				rootTree.entries.some((e) => e.isDir && e.name === "qa") ? fsTree(scope, `${planDir}/qa`).then((t) => mdEntries(t).map((f) => ({
-					file: f,
-					from: ROOT_GROUP,
-					group: "qa"
-				}))) : Promise.resolve([]),
-				...effortDirs.map(async (d) => await collectTicketFiles(scope, d).then((gs) => gs.map((g) => ({
-					file: g.file,
-					from: d,
-					group: g.group
-				}))))
-			]);
-			const efforts = allEfforts.map((dir, i) => ({
-				dir,
-				mapRaw: mapRaws[i]?.kind === "text" ? mapRaws[i].content : "",
-				specRaw: specRaws[i]?.kind === "text" ? specRaws[i].content : void 0
+		/**
+		* snapshot（一次请求的全量数据）→ PlanData：契约解析（frontmatter/状态/kind/qa
+		* whitelist 过滤）留在客户端不动，只把「遍历+读取」换成了服务端一次返回。
+		*/
+		function assemblePlanData(snap) {
+			const tickets = snap.files.map((f) => ({
+				...deriveTicketStatus(f.name, f.content),
+				path: f.path,
+				effort: f.from,
+				group: f.group
+			})).filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
+			const efforts = snap.efforts.map((e) => ({
+				dir: e.dir,
+				mapRaw: e.mapRaw,
+				specRaw: e.specRaw ?? void 0
 			}));
-			const seen = /* @__PURE__ */ new Set();
-			const picked = [];
-			for (const e of fileGroups.flat()) {
-				if (seen.has(e.file.path)) continue;
-				seen.add(e.file.path);
-				picked.push(e);
-			}
-			const raws = await Promise.all(picked.map((e) => fsRead(scope, e.file.path).then((r) => r.kind === "text" ? r.content : "")));
-			const tickets = picked.map((e, i) => ({
-				...deriveTicketStatus(e.file.name, raws[i] ?? ""),
-				path: e.file.path,
-				effort: e.from,
-				group: e.group
-			})).filter((t, i) => picked[i]?.group !== "qa" || ticketKind(t) === "defect" || picked[i]?.file.name === "cases.md");
 			const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 			return {
 				tickets,
-				effortDir: primary?.dir ?? planDir,
+				effortDir: primary?.dir ?? snap.cwd,
 				mapRaw: primary?.mapRaw ?? null,
-				efforts
-			};
-		}
-		async function loadPlanMerged(scope, dirs) {
-			const ok = (await Promise.all(dirs.map((d) => loadPlan(scope, d, { effortScan: !d.endsWith("/.plan") && d !== ".plan" }).catch(() => null)))).filter((p) => !!p);
-			if (ok.length === 0) return null;
-			const seen = /* @__PURE__ */ new Set();
-			const tickets = ok.flatMap((p) => p.tickets).filter((t) => {
-				const k = t.path ?? t.file;
-				if (seen.has(k)) return false;
-				seen.add(k);
-				return true;
-			});
-			const efforts = ok.flatMap((p) => p.efforts);
-			const primary = ok.find((p) => p.mapRaw) ?? ok[0];
-			return {
-				tickets,
-				effortDir: primary.effortDir,
-				mapRaw: primary.mapRaw,
 				efforts
 			};
 		}
@@ -918,24 +790,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 		}
 		function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose, readOnly }) {
-			const [fullBody, setFullBody] = (0, react.useState)(null);
 			const [busy, setBusy] = (0, react.useState)(null);
 			const [msg, setMsg] = (0, react.useState)(null);
 			const [rebind, setRebind] = (0, react.useState)(false);
-			(0, react.useEffect)(() => {
-				let alive = true;
-				fsRead(scope, ticket.path ?? `${planDir}/tickets/${ticket.file}`).then((r) => {
-					if (alive && r.kind === "text") setFullBody(parseFrontmatter(r.content).body);
-				});
-				return () => {
-					alive = false;
-				};
-			}, [
-				ticket.file,
-				ticket.path,
-				planDir,
-				scope
-			]);
+			const fullBody = ticket.body;
 			(0, react.useEffect)(() => {
 				const onKey = (e) => {
 					if (e.key === "Escape") onClose();
@@ -1027,8 +885,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					}
 					const sessionId = await sessions.create(scope.cwd === void 0 ? {} : { cwd: scope.cwd });
 					const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`;
-					const raw = await fsRead(scope, target);
-					if (raw.kind === "text") await fsWrite(scope, target, upsertFrontmatterKey(raw.content, "session", sessionId));
+					await bindTicket(scope.sessionId, target, "session", sessionId);
 					renameSession(sessions, sessionId, `#${shortId(ticket)} ${ticket.title}`.slice(0, 60));
 					onChanged();
 					await deliverPrompt(sessionId, promptText, `已在新 session ${shortSession(sessionId)} 预填指令（草稿，确认后发送），绑定已写回票面。`);
@@ -1087,17 +944,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			});
 			const actions = [];
 			if (!readOnly) {
-				if (kind === "ticket") {
-					if (ticket.session !== void 0 && rebind) {
-						actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
-						actions.push(btn("取消", () => {
-							setRebind(false);
-							setMsg(null);
-						}, "cancel", "#666"));
-					} else {
-						if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
-						actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
-					}
+				if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
+					actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
+					actions.push(btn("取消", () => {
+						setRebind(false);
+						setMsg(null);
+					}, "cancel", "#666"));
+				} else {
+					if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
+					actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
 				}
 				if (kind === "approval" && pending) actions.push(btn("✅ 拍板（预填 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 			}
@@ -1807,7 +1662,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				return tickets.some((t) => !t.type) ? [...named, NO_TYPE] : named;
 			}, [tickets]);
 			const [typeSet, setTypeSet] = (0, react.useState)(() => new Set(Object.keys(TYPE_THEME)));
-			const [kindSet, setKindSet] = (0, react.useState)(() => /* @__PURE__ */ new Set([
+			const [kindSet, setKindSet] = (0, react.useState)(() => new Set([
 				"ticket",
 				"approval",
 				"note"
@@ -2096,7 +1951,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										setQuery("");
 										setStatusSet(new Set(OUTSTANDING));
 										setTypeSet(new Set(allTypes));
-										setKindSet(/* @__PURE__ */ new Set([
+										setKindSet(new Set([
 											"ticket",
 											"approval",
 											"note"
@@ -2381,15 +2236,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
-		const NODE_W = 176;
-		const STEP_X = 200;
-		const NODE_H = 66;
-		const RUNG_TOP = 140;
-		const RUNG_STEP = 110;
-		const START_Y = 36;
-		const END_GAP = 110;
-		const CAP_H = 30;
-		const CAP_W = 100;
+		const NODE_W = 176, STEP_X = 200, NODE_H = 66;
+		const RUNG_TOP = 140, RUNG_STEP = 110;
+		const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100;
 		const START = "\0start";
 		const END = "\0end";
 		function layoutGraph(tickets) {
@@ -2442,8 +2291,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN;
 			const pos = /* @__PURE__ */ new Map();
 			layers.forEach((o, li) => {
-				const lw = o.length * STEP_X - 24;
-				const left = (W_MAIN - lw) / 2;
+				const left = (W_MAIN - (o.length * STEP_X - 24)) / 2;
 				o.forEach((t, i) => {
 					const x = left + i * STEP_X;
 					pos.set(t.id, {
@@ -3602,7 +3450,13 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			});
 		}
 		function PlanView(props) {
-			const { ctx, scope } = props;
+			const { ctx } = props;
+			const sessionId = props.sessionId;
+			const [cwd, setCwd] = (0, react.useState)(void 0);
+			const scope = {
+				sessionId,
+				cwd
+			};
 			const [data, setData] = (0, react.useState)(null);
 			const [error, setError] = (0, react.useState)(null);
 			const [loading, setLoading] = (0, react.useState)(true);
@@ -3616,25 +3470,24 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const load = (0, react.useCallback)(async () => {
 				setLoading(true);
 				setError(null);
-				const base = scope.cwd ? `${scope.cwd}/` : "";
 				try {
-					const r = round === null ? await loadPlanMerged(scope, [`${base}.scratch`, `${base}.plan`]) : await loadPlan(scope, `${base}.archive/rounds/${round}`);
-					if (!r) {
+					const snap = await snapshot(sessionId, round ?? void 0);
+					setCwd((prev) => prev === snap.cwd ? prev : snap.cwd);
+					const r = assemblePlanData(snap);
+					if (r.efforts.length === 0 && r.tickets.length === 0) {
 						setError("empty");
 						setLoading(false);
 						return;
 					}
+					setRounds(roundsOf(snap));
+					setContextRaw(snap.contextRaw);
 					setData(r);
 				} catch {
 					setError("failed");
 				} finally {
 					setLoading(false);
 				}
-			}, [
-				scope.sessionId,
-				scope.cwd,
-				round
-			]);
+			}, [sessionId, round]);
 			const loadSessions = (0, react.useCallback)(() => {
 				sessionList().then((items) => setSessions(new Map(items.map((s) => [s.sessionId, s])))).catch(() => setSessions(/* @__PURE__ */ new Map()));
 			}, []);
@@ -3645,33 +3498,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				loadSessions();
 			}, [loadSessions]);
 			(0, react.useEffect)(() => {
-				setRound(null);
-				if (!scope.cwd) {
-					setRounds([]);
-					return;
-				}
-				loadRounds(scope, scope.cwd).then(setRounds).catch(() => setRounds([]));
-			}, [scope.sessionId, scope.cwd]);
-			(0, react.useEffect)(() => {
 				setEffortIdx(-1);
 			}, [round]);
 			const [contextRaw, setContextRaw] = (0, react.useState)(null);
-			(0, react.useEffect)(() => {
-				let alive = true;
-				setContextRaw(null);
-				if (!scope.cwd) {
-					setContextRaw("");
-					return;
-				}
-				fsRead(scope, `${scope.cwd}/CONTEXT.md`).then((r) => {
-					if (alive) setContextRaw(r.kind === "text" ? r.content : "");
-				}).catch(() => {
-					if (alive) setContextRaw("");
-				});
-				return () => {
-					alive = false;
-				};
-			}, [scope.sessionId, scope.cwd]);
 			const onChanged = (0, react.useCallback)(() => {
 				load();
 				loadSessions();
@@ -5375,7 +5204,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return [];
 		}
-		const DEFECT_CLOSED = /* @__PURE__ */ new Set([
+		const DEFECT_CLOSED = new Set([
 			"已关闭",
 			"关闭",
 			"挂起"
@@ -6155,9 +5984,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									const sx = a.x + NODE_W, sy = a.y + NODE_H / 2;
 									const ex = b.x, ey = b.y + NODE_H / 2;
 									const slotX = ex - 18;
-									const d = ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`;
 									return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-										d,
+										d: ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`,
 										fill: "none",
 										stroke: on ? st.color : "rgba(255,255,255,.16)",
 										strokeWidth: on ? 2.2 : 1.4,
@@ -6495,21 +6323,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		}
 		//#endregion
 		//#region src/client/index.tsx
-		/**
-		* dsh-plan-view client half: registers the Plan page in the DSH native
-		* right Sidebar (official protocol), plus a one-click entry button in the
-		* conversation header.
-		*
-		* 官方侧边栏协议接入（2026-09-29 迁移，此前挂 better-sidebar 自制右栏）：
-		* definition 入 `ctx.sidebarRightTabs`，正文入 keyed slot
-		* `sidebar.right.pane.tab`（key = definition.id），开票走
-		* `ctx.sidebarRight.openTab(kind)`——官方四步（认领 → 聚焦 → 展开列 → 记账）
-		* 自带展开，收起态可直接开票（ch12：「用户看不见不算打开」）。
-		*
-		* fs 读写仍走 better-sidebar 的 `/sidebar/api/*` 路由（server 半区），与
-		* tab 接入无关；正文壳用 `session.cwd` 路由服务端解析 cwd。
-		* Zero external process dependencies.
-		*/
 		const inject = [
 			"slots",
 			"sidebarRight",
@@ -6538,47 +6351,22 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}, PlanTabBody));
 		}
 		/**
-		* 正文壳：sessionId（框架 props）+ planCtx（inject face）→ cwd（session.cwd
-		* 路由）→ PlanView。cwd 是 PlanView 读 `{cwd}/.scratch`、`{cwd}/.plan` 的根基，
-		* 解析失败给一行诊断而不是白屏。
+		* 正文壳：sessionId（框架 props）+ planCtx（inject face）→ PlanView。加载中的
+		* 目录解析也由 PlanView 内部的 snapshot 响应承担；解析失败给一行诊断而不是白屏。
 		*/
 		function PlanTabBody(props) {
 			const sessionId = props.sessionId;
-			const [cwd, setCwd] = (0, react.useState)(null);
-			(0, react.useEffect)(() => {
-				if (sessionId === void 0) return;
-				let alive = true;
-				sessionCwd({ sessionId }).then((r) => {
-					if (alive) setCwd(r.cwd);
-				}).catch(() => {
-					if (alive) setCwd(void 0);
-				});
-				return () => {
-					alive = false;
-				};
-			}, [sessionId]);
-			if (sessionId === void 0 || cwd === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			if (sessionId === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					padding: 16,
 					fontSize: 12,
 					color: "#888"
 				},
-				children: "Plan：无法解析会话（缺 sessionId 或 cwd 解析失败）。"
-			});
-			if (cwd === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				style: {
-					padding: 16,
-					fontSize: 12,
-					color: "#888"
-				},
-				children: "Plan：读取会话工作目录…"
+				children: "Plan：无法解析会话（缺 sessionId）。"
 			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlanView, {
 				ctx: props.planCtx,
-				scope: {
-					sessionId,
-					cwd
-				}
+				sessionId
 			});
 		}
 		//#endregion

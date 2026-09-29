@@ -11,8 +11,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  fsRead, fsTree, fsWrite, sessionAlive, sessionList,
-  type SessionScope, type SessionSummary, type FsEntry,
+  snapshot, bindTicket, sessionAlive, sessionList,
+  type SessionScope, type SessionSummary, type Snapshot,
 } from './api'
 import { deliverDraft, isBridged } from './input-bridge'
 import { fileAddress, displayPath } from './file-path'
@@ -68,24 +68,6 @@ function deriveTicketStatus(file: string, raw: string): ParsedTicket {
     session: fm.session, originSession: fm['origin_session'], body,
     qaCases: fm.qa_cases === 'true', qaTested: fm.qa_tested === 'true', qaAccepted: fm.qa_accepted === 'true',
   }
-}
-
-/**
- * Set (or add) one frontmatter key in a raw document, preserving everything
- * else. This is the B1 write-back: dispatching work from the plan view binds
- * the session id onto the ticket so the next click jumps back instead of
- * forking a new session.
- */
-function upsertFrontmatterKey(raw: string, key: string, value: string): string {
-  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
-  if (m && m[1] != null) {
-    const lines = m[1].split('\n')
-    const i = lines.findIndex(l => l.startsWith(`${key}:`))
-    if (i >= 0) lines[i] = `${key}: ${value}`
-    else lines.push(`${key}: ${value}`)
-    return `---\n${lines.join('\n')}\n---\n${m[2] ?? ''}`
-  }
-  return `---\n${key}: ${value}\n---\n\n${raw}`
 }
 
 // Status vocabulary shared by both conventions in the wild: wayfinder's
@@ -583,68 +565,18 @@ function parseRoundsIndex(raw: string): Map<string, RoundInfo> {
   return out
 }
 
-async function loadRounds(scope: SessionScope, root: string): Promise<RoundInfo[]> {
-  let tree: { entries: FsEntry[] }
-  try { tree = await fsTree(scope, `${root}/.archive/rounds`) } catch { return [] }
-  const ids = tree.entries
-    .filter((e: FsEntry) => e.isDir && /^\d{4}-\d{2}-\d{2}/.test(e.name))
-    .map((e: FsEntry) => e.name)
-    .sort()
-    .reverse() // 新轮在前
-  if (ids.length === 0) return []
-  const meta = await fsRead(scope, `${root}/.archive/README.md`)
-    .then(r => r.kind === 'text' ? parseRoundsIndex(r.content) : new Map<string, RoundInfo>())
-    .catch(() => new Map<string, RoundInfo>())
-  return ids.map(id => meta.get(id) ?? { id })
+// 轮次清单（ids）随 snapshot 返回（服务端读 `.archive/rounds` 目录名，新轮在前）；
+// 主题仍由客户端从 README 索引表解析（纯文本逻辑留在渲染侧）。
+function roundsOf(snap: Snapshot): RoundInfo[] {
+  const meta = snap.rounds.readmeRaw !== null ? parseRoundsIndex(snap.rounds.readmeRaw) : new Map<string, RoundInfo>()
+  return snap.rounds.ids.map(id => meta.get(id) ?? { id })
 }
 
 // ─── Data loading ────────────────────────────────────────────────────────────
 
-const mdEntries = (tree: { entries: FsEntry[] }) => tree.entries.filter((e: FsEntry) => e.name.endsWith('.md') && !e.isDir)
-
-// `.plan` 侧根层展示白名单（2026-09-30 用户拍板「路线不该看到」）：只收审批档
-// 形状（待拍板-*/已拍板-*）——与 plan-lint 检查[9] 同判据、双源一致。形状不符的
-// 根层文件（复盘-/梳理-/需求- 类调研档）是数据违例（lint[9] 报、按写入矩阵分流），
-// 视图不迁就：不收集、不当票展示，等数据侧迁移后自然对齐。与「.plan 子目录
-// 一律不作为 effort 加载」同构（2026-09-29 拍板）。
-const PLAN_ROOT_ALLOW = /^(?:待拍板|已拍板)-/
-
-// Marks files read from `.plan/`'s own top level, which belong to no effort.
+// Marks files read from a root's own top level, which belong to no effort.
+// （值与 lib/server.js 的 ROOT_GROUP 字面量一致——from/group 跨端同值比较。）
 const ROOT_GROUP = '\u0000root'
-
-// Ticket files live in different shapes across repos:
-//   wayfinder : <effort>/issues/*.md       (2026-09-29 目录迁移后的原版布局)
-//   legacy    : <effort>/tickets/*.md      (存量旧布局，plan-protocol 旧约定)
-//   novel     : <effort>/*.md              (beside map.md)
-//               <effort>/impl-fe/*.md      (one level down, grouped by workstream)
-// Read all that exist rather than assuming one, so a repo only has to match
-// *a* convention instead of this view's.
-// 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六）：路线页数据源 = issues/
-// （存量 tickets/ 兼容）；approval|qa|ledger 是图内单据目录（待拍板/缺陷/台账，
-// 其内文档按 kind 分类）；impl|impl-fe 存量只读（协议「impl 不是票型」条：历史
-// 路径不得清理）。assets/ 是调研资源不是票，不再收集；契约外自建目录
-//（fengping/specs/briefs 类）是视图不可见的孤岛，由 plan-lint 检查[8] 报违例
-// ——「tree 之外的目录即违例，结构即契约」。
-const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa', 'ledger', 'impl', 'impl-fe'])
-
-async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<{ file: FsEntry; group: string }[]> {
-  const tree = await fsTree(scope, effortDir)
-  const inDirs = tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && COLLECT_DIR_NAMES.has(e.name))
-  // Skip map/spec/readme companions: they describe the effort, they are not tickets.
-  const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
-  const groups = await Promise.all([
-    ...inDirs.map(d => fsTree(scope, d.path).then(t => mdEntries(t).map(f => ({ file: f, group: d.name })))),
-    Promise.resolve(mdEntries(tree).map(f => ({ file: f, group: ROOT_GROUP }))),
-  ])
-  const seen = new Set<string>()
-  const all: { file: FsEntry; group: string }[] = []
-  for (const e of groups.flat()) {
-    if (NON_TICKET.test(e.file.name) || seen.has(e.file.path)) continue
-    seen.add(e.file.path)
-    all.push(e)
-  }
-  return all
-}
 
 // ─── Four views, one collection pass ─────────────────────────────────────────
 //
@@ -666,112 +598,18 @@ interface PlanData {
 
 function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
 
-async function loadPlan(scope: SessionScope, planDir: string, opts?: { effortScan?: boolean }): Promise<PlanData | null> {
-  const rootTree = await fsTree(scope, planDir)
-  const hasMapHere = opts?.effortScan === false
-    ? false
-    : rootTree.entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir)
-  // Effort 扫描只在 tracker 根（`.scratch/`，及归档轮目录——它就是当时 `.scratch/`
-  // 的快照）进行。契约（2026-09-29 拍板）：`.plan/` 根下没有任何 effort——审批档、
-  // 全局 qa/ledger、handoffs 之外，`.plan/` 的子目录一律不作为 effort 加载，无论
-  // 是否含 map.md（旧布局「存量图留在 .plan/ 可读」的兼容已废；识别到即数据违例，
-  // 由 plan-lint 报，视图不迁就）。
-  //
-  // Effort 判据（2026-09-29 拍板扩展）：子目录含 map.md = wayfinder 图；无 map
-  // 但含 spec.md = spec-only 实施图（to-spec/to-tickets 直出的 effort，如
-  // global-items）——同算 effort 加载。mapRaw 为空由 destination 空缺兜底，
-  // EffortChips 对其加 spec-only 标注。
-  const effortScan = opts?.effortScan !== false
-  const subDirs = effortScan ? rootTree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules') : []
-  const subMaps = await Promise.all(subDirs.map(async (d: FsEntry) => {
-    const t = await fsTree(scope, d.path)
-    return t.entries.some((e: FsEntry) => !e.isDir && (e.name === 'map.md' || e.name === 'spec.md')) ? d.path : null
-  }))
-  const effortDirs = subMaps.filter((p): p is string => p !== null)
-  const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs
-
-  // Sources of markdown, all merged:
-  //   1. the directory's own top level  — ALWAYS read. Approval documents live
-  //      here (to-approval saves to `.plan/<slug>-<date>.md`), and a directory
-  //      without its own map.md still holds them. Whether the top level is
-  //      itself an effort is a separate question and must not gate this.
-  //   2. each effort with a map.md       — that effort's tickets.
-  //
-  // Each group remembers which effort it came from, so the route view can show
-  // one map at a time with only that map's tickets. Without this the tickets are
-  // one undifferentiated pile and a map's own work cannot be isolated.
-  const [mapRaws, specRaws, ...fileGroups] = await Promise.all([
-    // spec-only effort 无 map.md：fsRead 缺档在 better-sidebar 侧是 fs-error 抛错
-    // （readText 对 ENOENT 抛 400），并非「返回非 text」——不容缺会让整个
-    // `.scratch` 侧 loadPlan 被上层 .catch(()=>null) 吞掉（2026-09-29 nvwa 实证）。
-    Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`).catch(() => null))),
-    // spec.md 正文（2026-09-30 拍板：实施图 effort 的第 2 子页 tab 数据源）。
-    // 有 map 的 effort 也读（map+spec 并存合法），但 spec 子页只对无 map 的
-    // spec-only effort 显示——多余的一次读取换实现简单。
-    Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/spec.md`).catch(() => null))),
-    Promise.resolve((effortScan ? mdEntries(rootTree) : mdEntries(rootTree).filter((f: FsEntry) => PLAN_ROOT_ALLOW.test(f.name)))
-      .map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
-    // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
-    rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'ledger')
-      ? fsTree(scope, `${planDir}/ledger`).then(t => mdEntries(t).map(f => ({ file: f, from: ROOT_GROUP, group: 'ledger' })))
-      : Promise.resolve([]),
-    // 根层 qa/（2026-09-21 拍板）：无图归属的测例/缺陷（SOP 回测、整页回测）——
-    // `cases-*.md` 与 `DEF-*.md`（type: qa-defect），from=ROOT_GROUP，进第一层「测例&缺陷」tab。
-    rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'qa')
-      ? fsTree(scope, `${planDir}/qa`).then(t => mdEntries(t).map(f => ({ file: f, from: ROOT_GROUP, group: 'qa' })))
-      : Promise.resolve([]),
-    ...effortDirs.map(async (d: string) => await collectTicketFiles(scope, d).then(gs => gs.map(g => ({ file: g.file, from: d, group: g.group })))),
-  ])
-  const efforts = allEfforts.map((dir: string, i: number) => ({
-    dir,
-    mapRaw: mapRaws[i]?.kind === 'text' ? mapRaws[i].content : '',
-    specRaw: specRaws[i]?.kind === 'text' ? specRaws[i].content : undefined,
-  }))
-  const seen = new Set<string>()
-  const picked: { file: FsEntry; from: string; group: string }[] = []
-  for (const e of fileGroups.flat()) {
-    if (seen.has(e.file.path)) continue
-    seen.add(e.file.path)
-    picked.push(e)
-  }
-  const raws = await Promise.all(picked.map(e => fsRead(scope, e.file.path).then(r => r.kind === 'text' ? r.content : '')))
-  // The `qa/` directory is whitelist-only: only files declaring `type: qa-defect`
-  // enter the view at all. cases.md / test.md carry no frontmatter, so they have
-  // no `type` — a headless file classifies as a plain ticket, the ticket board's
-  // default kindSet includes it, and no view-level filter can exclude it. So the
-  // drop happens here, at the data layer, before the tickets array exists.
-  // Side effect by design: any future headless file in `qa/` (README, notes…)
-  // stays invisible too — 加头 = 被看见，不加头 = 不被看见.
-  const tickets = picked
-    .map((e, i) => ({ ...deriveTicketStatus(e.file.name, raws[i] ?? ''), path: e.file.path, effort: e.from, group: e.group }))
-    .filter((t, i) => picked[i]?.group !== 'qa' || ticketKind(t) === 'defect' || picked[i]?.file.name === 'cases.md')
+/**
+ * snapshot（一次请求的全量数据）→ PlanData：契约解析（frontmatter/状态/kind/qa
+ * whitelist 过滤）留在客户端不动，只把「遍历+读取」换成了服务端一次返回。
+ */
+function assemblePlanData(snap: Snapshot): PlanData {
+  const tickets = snap.files
+    .map(f => ({ ...deriveTicketStatus(f.name, f.content), path: f.path, effort: f.from, group: f.group }))
+    .filter(t => t.group !== 'qa' || ticketKind(t) === 'defect' || t.file === 'cases.md')
+  const efforts = snap.efforts.map(e => ({ dir: e.dir, mapRaw: e.mapRaw, specRaw: e.specRaw ?? undefined }))
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
-  return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
-}
-
-// 现行数据横跨两个治理目录（2026-09-29 目录迁移）：tracker 类（含全部 effort）
-// 在 `.scratch/`（map/spec/issues 票＋图内 qa/ledger/assets），`.plan/` 只承载
-// 根层审批档与全局 qa/ledger（**不含任何 effort**——2026-09-29 拍板：旧布局
-// 「存量图留 .plan/ 可读」兼容已废）。对每个目录各跑一次 loadPlan（目录缺失
-// 或为空按 null 跳过；`.plan` 关 effort 扫描），票按路径去重后拼接、efforts
-// 顺序拼接——路线页只看 `.scratch/` 的图，`.plan/` 侧只出全局件。
-async function loadPlanMerged(scope: SessionScope, dirs: string[]): Promise<PlanData | null> {
-  const parts = await Promise.all(dirs.map(d =>
-    loadPlan(scope, d, { effortScan: !d.endsWith('/.plan') && d !== '.plan' }).catch(() => null),
-  ))
-  const ok = parts.filter((p): p is PlanData => !!p)
-  if (ok.length === 0) return null
-  const seen = new Set<string>()
-  const tickets = ok.flatMap(p => p.tickets).filter(t => {
-    const k = t.path ?? t.file
-    if (seen.has(k)) return false
-    seen.add(k)
-    return true
-  })
-  const efforts = ok.flatMap(p => p.efforts)
-  const primary = ok.find(p => p.mapRaw) ?? ok[0]
-  return { tickets, effortDir: primary.effortDir, mapRaw: primary.mapRaw, efforts }
+  return { tickets, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
 // ─── Shared detail modal + action layer ──────────────────────────────────────
@@ -837,22 +675,12 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
   onClose: () => void
   readOnly?: boolean   // 历史轮次快照：归档纪律「勿据以实现」，派活/拍板动作停用
 }) {
-  const [fullBody, setFullBody] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [rebind, setRebind] = useState(false) // E1: bound session died — offering recreate
-  useEffect(() => {
-    let alive = true
-    // `path` is known when the file was discovered; fall back to the wayfinder
-    // layout for callers that only carry a file name.
-    const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`
-    fsRead(scope, target).then(r => {
-      // Re-read to get the full body, but strip the frontmatter: the summary
-      // already rendered it as chips, and it is not part of the document.
-      if (alive && r.kind === 'text') setFullBody(parseFrontmatter(r.content).body)
-    })
-    return () => { alive = false }
-  }, [ticket.file, ticket.path, planDir, scope])
+  // 完整正文就在 ticket.body（snapshot 一次带回的原文去 frontmatter）——
+  // 此前这里每次打开还发一次 fsRead 重读同一文件，纯浪费。
+  const fullBody = ticket.body
   // Close on Escape, and lock the background from scrolling while open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -929,8 +757,8 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
       }
       const sessionId = await sessions.create(scope.cwd === undefined ? {} : { cwd: scope.cwd })
       const target = ticket.path ?? `${planDir}/tickets/${ticket.file}`
-      const raw = await fsRead(scope, target)
-      if (raw.kind === 'text') await fsWrite(scope, target, upsertFrontmatterKey(raw.content, 'session', sessionId))
+      // B1 绑定：服务端 read-modify-write 原子 upsert（客户端不再读原文）。
+      await bindTicket(scope.sessionId, target, 'session', sessionId)
       renameSession(sessions, sessionId, `#${shortId(ticket)} ${ticket.title}`.slice(0, 60))
       // 绑定已落盘，先刷新数据（票面 chip 立即可见），再做可能挂死的投递段。
       onChanged()
@@ -1805,8 +1633,15 @@ type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'context' |
 //（spec-only）第 2 子页 = spec.md 正文——按选中 effort 的文件有无互斥显示。
 	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
 
-export function PlanView(props: { ctx: any; scope: any }) {
-  const { ctx, scope } = props as { ctx: any; scope: SessionScope }
+export function PlanView(props: { ctx: any; sessionId?: string }) {
+  // cwd 不由外层预解析（sessionCwd 链随票 19 退役）：首帧 snapshot 的响应自带
+  // 服务端解析好的 cwd。scope 是只读快照对象，每渲染重建（字段少，无谓开销）。
+  // （ctx 必须在此解构——动作层 14 处 JSX 引用 `ctx={ctx}`，漏解构即重渲染
+  //  ReferenceError，且被 slot 错误边界吞成空白 pane。票 19 实证。）
+  const { ctx } = props as { ctx: any }
+  const sessionId = props.sessionId as string
+  const [cwd, setCwd] = useState<string | undefined>(undefined)
+  const scope: SessionScope = { sessionId, cwd }
   const [data, setData] = useState<PlanData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1826,15 +1661,18 @@ export function PlanView(props: { ctx: any; scope: any }) {
   const [round, setRound] = useState<string | null>(null)
   const load = useCallback(async () => {
     setLoading(true); setError(null)
-    const base = scope.cwd ? `${scope.cwd}/` : ''
     try {
-      const r = round === null
-        ? await loadPlanMerged(scope, [`${base}.scratch`, `${base}.plan`])
-        : await loadPlan(scope, `${base}.archive/rounds/${round}`)
-      if (!r) { setError('empty'); setLoading(false); return }
+      // 一次请求全量：现行双根（round=null）或历史轮快照（round=id）。
+      // 数据面 = 本插件服务端 /plan-view/snapshot（票 19 起与 better-sidebar 解耦）。
+      const snap = await snapshot(sessionId, round ?? undefined)
+      setCwd(prev => (prev === snap.cwd ? prev : snap.cwd))
+      const r = assemblePlanData(snap)
+      if (r.efforts.length === 0 && r.tickets.length === 0) { setError('empty'); setLoading(false); return }
+      setRounds(roundsOf(snap))
+      setContextRaw(snap.contextRaw)
       setData(r)
     } catch { setError('failed') } finally { setLoading(false) }
-  }, [scope.sessionId, scope.cwd, round])
+  }, [sessionId, round])
   const loadSessions = useCallback(() => {
     sessionList()
       .then(items => setSessions(new Map(items.map(s => [s.sessionId, s]))))
@@ -1842,26 +1680,11 @@ export function PlanView(props: { ctx: any; scope: any }) {
   }, [])
   useEffect(() => { void load() }, [load])
   useEffect(() => { loadSessions() }, [loadSessions])
-  // 轮次清单不随派发变化，只在进入（或换仓库）时读一次；换仓库时复位轮选中。
-  useEffect(() => {
-    setRound(null)
-    if (!scope.cwd) { setRounds([]); return }
-    loadRounds(scope, scope.cwd).then(setRounds).catch(() => setRounds([]))
-  }, [scope.sessionId, scope.cwd])
   // 换轮后旧 effort 下标可能越界，回到「全部地图」。
   useEffect(() => { setEffortIdx(-1) }, [round])
-  // CONTEXT.md（2026-09-30 拍板：全局第一行末位 tab）——仓根词汇表/领域正本，
-  // 与 plan 数据无关，独立读取；缺档/非文本统一按空态呈现（tab 常驻不隐藏）。
+  // CONTEXT.md 正文随 snapshot 一次带回（2026-09-30 拍板：全局第一行末位 tab；
+  // 缺档/非文本统一空态，tab 常驻不隐藏）。
   const [contextRaw, setContextRaw] = useState<string | null>(null) // null=未定（加载中），''=缺失
-  useEffect(() => {
-    let alive = true
-    setContextRaw(null)
-    if (!scope.cwd) { setContextRaw(''); return }
-    fsRead(scope, `${scope.cwd}/CONTEXT.md`)
-      .then(r => { if (alive) setContextRaw(r.kind === 'text' ? r.content : '') })
-      .catch(() => { if (alive) setContextRaw('') })
-    return () => { alive = false }
-  }, [scope.sessionId, scope.cwd])
   // Post-dispatch refresh: the plan files may have a new `session:` binding and
   // the session map may have a new entry — both reread together.
   const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])

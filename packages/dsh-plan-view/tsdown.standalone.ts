@@ -34,6 +34,7 @@ const EXTERNALS = new Set([
   // dsh.client.inject:
   '@deepseek-ai/dsh-client-runtime',
   '@deepseek-ai/dsh-client-locale',
+  '@deepseek-ai/dsh-client-ui-sidebar-right',
 ])
 
 export default {
