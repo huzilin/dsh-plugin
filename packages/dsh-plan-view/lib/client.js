@@ -36,6 +36,10 @@ window.__ModuleLoader__.load({
 				content
 			}));
 		}
+		/** Resolve the session's working directory server-side (client may omit cwd). */
+		async function sessionCwd(scope) {
+			return call("session.cwd", scopePayload(scope, {}));
+		}
 		async function rpc(method, args) {
 			const resp = await fetch(`/api/${method}`, {
 				method: "POST",
@@ -6081,14 +6085,16 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		//#endregion
 		//#region src/client/plan-icon.tsx
 		/**
-		* Plan 的共用标识：标签页类型 id 与图标。
+		* Plan 的共用标识：官方侧边栏票 kind、定义 id 与图标。
 		*
-		* 右侧栏的 Plan 标签页（`index.tsx` 注册）与会话头部的一键入口
-		* （`entry-button.tsx`）指向同一处定义——避免 id 字符串或图标形状两处各写一份
-		* 而漂移。
+		* 右侧栏的 Plan 票（`index.tsx` 注册）与会话头部的一键入口
+		* （`entry-button.tsx`）指向同一处定义——避免 kind/id 字符串或图标形状两处
+		* 各写一份而漂移。
 		*/
-		/** Plan 标签页的类型 id（注册描述符与入口按钮共用）。 */
-		const PLAN_TAB_ID = "dsh-plan-view:plan";
+		/** Plan 票的 kind（`ctx.sidebarRight.openTab` 点名的路由判别名）。 */
+		const PLAN_TAB_KIND = "plan";
+		/** Plan 票实现的定义 id（正文 slot `sidebar.right.pane.tab` 的 key，与 definition.id 一致）。 */
+		const PLAN_TAB_ID = "dsh-plan-view/plan";
 		/**
 		* Plan 图标：方框叠三条横线。
 		* @param props - `size` 为图标边长（像素）。
@@ -6178,7 +6184,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		}
 		/**
 		* 注册入口按钮。
-		* @param ctx - 客户端根上下文（需已注入 `slots` 与 `betterSidebar`）。
+		* @param ctx - 客户端根上下文（需已注入 `slots` 与 `sidebarRight`）。
 		* @returns 注销函数。
 		*/
 		function registerPlanEntry(ctx) {
@@ -6188,37 +6194,99 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				order: ENTRY_ORDER,
 				registrant: "dsh-plan-view",
 				inject: () => ({ open: () => {
-					const corner = document.querySelector("[data-sidebar-right-expand]");
-					if (!corner) {
-						ctx.betterSidebar.openTab({ type: PLAN_TAB_ID });
-						return;
-					}
-					corner.click();
-					let tries = 8;
-					const tick = () => {
-						try {
-							ctx.betterSidebar.openTab({ type: PLAN_TAB_ID });
-						} catch {}
-						if (--tries > 0 && document.querySelector("[data-sidebar-right-expand]")) window.setTimeout(tick, 120);
-					};
-					window.setTimeout(tick, 120);
+					try {
+						ctx.sidebarRight.openTab(PLAN_TAB_KIND);
+					} catch {}
 				} })
 			}, PlanEntryButton));
 		}
 		//#endregion
 		//#region src/client/index.tsx
-		const inject = ["betterSidebar", "slots"];
+		/**
+		* dsh-plan-view client half: registers the Plan page in the DSH native
+		* right Sidebar (official protocol), plus a one-click entry button in the
+		* conversation header.
+		*
+		* 官方侧边栏协议接入（2026-09-29 迁移，此前挂 better-sidebar 自制右栏）：
+		* definition 入 `ctx.sidebarRightTabs`，正文入 keyed slot
+		* `sidebar.right.pane.tab`（key = definition.id），开票走
+		* `ctx.sidebarRight.openTab(kind)`——官方四步（认领 → 聚焦 → 展开列 → 记账）
+		* 自带展开，收起态可直接开票（ch12：「用户看不见不算打开」）。
+		*
+		* fs 读写仍走 better-sidebar 的 `/sidebar/api/*` 路由（server 半区），与
+		* tab 接入无关；正文壳用 `session.cwd` 路由服务端解析 cwd。
+		* Zero external process dependencies.
+		*/
+		const inject = [
+			"slots",
+			"sidebarRight",
+			"sidebarRightTabs"
+		];
 		function apply(ctx) {
 			ctx.effect(() => registerInputBridge(ctx));
 			ctx.effect(() => registerPlanEntry(ctx));
-			ctx.effect(() => ctx.betterSidebar.registerTab({
+			ctx.effect(() => ctx.sidebarRightTabs.register({
 				id: PLAN_TAB_ID,
+				kind: PLAN_TAB_KIND,
+				priority: "builtin",
 				title: () => "Plan",
-				icon: (size) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlanIcon, { size }),
-				order: 46,
-				single: true,
-				component: (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlanView, { ...props })
+				guide: [{
+					id: "plan-entry",
+					order: 50,
+					title: () => "Plan",
+					description: () => "计划面板：.scratch/.plan 治理视图（工单、地图、待拍板、台账）",
+					icon: PlanIcon
+				}]
 			}));
+			ctx.slots.inject("sidebar.right.pane.tab", () => ctx.slots.register({
+				name: "sidebar.right.pane.tab",
+				key: PLAN_TAB_ID,
+				inject: () => ({ planCtx: ctx })
+			}, PlanTabBody));
+		}
+		/**
+		* 正文壳：sessionId（框架 props）+ planCtx（inject face）→ cwd（session.cwd
+		* 路由）→ PlanView。cwd 是 PlanView 读 `{cwd}/.scratch`、`{cwd}/.plan` 的根基，
+		* 解析失败给一行诊断而不是白屏。
+		*/
+		function PlanTabBody(props) {
+			const sessionId = props.sessionId;
+			const [cwd, setCwd] = (0, react.useState)(null);
+			(0, react.useEffect)(() => {
+				if (sessionId === void 0) return;
+				let alive = true;
+				sessionCwd({ sessionId }).then((r) => {
+					if (alive) setCwd(r.cwd);
+				}).catch(() => {
+					if (alive) setCwd(void 0);
+				});
+				return () => {
+					alive = false;
+				};
+			}, [sessionId]);
+			if (sessionId === void 0 || cwd === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				style: {
+					padding: 16,
+					fontSize: 12,
+					color: "#888"
+				},
+				children: "Plan：无法解析会话（缺 sessionId 或 cwd 解析失败）。"
+			});
+			if (cwd === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				style: {
+					padding: 16,
+					fontSize: 12,
+					color: "#888"
+				},
+				children: "Plan：读取会话工作目录…"
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PlanView, {
+				ctx: props.planCtx,
+				scope: {
+					sessionId,
+					cwd
+				}
+			});
 		}
 		//#endregion
 		exports.apply = apply;

@@ -1708,8 +1708,8 @@ type TopView = 'overview' | 'map' | 'qa' | 'ledger' | 'guide'
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
 	type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
 
-export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
-  const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
+export function PlanView(props: { ctx: any; scope: any }) {
+  const { ctx, scope } = props as { ctx: any; scope: SessionScope }
   const [data, setData] = useState<PlanData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)

@@ -2,18 +2,19 @@
  * Plan 的会话头部入口按钮。
  *
  * 在会话标题栏右上角那一排（`conversation.session.header.utilities`）挂一个
- * Plan 图标按钮，点一下直接打开右侧栏的 Plan 标签页——把原先「展开右侧栏 →
+ * Plan 图标按钮，点一下直接打开右侧栏的 Plan 票——把原先「展开右侧栏 →
  * 点 + → 从类型列表里挑 Plan」三步压成一步。
  *
  * 该位是「列表型」（list）：用本插件自己的 id 注册即并列新增一行，不会顶掉
- * 邻居（better-sidebar 的底部面板开关、Watcher 状态等）。
+ * 邻居（底部面板开关、状态类控件等）。
  *
- * 打开动作走插件自己的服务 `ctx.betterSidebar.openTab`：标签页描述符带
- * `single: true`，重复点击只会聚焦已开的那一个。展开右侧栏由本文件自己保证
- * （收起态先点壳的展开角标再开票——DSH 0.1.5+ openTab 不再承诺展开，见 onClick 内注释）。
+ * 打开动作走官方侧边栏协议 `ctx.sidebarRight.openTab(kind)`（2026-09-29 从
+ * better-sidebar openTab 迁来）：官方四步自带「展开列」，收起态直接可用，
+ * 无需任何角标/重试补丁（票12 那套已随迁移删除）。同 kind 重复点击聚焦
+ * 已开的票。
  */
 import type { Context } from 'cordis'
-import { PLAN_TAB_ID, PlanIcon } from './plan-icon'
+import { PLAN_TAB_KIND, PlanIcon } from './plan-icon'
 
 /** 本入口在会话头部那一排里的位置：排在底部面板开关（10）之后、状态类控件之前。 */
 const ENTRY_ORDER = 50
@@ -56,7 +57,7 @@ function PlanEntryButton({ open }: { open: () => void }): JSX.Element {
 
 /**
  * 注册入口按钮。
- * @param ctx - 客户端根上下文（需已注入 `slots` 与 `betterSidebar`）。
+ * @param ctx - 客户端根上下文（需已注入 `slots` 与 `sidebarRight`）。
  * @returns 注销函数。
  */
 export function registerPlanEntry(ctx: Context): () => void {
@@ -67,24 +68,9 @@ export function registerPlanEntry(ctx: Context): () => void {
       order: ENTRY_ORDER,
       registrant: 'dsh-plan-view',
       inject: () => ({ open: () => {
-        // 0.1.5+ 右栏归 DSH 原生 Sidebar：收起态下 openTab 链路的原生写操作全部
-        // 失效——controller.require() 直接抛「no session surface is mounted」，
-        // openTabIn 对未挂载 session 静默（均实测）。壳自带的展开角标
-        // （ExpandButton，data-sidebar-right-expand，收起态常驻标题栏角落）是
-        // 唯一在收起态仍可用的展开路径：先点它，等右栏挂载完成再开票；角标
-        // 消失即已展开，停。展开态（无角标）直接开票，原行为。
-        const corner = document.querySelector('[data-sidebar-right-expand]') as HTMLElement | null
-        if (!corner) {
-          ctx.betterSidebar.openTab({ type: PLAN_TAB_ID })
-          return
-        }
-        corner.click()
-        let tries = 8
-        const tick = (): void => {
-          try { ctx.betterSidebar.openTab({ type: PLAN_TAB_ID }) } catch { /* seat 未挂载完，下一拍重试 */ }
-          if (--tries > 0 && document.querySelector('[data-sidebar-right-expand]')) window.setTimeout(tick, 120)
-        }
-        window.setTimeout(tick, 120)
+        // 官方 openTab 四步自带展开（认领 → 聚焦 → 展开列 → 记账），收起态直接
+        // 可用；无会话面时它抛错——按钮本身挂在会话头部，面在，此处兜底静默。
+        try { ctx.sidebarRight.openTab(PLAN_TAB_KIND) } catch { /* 无会话面 */ }
       } }),
     },
     PlanEntryButton,

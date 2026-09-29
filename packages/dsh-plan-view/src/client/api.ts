@@ -53,6 +53,11 @@ export async function fsWrite(scope: SessionScope, path: string, content: string
   await call('fs.write', scopePayload(scope, { path, content }))
 }
 
+/** Resolve the session's working directory server-side (client may omit cwd). */
+export async function sessionCwd(scope: SessionScope): Promise<{ sessionId: string; cwd: string }> {
+  return call('session.cwd', scopePayload(scope, {}))
+}
+
 // ─── /api — harness Typert gateway ───────────────────────────────────────────
 //
 // A Remote call is `POST /api/<ns>/<method>` carrying the client-request
