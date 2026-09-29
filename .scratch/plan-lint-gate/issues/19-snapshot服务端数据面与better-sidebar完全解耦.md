@@ -29,7 +29,7 @@ status: done 2026-09-30
 
 ## Answer
 
-commit `9c1e3f7`（feat(plan-view): snapshot 服务端数据面——与 better-sidebar 完全解耦（票19））。三句讲清：
+commit `6f58adb`（feat(plan-view): snapshot 服务端数据面——与 better-sidebar 完全解耦（票19））。三句讲清：
 
 1. **架构**：`lib/server.js` 空壳长出两条路由（snapshot/write），与 better-sidebar 挂 `/sidebar/api` 用同一 `ctx.webServer.register` 机制；客户端 106 次通用 fs 调用收敛为 1 次快照。cwd 服务端解析（header 命中即时，冷会话走 `sessionPersistence.list()` **轻量快照**——绝不 open，open 会挂死是 8ecb415 的实证），响应自带 cwd 回填，`sessionCwd` 10s 超时帽整条退役。
 2. **踩坑记录（对后来者最值钱的一条）**：`PlanView` 签名从 `{ctx, scope}` 改 `{ctx, sessionId}` 时漏了 `ctx` 解构——**首帧渲染成功（loading 行不引 ctx）、snapshot 回来重渲染才在 `ctx={ctx}` 处 ReferenceError**，被官方 slot 错误边界吞成空白 pane（`data-slot-error`，零 console 输出）。esbuild 不查类型，tsc 才抓得到。已修（`ctx` 解构+注释钉死）并把「签名改造必过 tsc + node renderToString 复现法」沉淀进本文。
