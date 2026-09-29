@@ -38,7 +38,10 @@ dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-n
 3. 改完**冷启动**（不要热插）：kill 3080 后重跑 `dsh web`；
 4. 本地修改流程：commit → push → `cd ~/.dsh/profiles/web && pnpm update dsh-approve` → 重启；
 5. 客户端半区变更后**必须清浏览器缓存刷新**（rev 变化在线生效，但旧 index.html
-   会持续加载旧 boot graph；Pake 桌面壳尤甚，网页端无痕窗口最稳）。
+   会持续加载旧 boot graph；Pake 桌面壳尤甚，网页端无痕窗口最稳）；
+6. 注册官方右栏票（`ctx.sidebarRightTabs`）前先查官方 `ui-*` 包已占的 kind
+   （`rg -n "sidebarRightTabs.register" workdir/deepseek-harness/packages/client/ui-*`；
+   已知 `dsh-client-ui-plan` 占 `plan`）——同 kind 二注册按协议抛错，会撞死对方整包激活（2026-09-29 实证）。
 
 本机若 `dsh` 不在 PATH，在 deepseek-harness 检出内用 `pnpm dsh` 等价调用（如
 `pnpm dsh plugin --profile web add 'github:huzilin/dsh-plugin#path:/packages/<plugin-name>'`）。
