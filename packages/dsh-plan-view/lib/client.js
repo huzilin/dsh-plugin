@@ -6092,7 +6092,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		* 各写一份而漂移。
 		*/
 		/** Plan 票的 kind（`ctx.sidebarRight.openTab` 点名的路由判别名）。 */
-		const PLAN_TAB_KIND = "plan";
+		const PLAN_TAB_KIND = "planview";
 		/** Plan 票实现的定义 id（正文 slot `sidebar.right.pane.tab` 的 key，与 definition.id 一致）。 */
 		const PLAN_TAB_ID = "dsh-plan-view/plan";
 		/**
