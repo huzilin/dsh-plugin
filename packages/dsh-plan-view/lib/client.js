@@ -2931,7 +2931,16 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				},
 				children: [
 					"当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter ",
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "type" }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+						style: {
+							fontSize: 11,
+							background: HEADER_BG,
+							border: `1px solid ${BORDER}`,
+							borderRadius: 4,
+							padding: "1px 5px"
+						},
+						children: "type"
+					}),
 					" 区分。"
 				]
 			});

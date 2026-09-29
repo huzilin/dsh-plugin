@@ -1523,7 +1523,7 @@ function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, re
   if (rows.length === 0) {
     return (
       <div style={{ padding: 24, fontSize: 12.5, color: TEXT_FAINT }}>
-        当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter <Code>type</Code> 区分。
+        当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter <code style={{ fontSize: 11, background: HEADER_BG, border: `1px solid ${BORDER}`, borderRadius: 4, padding: '1px 5px' }}>type</code> 区分。
       </div>
     )
   }
