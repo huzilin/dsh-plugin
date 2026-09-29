@@ -9,7 +9,7 @@
 # 未迁移图仍按旧布局留在 .plan/。两个目录各跑一遍全量检查，发现数累计。
 # 票目录名 issues/（新）与 tickets/（存量）双认。
 #
-# 抓六类漂移：
+# 抓七类漂移：
 #   1. 同票双档：同一票 id 多处落点，且多于一份未标 superseded-by
 #      （map/readme 豁免；type: ledger 是台账登记簿不是票，2026-09-21 拍板；
 #      qa/ 下的缺陷/测例档不是票，整目录豁免）
@@ -40,6 +40,12 @@
 #      豁免：handoffs（存量历史轮快照）。2026-09-29 二次拍板：.plan/ 下无
 #      effort——任何子目录含 map.md/spec.md 即报 plan-root-effort（旧布局
 #      「存量图留 .plan/ 可读」兼容已废，迁 .scratch/ 即合规）
+#   7. 术语残留（terms-residue，2026-09-29 拍板，novel 术语 sweep 移交方案 C，
+#      plan-lint-gate 票 13）：词表驱动全仓活面断言「无标记残留=0」——只在
+#      带 --terms 时执行，执行体 = 同目录 terms_check.py（python3 stdlib，
+#      bash 3.2 对中文枚举/计数是实证雷区，故此查不走本文件）；不带 --terms
+#      整体跳过，其他仓无词表零影响。规则正本 = plan-protocol §三「术语残留
+#      断言」条。注意：检查[7] 输出禁套 rtk（压缩/统计改写已实证失真）。
 #
 # 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
 # assets / handoffs / ledger / 一切隐藏目录与隐藏文件。
@@ -47,7 +53,9 @@
 # run-qa-testcases 自检兜）。
 #
 # 只读，不改任何文件。用法：
-#   bash plan-lint.sh [<治理目录> ...]   # 省略时自动找 ./.scratch ./.plan 或 ../ 同名
+#   bash plan-lint.sh [--terms <词表> --terms-roots <dir,dir,...>] [<治理目录> ...]
+#   # 治理目录省略时自动找 ./.scratch ./.plan 或 ../ 同名；带 --terms 且找不到
+#   # 治理目录时跳过检查[1]-[6]、只跑检查[7]（无词表仓不受影响）
 # 退出码：0=无发现，1=有发现，2=用法错误。
 #
 # 兼容 bash 3.2（macOS 自带版没有关联数组），只用 sort/awk/uniq 等通用工具。
@@ -57,6 +65,25 @@ set -uo pipefail
 # 文件名按字节比较：macOS 的 sort/uniq 在 UTF-8 collation 下会把不同汉字判等
 # （实测 en_US.UTF-8 把 150 行收成 148），制造「同票双档」假阳性，故强制 C locale。
 export LC_ALL=C
+
+# 选项解析（--terms / --terms-roots；选项须在治理目录之前）
+TERMS_FILE=""
+TERMS_ROOTS=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --terms)
+      [ $# -ge 2 ] || { echo "用法错误: --terms 需要词表文件路径" >&2; exit 2; }
+      TERMS_FILE="$2"; shift 2 ;;
+    --terms-roots)
+      [ $# -ge 2 ] || { echo "用法错误: --terms-roots 需要目录清单（逗号分隔）" >&2; exit 2; }
+      TERMS_ROOTS="$2"; shift 2 ;;
+    --*)
+      echo "未知选项: $1" >&2
+      echo "用法: bash plan-lint.sh [--terms <词表> --terms-roots <dir,dir,...>] [<治理目录> ...]" >&2
+      exit 2 ;;
+    *) break ;;
+  esac
+done
 
 if [ $# -gt 0 ]; then
   PLAN_DIRS="$*"
@@ -68,8 +95,12 @@ else
     fi
   done
   if [ -z "$PLAN_DIRS" ]; then
-    echo "用法: bash plan-lint.sh <path-to-治理目录> ...   # 例: .scratch .plan" >&2
-    exit 2
+    if [ -n "$TERMS_FILE" ]; then
+      echo "plan-lint: 治理目录（.scratch/.plan）未找到，跳过检查[1]-[6]，仅跑检查[7]"
+    else
+      echo "用法: bash plan-lint.sh <path-to-治理目录> ...   # 例: .scratch .plan" >&2
+      exit 2
+    fi
   fi
 fi
 
@@ -340,6 +371,39 @@ for PD in $PLAN_DIRS; do
   fi
   rm -rf "$TMP"
 done
+
+# ── 7. 术语残留（词表驱动全仓活面；只在带 --terms 时执行）──────────────────
+# 执行体 = 同目录 terms_check.py（python3 stdlib 只读断言：UTF-8 枚举、三计数
+# 对账、显式排除区、零命中⚠警告、--self-test）。发现数经 summary-file 并入
+# 总数；退出码 2（用法/环境错误）直接中止。输出禁套 rtk。
+if [ -n "$TERMS_FILE" ]; then
+  SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+  TC="$SCRIPT_DIR/terms_check.py"
+  if [ ! -f "$TC" ]; then
+    echo "plan-lint: ✗ 检查[7]执行体缺失: $TC（skill 安装不完整）" >&2
+    exit 2
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "plan-lint: ✗ 检查[7]需要 python3（macOS 自带），当前环境不可用" >&2
+    exit 2
+  fi
+  echo
+  SUMMARY=$(mktemp)
+  T_RC=0
+  if [ -n "$TERMS_ROOTS" ]; then
+    python3 "$TC" --terms "$TERMS_FILE" --roots "$TERMS_ROOTS" --summary-file "$SUMMARY" || T_RC=$?
+  else
+    python3 "$TC" --terms "$TERMS_FILE" --summary-file "$SUMMARY" || T_RC=$?
+  fi
+  T_FINDINGS=$(tr -dc '0-9' < "$SUMMARY" 2>/dev/null)
+  rm -f "$SUMMARY"
+  [ -z "$T_FINDINGS" ] && T_FINDINGS=0
+  if [ "$T_RC" -eq 2 ]; then
+    echo "plan-lint: ✗ 检查[7]用法/环境错误（见上）" >&2
+    exit 2
+  fi
+  TOTAL_FINDINGS=$((TOTAL_FINDINGS + T_FINDINGS))
+fi
 
 if [ "$TOTAL_FINDINGS" -eq 0 ]; then
   echo "plan-lint: ✓ 合计 $TOTAL_FILES 个 markdown，未发现漂移"

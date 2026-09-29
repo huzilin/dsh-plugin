@@ -2136,7 +2136,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
             结构漂移先用只读脚本查：<Code>bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan</Code>
-            （同票双档、缺 map.md、缺状态头/非法 status、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单）；
+            （同票双档、缺 map.md、缺状态头/非法 status、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单；仓里有机器可读词表时加 <Code>--terms 词表</Code>，检查[7] 再断言全仓术语无标记残留）；
             再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
             两者都只报告、不擅自改。
           </div>

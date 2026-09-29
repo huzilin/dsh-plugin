@@ -103,12 +103,19 @@ done
 # lint，注入面扩到 diagnosing-bugs 与 run-qa-testcases；mp-implement /
 # mp-implement-spec 无源仓正本（安装态直改），脚本注入按目录存在条件执行。
 PLAN_LINT_SRC="$SKILLS_SRC/plan-approve/scripts/plan-lint.sh"
+# 票 13：检查[7] 执行体随 plan-lint.sh 同往——注入副本按自身目录解析
+# terms_check.py，缺了它带 --terms 的调用会 exit 2「执行体缺失」。
+PLAN_TERMS_SRC="$SKILLS_SRC/plan-approve/scripts/terms_check.py"
 for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases mp-implement mp-implement-spec plan-loop; do
   if [ -d "$SKILLS_DST/$skill_id" ] && [ -f "$PLAN_LINT_SRC" ]; then
     mkdir -p "$SKILLS_DST/$skill_id/scripts"
     cp "$PLAN_LINT_SRC" "$SKILLS_DST/$skill_id/scripts/plan-lint.sh"
     chmod a+rX "$SKILLS_DST/$skill_id/scripts/plan-lint.sh"
-    echo "Injected: plan-lint.sh -> $SKILLS_DST/$skill_id/scripts/"
+    if [ -f "$PLAN_TERMS_SRC" ]; then
+      cp "$PLAN_TERMS_SRC" "$SKILLS_DST/$skill_id/scripts/terms_check.py"
+      chmod a+rX "$SKILLS_DST/$skill_id/scripts/terms_check.py"
+    fi
+    echo "Injected: plan-lint.sh + terms_check.py -> $SKILLS_DST/$skill_id/scripts/"
   fi
 done
 
@@ -136,8 +143,12 @@ for skill_id in mp-plan-approve mp-plan-sync mp-diagnosing-bugs run-qa-testcases
     echo "Error: $SKILLS_DST/$skill_id/scripts/plan-lint.sh missing after install" >&2
     exit 1
   fi
+  if [ -f "$PLAN_TERMS_SRC" ] && [ ! -f "$SKILLS_DST/$skill_id/scripts/terms_check.py" ]; then
+    echo "Error: $SKILLS_DST/$skill_id/scripts/terms_check.py missing after install" >&2
+    exit 1
+  fi
 done
-echo "Self-check: plan-lint.sh present in mp-plan-approve, mp-plan-sync, mp-diagnosing-bugs, run-qa-testcases, plan-loop, mp-implement, mp-implement-spec."
+echo "Self-check: plan-lint.sh (+terms_check.py) present in mp-plan-approve, mp-plan-sync, mp-diagnosing-bugs, run-qa-testcases, plan-loop, mp-implement, mp-implement-spec."
 
 # 必装 skill 自检：implement / implement-spec / to-spec 已从 .optional/ 移入主
 # 循环，属「后续 install 必须安装」——缺任一即安装失败（不再是可选的播种项）。
