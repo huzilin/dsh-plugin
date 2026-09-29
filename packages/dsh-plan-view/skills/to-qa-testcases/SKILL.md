@@ -25,7 +25,7 @@ disable-model-invocation: false
 
 列出本次测试的全部预期来源，逐源标注「已列入 / 不适用（写明原因）/ 缺失（补齐后才开跑）」，原样写进 cases.md §1：
 
-1. **spec 的 AC**（`.scratch/<effort>/spec.md`；存量未迁移图在 `.plan/<effort>/spec.md`）；
+1. **spec 的 AC**（`.scratch/<effort>/spec.md`——effort 唯一落点，`.plan/` 下无 spec，2026-09-29 拍板）；
 2. **spec 全文行为性明文**——不只 AC 章：状态机行、联动条款、「X 时必须 Y」句式逐条抽成行为清单。AC 章之外的明文要求最容易整类漏测；
 3. **契约真相源**（api proto / openapi）；
 4. **原型 / mockup / 设计稿**——凡有 UI 的需求必列，逐页面、逐元素、逐交互形态；没有这个源，「实现 vs 应有形态」的差距整类不可见；
@@ -53,7 +53,7 @@ disable-model-invocation: false
 
 | 输入 | 何时有 / 用于什么 |
 |---|---|
-| `spec`（`.scratch/<effort>/spec.md`；存量未迁移图在 `.plan/<effort>/spec.md`）的 AC | AC → 验收用例逐条映射（B/C 组主骨架） |
+| `spec`（`.scratch/<effort>/spec.md`——effort 唯一落点）的 AC | AC → 验收用例逐条映射（B/C 组主骨架） |
 | spec / 架构文档全文 | 抽「行为性明文」清单（状态机、联动条款、「X 时必须 Y」）——**不只 AC 章** |
 | 契约真相源（api proto / openapi） | A 组接口专项：每接口正常/拦截/幂等/负路径 |
 | 架构正本（`docs/architecture.md`）与设计定稿 | 接口口径、数据可测性、边界态说明 → 联调场景与数据构造 |

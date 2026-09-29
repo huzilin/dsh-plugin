@@ -146,8 +146,9 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region src/client/PlanView.tsx
 		/**
-		* Plan view v2: reads the governance roots (.scratch/ migrated layout +
-		* .plan/ legacy & global), derives ticket status per the TRACKER-MARKDOWN
+		* Plan view v2: reads the governance roots (.scratch/ — all efforts, tracker
+		* layout + .plan/ — global only: root approvals & global qa/ledger, never an
+		* effort), derives ticket status per the TRACKER-MARKDOWN
 		* contract, and renders the tabbed surface:
 		*   总览 · 地图（Kanban / Table / Relation DAG）· 测例&缺陷 · 台账 · 说明
 		*
@@ -673,10 +674,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		function classify(t) {
 			return ticketKind(t);
 		}
-		async function loadPlan(scope, planDir) {
+		async function loadPlan(scope, planDir, opts) {
 			const rootTree = await fsTree(scope, planDir);
-			const hasMapHere = rootTree.entries.some((e) => e.name === "map.md" && !e.isDir);
-			const subDirs = rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules");
+			const hasMapHere = opts?.effortScan === false ? false : rootTree.entries.some((e) => e.name === "map.md" && !e.isDir);
+			const subDirs = opts?.effortScan !== false ? rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules") : [];
 			const effortDirs = (await Promise.all(subDirs.map(async (d) => {
 				return (await fsTree(scope, d.path)).entries.some((e) => !e.isDir && (e.name === "map.md" || e.name === "spec.md")) ? d.path : null;
 			}))).filter((p) => p !== null);
@@ -731,7 +732,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			};
 		}
 		async function loadPlanMerged(scope, dirs) {
-			const ok = (await Promise.all(dirs.map((d) => loadPlan(scope, d).catch(() => null)))).filter((p) => !!p);
+			const ok = (await Promise.all(dirs.map((d) => loadPlan(scope, d, { effortScan: !d.endsWith("/.plan") && d !== ".plan" }).catch(() => null)))).filter((p) => !!p);
 			if (ok.length === 0) return null;
 			const seen = /* @__PURE__ */ new Set();
 			const tickets = ok.flatMap((p) => p.tickets).filter((t) => {

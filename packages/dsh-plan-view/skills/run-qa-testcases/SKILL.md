@@ -11,7 +11,7 @@ disable-model-invocation: false
 
 # run-qa-testcases（跑测例 + 缺陷管理）
 
-输入 = `to-qa-testcases` 产出的 `.scratch/<effort>/qa/cases.md`（存量未迁移图在 `.plan/<effort>/qa/`）与仓库 `qa/` 可执行资产（env_up/env_down、驱动脚本、诊断最小环）。本 skill 跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。产物落 `.scratch/<effort>/qa/test.md` + 一缺陷一文件的 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md` + `qa/screenshots/`（可执行脚本留仓库 `qa/`）。 无图归属的缺陷（SOP 回测 / 整页回测发现）落根层 `.plan/qa/DEF-*.md`，进 plan 第一层「测例&缺陷」tab。
+输入 = `to-qa-testcases` 产出的 `.scratch/<effort>/qa/cases.md`（effort 唯一落点即 `.scratch/`——`.plan/` 下无 effort，2026-09-29 拍板）与仓库 `qa/` 可执行资产（env_up/env_down、驱动脚本、诊断最小环）。本 skill 跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。产物落 `.scratch/<effort>/qa/test.md` + 一缺陷一文件的 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md` + `qa/screenshots/`（可执行脚本留仓库 `qa/`）。 无图归属的缺陷（SOP 回测 / 整页回测发现）落根层 `.plan/qa/DEF-*.md`，进 plan 第一层「测例&缺陷」tab。
 
 > **分工**：写用例/设计用例/建资产归 `to-qa-testcases`（它的 cases.md 章节名是本 skill 的取料口径，不自造小标题）；失败用例根因定位归 `diagnosing-bugs`（E 节契约交接）；业务意图最终确认归用户。
 > **标准权威说明**：test.md 章节骨架、DEF-NN 缺陷档的状态头/字段行/五节结构的**权威版本**在 `references/qa-records-skeleton.md`。老项目若有同名模板（qa-acceptance-template 等），以本骨架为准。
@@ -51,7 +51,7 @@ disable-model-invocation: false
 | 调用 | 作用域 | 行为 |
 |---|---|---|
 | **单图**：「跑 <effort> 的测例 / 复测 <effort>」 | 指定实施图 | 只跑该图测例，test.md / DEF-NN 缺陷档写回该图 `qa/` |
-| **full**：「跑全量回归」 | 全部实施图 | 扫 `.scratch/*/map.md`（存量未迁移图 `.plan/*/map.md` 一并扫）筛**实施图**（票型 `task`；推演图 `research`/`prototype`/`grilling` 跳过）逐图按单图流程跑；出**总账** + **分账** |
+| **full**：「跑全量回归」 | 全部实施图 | 扫 `.scratch/*/map.md` 筛**实施图**（票型 `task`；推演图 `research`/`prototype`/`grilling` 跳过）逐图按单图流程跑；出**总账** + **分账** |
 
 - **full 总账**：跨图 PASS/FAIL/SKIP 汇总 + 回归判定（对照各图基线，FAIL>0 即回归），落 `.plan/qa/full-regression-<YYYYMMDD>.md`（plan 根层，无 `map.md` 不成 effort、不进视图）；
 - **full 分账**：各图结果写回各自 `qa/test.md`，新缺陷各建 `qa/DEF-NN-<slug>.md`；

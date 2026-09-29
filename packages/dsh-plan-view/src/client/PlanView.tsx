@@ -1,6 +1,7 @@
 /**
- * Plan view v2: reads the governance roots (.scratch/ migrated layout +
- * .plan/ legacy & global), derives ticket status per the TRACKER-MARKDOWN
+ * Plan view v2: reads the governance roots (.scratch/ — all efforts, tracker
+ * layout + .plan/ — global only: root approvals & global qa/ledger, never an
+ * effort), derives ticket status per the TRACKER-MARKDOWN
  * contract, and renders the tabbed surface:
  *   总览 · 地图（Kanban / Table / Relation DAG）· 测例&缺陷 · 台账 · 说明
  *
@@ -588,18 +589,23 @@ interface PlanData {
 
 function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
 
-async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData | null> {
+async function loadPlan(scope: SessionScope, planDir: string, opts?: { effortScan?: boolean }): Promise<PlanData | null> {
   const rootTree = await fsTree(scope, planDir)
-  const hasMapHere = rootTree.entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir)
-  // A `.plan/` may hold several efforts side by side, each with its own map.md
-  // (novel has two: the workbench and the backend effort). Read every one of
-  // them — picking the first would silently hide the others.
+  const hasMapHere = opts?.effortScan === false
+    ? false
+    : rootTree.entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir)
+  // Effort 扫描只在 tracker 根（`.scratch/`，及归档轮目录——它就是当时 `.scratch/`
+  // 的快照）进行。契约（2026-09-29 拍板）：`.plan/` 根下没有任何 effort——审批档、
+  // 全局 qa/ledger、handoffs 之外，`.plan/` 的子目录一律不作为 effort 加载，无论
+  // 是否含 map.md（旧布局「存量图留在 .plan/ 可读」的兼容已废；识别到即数据违例，
+  // 由 plan-lint 报，视图不迁就）。
   //
   // Effort 判据（2026-09-29 拍板扩展）：子目录含 map.md = wayfinder 图；无 map
   // 但含 spec.md = spec-only 实施图（to-spec/to-tickets 直出的 effort，如
   // global-items）——同算 effort 加载。mapRaw 为空由 destination 空缺兜底，
   // EffortChips 对其加 spec-only 标注。
-  const subDirs = rootTree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules')
+  const effortScan = opts?.effortScan !== false
+  const subDirs = effortScan ? rootTree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules') : []
   const subMaps = await Promise.all(subDirs.map(async (d: FsEntry) => {
     const t = await fsTree(scope, d.path)
     return t.entries.some((e: FsEntry) => !e.isDir && (e.name === 'map.md' || e.name === 'spec.md')) ? d.path : null
@@ -658,14 +664,15 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   return { tickets, effortDir: primary?.dir ?? planDir, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
-// 现行数据横跨两个治理目录（2026-09-29 目录迁移）：tracker 类在 `.scratch/`
-//（map/spec/issues 票＋图内 qa/ledger/assets），审批档与全局 qa/ledger 在 `.plan/`；
-// 存量未迁移图也还在 `.plan/` 旧布局下。对每个目录各跑一次 loadPlan（目录缺失
-// 或为空按 null 跳过），票按路径去重后拼接、efforts 顺序拼接——一条路线页同时
-// 看得到新布局图、存量图与审批档。
+// 现行数据横跨两个治理目录（2026-09-29 目录迁移）：tracker 类（含全部 effort）
+// 在 `.scratch/`（map/spec/issues 票＋图内 qa/ledger/assets），`.plan/` 只承载
+// 根层审批档与全局 qa/ledger（**不含任何 effort**——2026-09-29 拍板：旧布局
+// 「存量图留 .plan/ 可读」兼容已废）。对每个目录各跑一次 loadPlan（目录缺失
+// 或为空按 null 跳过；`.plan` 关 effort 扫描），票按路径去重后拼接、efforts
+// 顺序拼接——路线页只看 `.scratch/` 的图，`.plan/` 侧只出全局件。
 async function loadPlanMerged(scope: SessionScope, dirs: string[]): Promise<PlanData | null> {
   const parts = await Promise.all(dirs.map(d =>
-    loadPlan(scope, d).catch(() => null),
+    loadPlan(scope, d, { effortScan: !d.endsWith('/.plan') && d !== '.plan' }).catch(() => null),
   ))
   const ok = parts.filter((p): p is PlanData => !!p)
   if (ok.length === 0) return null
@@ -1730,7 +1737,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     () => (effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
     [mapOwnTickets, effortIdx, selectedDir],
   )
-  // 缺陷挂在具体图下（.plan/<effort>/qa/），按当前选中的图过滤——与路线页共用
+  // 缺陷挂在具体图下（.scratch/<effort>/qa/），按当前选中的图过滤——与路线页共用
   // effortIdx/selectedDir，切图时缺陷跟着切。根层全局缺陷（.plan/qa/DEF-*.md，
   // 无图归属）不进地图页——2026-09-25 拍板：地图页只看图归属缺陷，全局缺陷
   // 只进第一层「测例&缺陷」tab。
@@ -1745,7 +1752,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
     [approvals, effortIdx, selectedDir],
   )
   // 台账两级（2026-09-21 拍板拆分）：根层全局台账（.plan/ledger/*.md，一账一文件，
-  // t.effort = ROOT_GROUP）是项目全局正本；`.plan/<effort>/ledger/` 是图内台账
+  // t.effort = ROOT_GROUP）是项目全局正本；`.scratch/<effort>/ledger/` 是图内台账
   // （t.effort = 图目录）。第一层「台账」页只看全局；地图页的台账子页只看图内
   // 台账——2026-09-25 拍板：全部地图态聚合各图图内台账，全局台账不进地图页。
   const globalLedgers = useMemo(() => ledgers.filter(t => t.effort === ROOT_GROUP), [ledgers])

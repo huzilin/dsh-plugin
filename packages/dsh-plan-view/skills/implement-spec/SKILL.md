@@ -18,7 +18,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 1. Read the spec and tickets. Read enough to understand the task graph.
 
-2. **(required) Check the spec is live before implementing it.** A spec (under `.scratch/<slug>/spec.md`; legacy efforts keep it under `.plan/<slug>/`) is a **one-shot document** — it is voided once its effort closes. Implementing a spec that has already been superseded or archived means building the *old* decision, which is the single most expensive failure this flow has. Before any implementation work:
+2. **(required) Check the spec is live before implementing it.** A spec (under `.scratch/<slug>/spec.md` — the only legal effort location) is a **one-shot document** — it is voided once its effort closes. Implementing a spec that has already been superseded or archived means building the *old* decision, which is the single most expensive failure this flow has. Before any implementation work:
 
    - **Look for a supersession notice**: a `superseded-by:` field or an equivalently worded statement in the spec, or in a doc that points at it.
    - **Check whether it is already archived** (e.g. under `.archive/`).
