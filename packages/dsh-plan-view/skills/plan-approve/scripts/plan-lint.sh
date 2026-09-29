@@ -46,6 +46,18 @@
 #      bash 3.2 对中文枚举/计数是实证雷区，故此查不走本文件）；不带 --terms
 #      整体跳过，其他仓无词表零影响。规则正本 = plan-protocol §三「术语残留
 #      断言」条。注意：检查[7] 输出禁套 rtk（压缩/统计改写已实证失真）。
+#   8. effort 目录白名单（2026-09-30 拍板，plan-lint-gate 票 16；判据正本 =
+#      docs/research/梳理-plan目录写入矩阵-20260930.md 两层 tree）：effort
+#      （.scratch/ 下含 map.md 或 spec.md 的目录）的直接子目录封闭清单 =
+#      issues / assets / approval / qa / ledger ＋ 存量只读兼容 tickets /
+#      impl / impl-fe（协议「impl 不是票型」条：历史路径不得清理）；清单外
+#      自建子目录（fengping/specs/briefs 类）报 effort-dir-whitelist——视图
+#      不收集、产物按写入矩阵归 assets/ 等合法落点。
+#   9. .plan 根层文件形状（同上拍板与判据正本）：.plan/ 根层 .md 只允许审批
+#      档形状 待拍板-*/已拍板-*（全局件封闭清单的根层成员）；其余文件
+#      （梳理/复盘/参考/需求/无日期审批档等）报 plan-root-shape 并提示合法
+#      落点（docs/research/、docs/requirements/、.tmp/、effort assets/）。
+#      子目录由检查[6]管，本查只管根层文件。
 #
 # 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
 # assets / handoffs / ledger / 一切隐藏目录与隐藏文件。
@@ -353,6 +365,61 @@ for PD in $PLAN_DIRS; do
     done
     [ "$stray" -eq 0 ] && note "✓ 无"
     findings=$((findings + stray))
+    echo
+    ;;
+  esac
+
+  # ── 8. effort 目录白名单 ─────────────────────────────────────────────────
+  # 判据正本 = docs/research/梳理-plan目录写入矩阵-20260930.md 两层 tree
+  # （2026-09-30 用户拍板「那就按这个来」）：effort（含 map.md 或 spec.md，
+  # 与视图加载判据一致）的直接子目录封闭清单 = issues / assets / approval /
+  # qa / ledger ＋ 存量只读 tickets / impl / impl-fe（历史路径不得清理）。
+  # 清单外自建子目录 = 视图不收集的孤岛（fengping/specs/briefs 类），报出
+  # 供迁移施工；只对 PD=.scratch 生效。tree 之外的目录即违例——「结构即契约」。
+  case "${PD##*/}" in .scratch)
+    echo "[8] effort 目录白名单（封闭：issues assets approval qa ledger；存量只读：tickets impl impl-fe）"
+    stray8=0
+    for d in "$PD"/*/; do
+      [ -d "$d" ] || continue
+      [ -f "${d}map.md" ] || [ -f "${d}spec.md" ] || continue
+      for sub in "$d"*/; do
+        [ -d "$sub" ] || continue
+        name=$(basename "$sub")
+        case "$name" in
+          issues|assets|approval|qa|ledger|tickets|impl|impl-fe|node_modules) continue ;;
+          .*) continue ;;
+        esac
+        stray8=$((stray8 + 1))
+        note "✗ ${sub}: effort-dir-whitelist — effort「$(basename "$d")」清单外子目录「${name}」（视图不收集；按写入矩阵分流：调研产物归 assets/，票归 issues/，一次性归 .tmp/）"
+      done
+    done
+    [ "$stray8" -eq 0 ] && note "✓ 无"
+    findings=$((findings + stray8))
+    echo
+    ;;
+  esac
+
+  # ── 9. .plan 根层文件形状 ────────────────────────────────────────────────
+  # 判据正本同检查[8]（写入矩阵两层 tree）：.plan/ 根层 .md 只允许审批档形状
+  # 待拍板-* / 已拍板-*（全局件封闭清单的根层成员，正本 = plan-protocol §三
+  # 「审批文档归属」条）；其余文件（梳理/复盘/参考/需求/无日期审批档等）报
+  # plan-root-shape 并提示合法落点。子目录白名单归检查[6]管，本查只管根层
+  # 文件；仅当本遍历目录名为 .plan 时生效。
+  case "${PD##*/}" in .plan)
+    echo "[9] .plan 根层文件形状（仅 待拍板-*/已拍板-* 审批档；其余按写入矩阵分流）"
+    bad9=0
+    for f in "$PD"/*.md; do
+      [ -f "$f" ] || continue
+      b=$(basename "$f")
+      case "$b" in
+        待拍板-*|已拍板-*) continue ;;
+        [Rr][Ee][Aa][Dd][Mm][Ee].md) continue ;;  # 层级说明档，非单据（同检查[1][2]的 map/readme 豁免惯例）
+      esac
+      bad9=$((bad9 + 1))
+      note "✗ $f: plan-root-shape — .plan/ 根层仅收审批档（待拍板-*/已拍板-*）；本文件按写入矩阵分流（调研/复盘→docs/research/，需求→docs/requirements/，一次性→.tmp/，effort 挂钩→.scratch/<slug>/assets/）"
+    done
+    [ "$bad9" -eq 0 ] && note "✓ 无"
+    findings=$((findings + bad9))
     echo
     ;;
   esac

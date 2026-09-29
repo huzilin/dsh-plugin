@@ -100,6 +100,9 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
   - **判据归属（2026-09-29 二次拍板）**：全局件目录（`qa/`、`ledger/`）**不参与 effort 判据**——它们是全局件锚点不是图；目录内**不得内嵌 map.md/tickets/**（历史遗留内嵌图=违例数据，迁 `.scratch/<slug>/`，如 novel「全页面人工验收测线」图 2026-09-29 迁出）。`.plan/` 下任何子目录含 `map.md`/`spec.md` 均按违例报，视图不加载。写侧唯一合法 effort 落点仍为 `.scratch/<slug>/`（不变）。
   - **生命周期**：全局件常驻、**非轮成员**、不随轮归档（与 §四「归档时机」互为正反表述：随轮走的只是图内 qa/ledger）；全局台账**不进入**归档前置判据③的清账范围（判据③只清图内台账）——全局挂账长期「在挂」不阻塞任何轮归档，其清账由「agent 扫描启动纪律」独立驱动。
 - **一票一文件**：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`。**禁止**把多票写进一个 `tickets.md`／`issues.md`——按文件读取的一方会把合并文件当成**一张票**，里面所有票丢失。
+- **目录契约守门（plan-lint 检查[8][9] · 2026-09-30 拍板，plan-lint-gate 票 16；判据正本 = 各仓 `docs/research/梳理-plan目录写入矩阵-20260930.md` 两层 tree）**：
+  - **检查[8] effort 目录白名单**：effort（`.scratch/<slug>/` 含 map.md 或 spec.md）的直接子目录封闭清单 = `issues / assets / approval / qa / ledger` ＋ 存量只读兼容 `tickets / impl / impl-fe`（历史路径不得清理）；清单外自建子目录报 `effort-dir-whitelist`——视图按契约不收集，产物按写入矩阵归 `assets/` 等合法落点。
+  - **检查[9] `.plan` 根层文件形状**：根层 `.md` 只允许审批档形状 `待拍板-*` / `已拍板-*`（README 层级说明档豁免）；清单外文件报 `plan-root-shape`，按写入矩阵分流 `docs/research/`、`docs/requirements/`、`.tmp/`、effort `assets/`。子目录白名单归检查[6]管。
 - **frontmatter 是权威**：票里 `status` / `type` / `blocked_by` 以 frontmatter 为准，不读正文表格。
 - **`blocked_by` 格式（两形态共用的唯一格式，2026-09-27 拍板统一）**：YAML 流式序列，取值**裸写、不加引号**——
   - `blocked_by: []`：无前置（**唯一合法空值**；不得写 `[无]`、`none`、留空）
