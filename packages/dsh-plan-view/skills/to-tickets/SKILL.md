@@ -84,7 +84,7 @@ status: open            # open（待领）→ claimed（执行中）→ done；�
 
 **Why one file per ticket, not one combined file.** A combined `issues.md` looks tidier in a directory listing, but anything that reads tickets file-by-file counts it as **a single ticket** and silently loses every ticket inside it. That is not hypothetical — it is how a plan view shows "1 ticket" for a file holding nine. One file per ticket is the shape the wayfinder contract uses, so both readers agree.
 
-**Do not create `map.md`.** (2026-09-29 拍板「to-tickets 不自动补 map」，撤销本 skill 旧有的自动建 map 补丁.) The map is the wayfinder's artifact: an effort directory is only loaded by the plan view when it contains a `map.md`, and a bare `issues/` directory without one is invisible to the view and reported by plan-lint check [2]. If this ticket set needs a map (e.g. it outgrew a spec-only flow), let the user or a wayfinder session create it — do not synthesize one here.
+**Do not create `map.md`.** (2026-09-29 拍板「to-tickets 不自动补 map」，撤销本 skill 旧有的自动建 map 补丁.) The map is the wayfinder's artifact: an effort directory is loaded by the plan view when it contains a `map.md` **or a `spec.md`** (2026-09-29 拍板扩展：有 spec 无 map = spec-only 实施图，同被加载——本 skill 的 spec + issues/ 直出形态即属此类). Only a bare `issues/` directory with neither file is invisible to the view and reported by plan-lint check [2]. If this ticket set needs a map (e.g. it outgrew a spec-only flow), let the user or a wayfinder session create it — do not synthesize one here.
 
 Keep the ordering in mind when numbering: the frontier is any ticket whose blockers are all done. For a purely linear chain that means 01 runs first.
 

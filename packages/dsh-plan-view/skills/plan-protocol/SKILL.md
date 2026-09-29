@@ -63,7 +63,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | `to-approval` | ① 与 ② 之间 | grill / 发现的问题 / 裸 id | `plan-approve` | 待拍板文档（`status: pending` + 四字段头 + 原文照抄 + 四要件） | 不拍板、不手写票 |
 | `plan-approve` | ① 出口 | `to-approval` | 无（下游由影响域清单驱动） | 逐项核定、录结论、**登记影响域清单（含票项）**、推进文档状态（只翻状态、不搬文件、**不当场落票**——2026-09-28 拍板） | 不发明票格式、不散件归档、不当场调 `to-tickets` |
 | `to-spec` | ② 起点 | 决策定案 | `to-tickets` | `.scratch/<feature-slug>/spec.md`（整体写）；**写前读架构正本、写完更新架构正本** | 不拆票 |
-| `to-tickets` | ② 第二环（**票格式正本**） | spec / 待拍板文档 / 推演地图 | `implement*` | **一票一文件** `issues/<NN>-<slug>.md`（map 只由 wayfinder 建——2026-09-29 拍板「to-tickets 不自动补 map」，无 map 目录不被视图加载，plan-lint 校验[2]守门） | 不写 spec、不实现、不建 map |
+| `to-tickets` | ② 第二环（**票格式正本**） | spec / 待拍板文档 / 推演地图 | `implement*` | **一票一文件** `issues/<NN>-<slug>.md`（map 只由 wayfinder 建——2026-09-29 拍板「to-tickets 不自动补 map」，无 map 且无 spec 的目录不被视图加载，plan-lint 校验[2]守门；有 spec 即 spec-only 实施图照常加载） | 不写 spec、不实现、不建 map |
 | `implement` / `implement-spec` | ② 第三环 | 票 | `plan-sync` | 实现 + **合并落地时当场回写票** | 不读盘批量翻状态 |
 | `plan-sync` | ② 收尾（对账） | 已落地代码 | 无 | 把「看起来已完成、票面没翻」的票找回来、对账后回写 | 不凭人话翻状态、不写票 |
 | `to-qa-testcases` | QA 流（测例构建） | 实施图票（`task`） | `run-qa-testcases` | `qa/cases.md`（一图一份）+ 仓库 `qa/` 可执行资产；被测票写 `qa_cases: true` | 不跑用例、不记缺陷 |
@@ -135,7 +135,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
   - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
   - `origin`：产生原因（`readability-rescue` / `proactive` / `review` / `retrospective`）。
 - **审批文档归属（两级，2026-09-29 拍板）**：**grill-with-doc / wayfinder 生成**的审批档落**所属 effort** 的 `.scratch/<effort-slug>/approval/待拍板-<slug>-<date>.md`（独立 `approval/` 目录——随图归组展示、随 effort 归档）；**全局性审批**（跨图 / 无 effort 归属，如治理类拍板）落 **`.plan/` 根层**同名形状（全局件之一，见「全局件」条）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量兼容：`.plan/<effort>/待拍板-*`（旧布局）与 09-29 迁移提根层至 `.plan/` 根的档均原地只读兼容，回迁归入用户单独推进的存量迁移批次；既有根层已 closed 的历史拍板不强制回迁（原地即历史锚点）。
-- **effort 标志**：`.scratch/` 下目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `issues/` 目录不被读取（2026-09-29 议题①裁定：map.md = 文件、effort = 目录、判据 = 目录含 map.md，判据不变、目录根从 `.plan/` 改 `.scratch/`）。全局件目录豁免、`.plan/` 存量子目录兼容此判据，细则见「全局件」条。
+- **effort 标志**：`.scratch/` 下目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `issues/` 目录不被读取（2026-09-29 议题①裁定：map.md = 文件、effort = 目录、判据 = 目录含 map.md，判据不变、目录根从 `.plan/` 改 `.scratch/`）。**2026-09-29 拍板扩展**：目录无 `map.md` 但含 `spec.md` = **spec-only 实施图**，同被视图加载（to-spec/to-tickets 直出的 effort，无路线 Destination，工单/审批子页照常）；视图加载与 plan-lint 检查[2] 的判据同步为「含 map.md **或** spec.md」。全局件目录豁免、`.plan/` 存量子目录兼容此判据，细则见「全局件」条。
 - **非治理目录**：一次性交接 / 审计产物落 `.tmp/handoffs/`、`.tmp/audits/`（2026-09-28 拍板 6b）——不属 plan 生态，视图不加载、`plan-lint` 不扫（`.tmp/` 在仓根，本就在两个治理目录之外）；存量 `.plan/handoffs/`（历史轮快照）只读兼容，plan-lint 豁免（不查缺 map / 状态头 / 同票双档）。
 - **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`，终点=落码验收）。落地工单 `type` 一律写 `task`——**唯一合法值**（2026-09-27 拍板：`impl` 不支持、不识别）。
   - **`impl` 不是票型（2026-09-27 拍板）**：`impl` 源自早期 novel 的目录名（`.plan/<effort>/impl/`、`impl-fe/`），后被误用为 `type` 值沿用；三处正本（本协议、`to-tickets` 票模板、wayfinder `TRACKER-MARKDOWN.md`）**均未将它列为合法票型**。**新写票一律 `task`**；存量 `type: impl` 票由「形态契约变更回扫」条款迁移——**未迁移前该票不被识别为工单**。注意 `impl` 另有两个**非票型**身份，不可混淆、不得清理——插件内部类型名 `MapKind='impl'`（实施图分组标识）与历史目录路径 `impl/`、`impl-fe/`。

@@ -583,7 +583,7 @@ interface PlanData {
   tickets: ParsedTicket[]      // every markdown file found, with its kind resolved
   effortDir: string
   mapRaw: string | null
-  efforts: { dir: string; mapRaw: string }[]  // every effort that has a map
+  efforts: { dir: string; mapRaw: string }[]  // every effort (map.md, or spec.md as a spec-only effort)
 }
 
 function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
@@ -594,10 +594,16 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   // A `.plan/` may hold several efforts side by side, each with its own map.md
   // (novel has two: the workbench and the backend effort). Read every one of
   // them — picking the first would silently hide the others.
+  //
+  // Effort 判据（2026-09-29 拍板扩展）：子目录含 map.md = wayfinder 图；无 map
+  // 但含 spec.md = spec-only 实施图（to-spec/to-tickets 直出的 effort，如
+  // global-items）——同算 effort 加载。mapRaw 为空由 destination 空缺兜底，
+  // EffortChips 对其加 spec-only 标注。
   const subDirs = rootTree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules')
-  const subMaps = await Promise.all(subDirs.map(async (d: FsEntry) => (
-    (await fsTree(scope, d.path)).entries.some((e: FsEntry) => e.name === 'map.md' && !e.isDir) ? d.path : null
-  )))
+  const subMaps = await Promise.all(subDirs.map(async (d: FsEntry) => {
+    const t = await fsTree(scope, d.path)
+    return t.entries.some((e: FsEntry) => !e.isDir && (e.name === 'map.md' || e.name === 'spec.md')) ? d.path : null
+  }))
   const effortDirs = subMaps.filter((p): p is string => p !== null)
   const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs
 
@@ -612,6 +618,7 @@ async function loadPlan(scope: SessionScope, planDir: string): Promise<PlanData 
   // one map at a time with only that map's tickets. Without this the tickets are
   // one undifferentiated pile and a map's own work cannot be isolated.
   const [mapRaws, ...fileGroups] = await Promise.all([
+    // spec-only effort 无 map.md：fsRead 缺档返回非 text，efforts 里 mapRaw 记空串。
     Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`))),
     Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
     // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
@@ -1439,9 +1446,10 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
             const on = effortIdx === i
             const done = allAccepted(e.dir)
             const accent = done ? '#4ed17e' : ACCENT
+            const specOnly = e.mapRaw === ''
             return (
-              <span key={e.dir} onClick={() => setEffortIdx(i)} title={done ? `${e.dir}（全部工单已验收）` : e.dir} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? accent : done ? '#4ed17e55' : BORDER}`, color: on || done ? accent : TEXT_FAINT, background: on ? `${accent}22` : 'transparent' }}>
-                {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()} <span style={{ opacity: .7 }}>{countFor(e.dir)}</span>
+              <span key={e.dir} onClick={() => setEffortIdx(i)} title={`${e.dir}${specOnly ? '（spec-only 实施图：无 map.md，凭 spec.md 加载，路线页无 Destination）' : ''}${done ? '（全部工单已验收）' : ''}`} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? accent : done ? '#4ed17e55' : BORDER}`, color: on || done ? accent : TEXT_FAINT, background: on ? `${accent}22` : 'transparent' }}>
+                {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()}{specOnly ? ' 📄' : ''} <span style={{ opacity: .7 }}>{countFor(e.dir)}</span>
               </span>
             )
           })}

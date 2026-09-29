@@ -13,8 +13,9 @@
 #   1. 同票双档：同一票 id 多处落点，且多于一份未标 superseded-by
 #      （map/readme 豁免；type: ledger 是台账登记簿不是票，2026-09-21 拍板；
 #      qa/ 下的缺陷/测例档不是票，整目录豁免）
-#   2. 目录有票缺 map：路径上没有 map.md → 整个目录不被 plan 视图加载
-#      （根层 qa/ 豁免——无图归属缺陷/测例按设计进第一层「测例&缺陷」tab）
+#   2. 目录有票缺 map：路径上没有 map.md 且没有 spec.md → 整个目录不被 plan 视图
+#      加载（2026-09-29 拍板：无 map 有 spec 的 spec-only 实施图同被加载，不报；
+#      根层 qa/ 豁免——无图归属缺陷/测例按设计进第一层「测例&缺陷」tab）
 #   3. 状态头违规：approval / qa-defect 缺四字段/状态越词表；task 状态越词表；
 #      文件名带「待拍板」或 DEF- 前缀却无 frontmatter（围栏/引用块插件读不到）
 #   4. 票形态：issues/（存量 tickets/）下文件缺 frontmatter 或缺 type/blocked_by；
@@ -95,6 +96,17 @@ has_map_on_path() {
   done
 }
 
+# spec-only effort 豁免（2026-09-29 拍板）：路径上有 spec.md 的目录同样被视图
+# 加载（loadPlan 判据 = map.md 或 spec.md），不应报 missing-map。
+has_spec_on_path() {
+  local d="$1"
+  while :; do
+    [ -f "$d/spec.md" ] && return 0
+    [ "$d" = "$PD" ] && return 1
+    d=$(dirname "$d")
+  done
+}
+
 for PD in $PLAN_DIRS; do
   PD="${PD%/}"
   [ -d "$PD" ] || { echo "错误: 找不到目录 $PD" >&2; exit 2; }
@@ -151,7 +163,7 @@ for PD in $PLAN_DIRS; do
   echo
 
   # ── 2. 目录有票却缺 map.md ─────────────────────────────────────────────────
-  echo "[2] 目录有票缺 map.md（该目录不会被 plan 视图加载）"
+  echo "[2] 目录有票缺 map.md 且缺 spec.md（该目录不会被 plan 视图加载）"
   # ticket-like = 除 map/readme 外的全部 .md，按目录聚合；根层文档合法免查
   awk -F'\t' '{l=tolower($2); if (l!="map" && l!="readme") print $1"\t"$3}' "$TMP/meta.tsv" \
     | sort -u > "$TMP/tl.tsv"
@@ -162,9 +174,10 @@ for PD in $PLAN_DIRS; do
     [ "$d" = "$PD" ] && continue
     case "$d" in "$PD"/qa|"$PD"/qa/*) continue ;; esac
     has_map_on_path "$d" && continue
+    has_spec_on_path "$d" && continue
     n=$(awk -F'\t' -v dd="$d" '$1==dd' "$TMP/tl.tsv" | wc -l | tr -d ' ')
     missing=$((missing + 1))
-    note "✗ ${d}/: missing-map — $n 个票形文件在 plan 视图不会加载的目录下（路径上无 map.md）"
+    note "✗ ${d}/: missing-map — $n 个票形文件在 plan 视图不会加载的目录下（路径上无 map.md 且无 spec.md）"
   done < "$TMP/dirs.txt"
   [ "$missing" -eq 0 ] && note "✓ 无"
   findings=$((findings + missing))

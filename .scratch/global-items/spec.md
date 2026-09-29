@@ -47,4 +47,4 @@ novel 侧改动、map.md 创建（wayfinder/用户职权）、CONTEXT.md 收词�
 
 > **归宿（2026-09-29）**：→ archive（过程物）——已落地凭据：commit 1a38ef6（协议+回扫+拍板档）、b2aa101（lint 白名单+违例迁移）、01c8aa2（指针补记）、21e1a75（安装目标）；semantica `5f63f71e`（决策因录，链 novel 推断 `90bb0996`）
 
-剩余实施面只有一票：视图文案统一（拍板档影响域 #5 可选件转正式）。本 effort 无 map.md——2026-09-29 拍板「to-tickets 不自动补 map」，map 归 wayfinder/用户；视图加载与 lint [2] 发现待用户拍板处置。
+剩余实施面两票：05 视图文案统一、06 spec-only effort 视图适配（2026-09-29 用户拍板原话：「没有 map，就必须有 spec，只有 spec 就视为实施图。也要展示，需要页面兼容」）。本 effort 即首个 spec-only 实施图——判据扩展（map.md 或 spec.md）落地后自身被视图加载，原「无 map 待拍板」已决。
