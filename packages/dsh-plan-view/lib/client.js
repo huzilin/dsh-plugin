@@ -214,7 +214,8 @@ window.__ModuleLoader__.load({
 		* layout + .plan/ — global only: root approvals & global qa/ledger, never an
 		* effort), derives ticket status per the TRACKER-MARKDOWN
 		* contract, and renders the tabbed surface:
-		*   总览 · 地图（Kanban / Table / Relation DAG）· 测例&缺陷 · 台账 · 说明
+		*   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
+		*   缺陷 · 台账 · CONTEXT · 说明（2026-09-30 读取契约拍版）
 		*
 		* All views share a unified dark theme and markdown-rendered detail panels.
 		* Self-contained: uses its own api module, inline styles, zero CSS deps.
@@ -777,26 +778,26 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		}
 		const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
 		const ROOT_GROUP = "\0root";
-		const TICKET_DIR_NAMES = /* @__PURE__ */ new Set(["tickets", "issues"]);
+		const COLLECT_DIR_NAMES = /* @__PURE__ */ new Set([
+			"issues",
+			"tickets",
+			"approval",
+			"qa",
+			"ledger",
+			"impl",
+			"impl-fe"
+		]);
 		async function collectTicketFiles(scope, effortDir) {
 			const tree = await fsTree(scope, effortDir);
-			const inTicketDirs = tree.entries.filter((e) => e.isDir && TICKET_DIR_NAMES.has(e.name));
+			const inDirs = tree.entries.filter((e) => e.isDir && !e.hidden && COLLECT_DIR_NAMES.has(e.name));
 			const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i;
-			const subDirs = tree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules");
-			const groups = await Promise.all([
-				...inTicketDirs.map((d) => fsTree(scope, d.path).then((t) => mdEntries(t).map((f) => ({
-					file: f,
-					group: d.name
-				})))),
-				Promise.resolve(mdEntries(tree).map((f) => ({
-					file: f,
-					group: ROOT_GROUP
-				}))),
-				...subDirs.filter((d) => !TICKET_DIR_NAMES.has(d.name)).map(async (d) => mdEntries(await fsTree(scope, d.path)).map((f) => ({
-					file: f,
-					group: d.name
-				})))
-			]);
+			const groups = await Promise.all([...inDirs.map((d) => fsTree(scope, d.path).then((t) => mdEntries(t).map((f) => ({
+				file: f,
+				group: d.name
+			})))), Promise.resolve(mdEntries(tree).map((f) => ({
+				file: f,
+				group: ROOT_GROUP
+			})))]);
 			const seen = /* @__PURE__ */ new Set();
 			const all = [];
 			for (const e of groups.flat()) {
@@ -817,8 +818,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				return (await fsTree(scope, d.path)).entries.some((e) => !e.isDir && (e.name === "map.md" || e.name === "spec.md")) ? d.path : null;
 			}))).filter((p) => p !== null);
 			const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs;
-			const [mapRaws, ...fileGroups] = await Promise.all([
+			const [mapRaws, specRaws, ...fileGroups] = await Promise.all([
 				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`).catch(() => null))),
+				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/spec.md`).catch(() => null))),
 				Promise.resolve(mdEntries(rootTree).map((f) => ({
 					file: f,
 					from: ROOT_GROUP,
@@ -842,7 +844,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			]);
 			const efforts = allEfforts.map((dir, i) => ({
 				dir,
-				mapRaw: mapRaws[i]?.kind === "text" ? mapRaws[i].content : ""
+				mapRaw: mapRaws[i]?.kind === "text" ? mapRaws[i].content : "",
+				specRaw: specRaws[i]?.kind === "text" ? specRaws[i].content : void 0
 			}));
 			const seen = /* @__PURE__ */ new Set();
 			const picked = [];
@@ -3641,6 +3644,23 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			(0, react.useEffect)(() => {
 				setEffortIdx(-1);
 			}, [round]);
+			const [contextRaw, setContextRaw] = (0, react.useState)(null);
+			(0, react.useEffect)(() => {
+				let alive = true;
+				setContextRaw(null);
+				if (!scope.cwd) {
+					setContextRaw("");
+					return;
+				}
+				fsRead(scope, `${scope.cwd}/CONTEXT.md`).then((r) => {
+					if (alive) setContextRaw(r.kind === "text" ? r.content : "");
+				}).catch(() => {
+					if (alive) setContextRaw("");
+				});
+				return () => {
+					alive = false;
+				};
+			}, [scope.sessionId, scope.cwd]);
 			const onChanged = (0, react.useCallback)(() => {
 				load();
 				loadSessions();
@@ -3651,8 +3671,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
 			const defects = (0, react.useMemo)(() => all.filter((t) => classify(t) === "defect"), [all]);
 			const cases = (0, react.useMemo)(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
-			const rootCases = (0, react.useMemo)(() => cases.filter((t) => t.effort === ROOT_GROUP), [cases]);
-			const rootDefects = (0, react.useMemo)(() => defects.filter((t) => t.effort === ROOT_GROUP), [defects]);
 			const mapOwnTickets = routeTickets;
 			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
 			const mapTickets = (0, react.useMemo)(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
@@ -3734,6 +3752,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			});
 			const planDir = data.effortDir;
 			const readOnly = round !== null;
+			const selEffort = effortIdx >= 0 ? data.efforts[effortIdx] : void 0;
 			const tabBtn = (active) => ({
 				padding: "8px 14px",
 				border: "none",
@@ -3790,14 +3809,24 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					count: openTickets(mapTickets)
 				},
 				{
-					id: "qa",
-					label: "🧪 测例&缺陷",
-					count: openDefectCount(rootDefects) + rootCases.length
+					id: "cases",
+					label: "🧪 测例",
+					count: cases.length
+				},
+				{
+					id: "defects",
+					label: "🐞 缺陷",
+					count: openDefectCount(defects)
 				},
 				{
 					id: "ledger",
 					label: "📒 台账",
 					count: openLedgerCount(globalLedgers)
+				},
+				{
+					id: "context",
+					label: "📐 CONTEXT",
+					count: 0
 				},
 				{
 					id: "guide",
@@ -3921,6 +3950,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									"🗺️ 路线",
 									openTickets(mapTickets)
 								],
+								...selEffort === void 0 ? [] : selEffort.mapRaw !== "" ? [[
+									"mapdoc",
+									"🗺️ map",
+									0
+								]] : selEffort.specRaw ? [[
+									"specdoc",
+									"📄 spec",
+									0
+								]] : [],
 								[
 									"tickets",
 									"🎫 工单",
@@ -4028,6 +4066,22 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								readOnly
 							})
 						] }),
+						mapSub === "mapdoc" && selEffort !== void 0 && selEffort.mapRaw !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								overflowY: "auto",
+								padding: 16
+							},
+							dangerouslySetInnerHTML: { __html: md(selEffort.mapRaw) }
+						}),
+						mapSub === "specdoc" && selEffort !== void 0 && !!selEffort.specRaw && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								overflowY: "auto",
+								padding: 16
+							},
+							dangerouslySetInnerHTML: { __html: md(selEffort.specRaw) }
+						}),
 						mapSub === "tickets" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
 							tickets: mapTickets,
 							planDir,
@@ -4090,83 +4144,89 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							readOnly
 						})
 					] }),
-					top === "qa" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					top === "cases" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							flex: 1,
 							display: "flex",
 							flexDirection: "column",
 							overflow: "hidden"
 						},
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								style: {
-									padding: "8px 14px",
-									borderBottom: `1px solid ${BORDER}`,
-									fontSize: 11,
-									color: TEXT_FAINT
-								},
-								children: "全局件的测例与缺陷（无图归属：SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。"
-							}),
-							rootDefects.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									flex: 1,
-									minHeight: 120,
-									display: "flex",
-									flexDirection: "column",
-									overflow: "hidden",
-									borderBottom: `1px solid ${BORDER}`
-								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									style: {
-										padding: "6px 14px",
-										fontSize: 11,
-										fontWeight: 700,
-										color: "#f2555a"
-									},
-									children: "🐞 缺陷"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
-									defects: rootDefects,
-									scope,
-									ctx,
-									sessions,
-									onChanged,
-									readOnly
-								})]
-							}),
-							rootCases.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									flex: 1,
-									minHeight: 120,
-									display: "flex",
-									flexDirection: "column",
-									overflow: "hidden"
-								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									style: {
-										padding: "6px 14px",
-										fontSize: 11,
-										fontWeight: 700,
-										color: "#609bfa"
-									},
-									children: "🧪 测例"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CasesView, {
-									cases: rootCases,
-									scope,
-									ctx,
-									readOnly
-								})]
-							}),
-							rootDefects.length === 0 && rootCases.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								style: {
-									flex: 1,
-									display: "flex",
-									alignItems: "center",
-									justifyContent: "center",
-									color: TEXT_FAINT
-								},
-								children: "`.plan/qa/` 下暂无无图归属的测例 / 缺陷文档（全局件常驻 `.plan/qa/`，不随轮迁）。"
-							})
-						]
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								padding: "8px 14px",
+								borderBottom: `1px solid ${BORDER}`,
+								fontSize: 11,
+								color: TEXT_FAINT
+							},
+							children: "测例聚合（2026-09-30 拍板拆分）：各 effort `qa/cases.md` ＋ 全局回测 `.plan/qa/cases-*.md`；图内测例也在地图页「🧪 测例」子页按图查看。"
+						}), cases.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CasesView, {
+							cases,
+							scope,
+							ctx,
+							readOnly
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								color: TEXT_FAINT
+							},
+							children: "暂无测例文档（一图一份 `qa/cases.md`；无图归属回测落 `.plan/qa/cases-*.md`）。"
+						})]
+					}),
+					top === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							flex: 1,
+							display: "flex",
+							flexDirection: "column",
+							overflow: "hidden"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								padding: "8px 14px",
+								borderBottom: `1px solid ${BORDER}`,
+								fontSize: 11,
+								color: TEXT_FAINT
+							},
+							children: "缺陷聚合（2026-09-30 拍板拆分）：各 effort `qa/DEF-*.md` ＋ 全局无图归属 `.plan/qa/` 缺陷；图内缺陷也在地图页「🐞 缺陷」子页按图查看。"
+						}), defects.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
+							defects,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								color: TEXT_FAINT
+							},
+							children: "暂无缺陷文档（`type: qa-defect` 一缺陷一文件，加头 = 被看见）。"
+						})]
+					}),
+					top === "context" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						style: {
+							flex: 1,
+							overflowY: "auto",
+							padding: 16
+						},
+						children: contextRaw === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								color: TEXT_FAINT,
+								fontSize: 12
+							},
+							children: "读取 CONTEXT.md…"
+						}) : contextRaw === "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								color: TEXT_FAINT,
+								fontSize: 12
+							},
+							children: "本仓仓根暂无 CONTEXT.md（领域词汇表/概念正本落点；建立后本页自动呈现）。"
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { dangerouslySetInnerHTML: { __html: md(contextRaw) } })
 					}),
 					top === "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideView, { scope }),
 					top === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
@@ -4289,13 +4349,22 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(H, { children: "这个页面是什么" }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(P, { children: [
-							"总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的是两个治理目录下的 markdown：tracker 类 （spec / map / issues 票）在 ",
+							"第一行页签（2026-09-30 拍板）：总览 / 地图 / 测例 / 缺陷 / 台账 / CONTEXT / 说明。测例与缺陷各自成页并",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+								style: { color: TEXT },
+								children: "聚合全局"
+							}),
+							"（各 effort ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "qa/" }),
+							" ＋ ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".plan/qa/" }),
+							"）； 【CONTEXT】渲染仓根 ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "CONTEXT.md" }),
+							"（词汇表/领域正本）。地图页内：推演图第 2 子页为【map】 （map.md 正文）、实施图（spec-only）第 2 子页为【spec】（spec.md 正文）。 各页显示的是两个治理目录下的 markdown：tracker 类（spec / map / issues 票）在 ",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".scratch/" }),
-							"，审批档与全局缺陷/台账在 ",
+							"， 审批档与全局缺陷/台账在 ",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".plan/" }),
-							"（存量未迁移图仍按旧布局留在 ",
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".plan/" }),
-							"，一并显示）。 本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓",
+							"。本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议 （每环节的位置与交接契约）记在同仓 ",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "skills/plan-protocol/SKILL.md" }),
 							"，本页是它的可视化速览。"
 						] }),

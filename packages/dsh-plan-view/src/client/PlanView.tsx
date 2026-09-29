@@ -3,7 +3,8 @@
  * layout + .plan/ — global only: root approvals & global qa/ledger, never an
  * effort), derives ticket status per the TRACKER-MARKDOWN
  * contract, and renders the tabbed surface:
- *   总览 · 地图（Kanban / Table / Relation DAG）· 测例&缺陷 · 台账 · 说明
+ *   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
+ *   缺陷 · 台账 · CONTEXT · 说明（2026-09-30 读取契约拍版）
  *
  * All views share a unified dark theme and markdown-rendered detail panels.
  * Self-contained: uses its own api module, inline styles, zero CSS deps.
@@ -611,29 +612,22 @@ const ROOT_GROUP = '\u0000root'
 //               <effort>/impl-fe/*.md      (one level down, grouped by workstream)
 // Read all that exist rather than assuming one, so a repo only has to match
 // *a* convention instead of this view's.
-const TICKET_DIR_NAMES = new Set(['tickets', 'issues'])
+// 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六）：路线页数据源 = issues/
+// （存量 tickets/ 兼容）；approval|qa|ledger 是图内单据目录（待拍板/缺陷/台账，
+// 其内文档按 kind 分类）；impl|impl-fe 存量只读（协议「impl 不是票型」条：历史
+// 路径不得清理）。assets/ 是调研资源不是票，不再收集；契约外自建目录
+//（fengping/specs/briefs 类）是视图不可见的孤岛，由 plan-lint 检查[8] 报违例
+// ——「tree 之外的目录即违例，结构即契约」。
+const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa', 'ledger', 'impl', 'impl-fe'])
 
 async function collectTicketFiles(scope: SessionScope, effortDir: string): Promise<{ file: FsEntry; group: string }[]> {
   const tree = await fsTree(scope, effortDir)
-  const inTicketDirs = tree.entries.filter((e: FsEntry) => e.isDir && TICKET_DIR_NAMES.has(e.name))
-  // Read every ticket source this effort has, rather than stopping at the first
-  // one found. An effort commonly holds both the wayfinder-native `issues/`
-  // (legacy: `tickets/`) and workstream directories beside it (`impl/`,
-  // `impl-fe/`); returning early on the first hit would silently hide every
-  // ticket in the others.
-  //
-  // Each file keeps the name of the subdirectory it came from, so a view can
-  // separate e.g. design tickets from implementation ones.
-  //
+  const inDirs = tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && COLLECT_DIR_NAMES.has(e.name))
   // Skip map/spec/readme companions: they describe the effort, they are not tickets.
   const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
-  const subDirs = tree.entries.filter((e: FsEntry) => e.isDir && !e.hidden && e.name !== 'node_modules')
   const groups = await Promise.all([
-    ...inTicketDirs.map(d => fsTree(scope, d.path).then(t => mdEntries(t).map(f => ({ file: f, group: d.name })))),
+    ...inDirs.map(d => fsTree(scope, d.path).then(t => mdEntries(t).map(f => ({ file: f, group: d.name })))),
     Promise.resolve(mdEntries(tree).map(f => ({ file: f, group: ROOT_GROUP }))),
-    ...subDirs
-      .filter((d: FsEntry) => !TICKET_DIR_NAMES.has(d.name))
-      .map(async (d: FsEntry) => mdEntries(await fsTree(scope, d.path)).map(f => ({ file: f, group: d.name }))),
   ])
   const seen = new Set<string>()
   const all: { file: FsEntry; group: string }[] = []
@@ -660,7 +654,7 @@ interface PlanData {
   tickets: ParsedTicket[]      // every markdown file found, with its kind resolved
   effortDir: string
   mapRaw: string | null
-  efforts: { dir: string; mapRaw: string }[]  // every effort (map.md, or spec.md as a spec-only effort)
+  efforts: { dir: string; mapRaw: string; specRaw?: string }[]  // every effort (map.md, or spec.md as a spec-only effort)
 }
 
 function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
@@ -699,11 +693,15 @@ async function loadPlan(scope: SessionScope, planDir: string, opts?: { effortSca
   // Each group remembers which effort it came from, so the route view can show
   // one map at a time with only that map's tickets. Without this the tickets are
   // one undifferentiated pile and a map's own work cannot be isolated.
-  const [mapRaws, ...fileGroups] = await Promise.all([
+  const [mapRaws, specRaws, ...fileGroups] = await Promise.all([
     // spec-only effort 无 map.md：fsRead 缺档在 better-sidebar 侧是 fs-error 抛错
     // （readText 对 ENOENT 抛 400），并非「返回非 text」——不容缺会让整个
     // `.scratch` 侧 loadPlan 被上层 .catch(()=>null) 吞掉（2026-09-29 nvwa 实证）。
     Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`).catch(() => null))),
+    // spec.md 正文（2026-09-30 拍板：实施图 effort 的第 2 子页 tab 数据源）。
+    // 有 map 的 effort 也读（map+spec 并存合法），但 spec 子页只对无 map 的
+    // spec-only effort 显示——多余的一次读取换实现简单。
+    Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/spec.md`).catch(() => null))),
     Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
     // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
     rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'ledger')
@@ -717,7 +715,9 @@ async function loadPlan(scope: SessionScope, planDir: string, opts?: { effortSca
     ...effortDirs.map(async (d: string) => await collectTicketFiles(scope, d).then(gs => gs.map(g => ({ file: g.file, from: d, group: g.group })))),
   ])
   const efforts = allEfforts.map((dir: string, i: number) => ({
-    dir, mapRaw: mapRaws[i]?.kind === 'text' ? mapRaws[i].content : '',
+    dir,
+    mapRaw: mapRaws[i]?.kind === 'text' ? mapRaws[i].content : '',
+    specRaw: specRaws[i]?.kind === 'text' ? specRaws[i].content : undefined,
   }))
   const seen = new Set<string>()
   const picked: { file: FsEntry; from: string; group: string }[] = []
@@ -1545,7 +1545,7 @@ function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, re
 }
 
 function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }: {
-  efforts: { dir: string; mapRaw: string }[]
+  efforts: { dir: string; mapRaw: string; specRaw?: string }[]
   all: ParsedTicket[]
   effortIdx: number
   setEffortIdx: (i: number) => void
@@ -1598,7 +1598,7 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
 
 function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
-  efforts: { dir: string; mapRaw: string }[]
+  efforts: { dir: string; mapRaw: string; specRaw?: string }[]
   defects: ParsedTicket[]
   ledgers: ParsedTicket[]
   effortIdx: number
@@ -1790,10 +1790,12 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'overview' | 'map' | 'qa' | 'ledger' | 'guide'
+type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'context' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
-	type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
+// mapdoc/specdoc（2026-09-30 拍板）：推演图第 2 子页 = map.md 正文、实施图
+//（spec-only）第 2 子页 = spec.md 正文——按选中 effort 的文件有无互斥显示。
+	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
 
 export function PlanView(props: { ctx: any; scope: any }) {
   const { ctx, scope } = props as { ctx: any; scope: SessionScope }
@@ -1840,6 +1842,18 @@ export function PlanView(props: { ctx: any; scope: any }) {
   }, [scope.sessionId, scope.cwd])
   // 换轮后旧 effort 下标可能越界，回到「全部地图」。
   useEffect(() => { setEffortIdx(-1) }, [round])
+  // CONTEXT.md（2026-09-30 拍板：全局第一行末位 tab）——仓根词汇表/领域正本，
+  // 与 plan 数据无关，独立读取；缺档/非文本统一按空态呈现（tab 常驻不隐藏）。
+  const [contextRaw, setContextRaw] = useState<string | null>(null) // null=未定（加载中），''=缺失
+  useEffect(() => {
+    let alive = true
+    setContextRaw(null)
+    if (!scope.cwd) { setContextRaw(''); return }
+    fsRead(scope, `${scope.cwd}/CONTEXT.md`)
+      .then(r => { if (alive) setContextRaw(r.kind === 'text' ? r.content : '') })
+      .catch(() => { if (alive) setContextRaw('') })
+    return () => { alive = false }
+  }, [scope.sessionId, scope.cwd])
   // Post-dispatch refresh: the plan files may have a new `session:` binding and
   // the session map may have a new entry — both reread together.
   const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])
@@ -1853,8 +1867,8 @@ export function PlanView(props: { ctx: any; scope: any }) {
   // 并作为测例节点进入串联画布（按「票 NN」引用挂到被测票下）。
   const cases = useMemo(() => all.filter(t => ticketKind(t) === 'cases'), [all])
   // 根层 qa/（无图归属）：SOP 回测、整页回测等测例 + 独立缺陷，进第一层「测例&缺陷」tab
-  const rootCases = useMemo(() => cases.filter(t => t.effort === ROOT_GROUP), [cases])
-  const rootDefects = useMemo(() => defects.filter(t => t.effort === ROOT_GROUP), [defects])
+  // 全局层测例/缺陷（.plan/qa/）自 2026-09-30 拍板起并入第一行【测例】【缺陷】
+  // 两个 tab 的聚合数据源（cases/defects 全量），不再单独过滤成页。
   // Legacy `impl/` / `impl-fe/` directories are being retired; they no longer get
   // their own board — their tickets show in the normal ticket view until removed.
   const mapOwnTickets = routeTickets
@@ -1934,6 +1948,8 @@ export function PlanView(props: { ctx: any; scope: any }) {
 
   const planDir = data.effortDir
   const readOnly = round !== null
+  // 选中 effort（第 2 子页 map/spec 的数据源；「全部地图」态为 undefined）。
+  const selEffort = effortIdx >= 0 ? data.efforts[effortIdx] : undefined
   const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '8px 14px', border: 'none', borderRadius: 7, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
   // 子页签用下划线 tab 语言（导航），与 chips 的 pill 语言（筛选）分层。
   const mapTab = (active: boolean): React.CSSProperties => ({ padding: '8px 14px 9px', border: 'none', borderRadius: 0, cursor: 'pointer', background: 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400, borderBottom: active ? `2px solid ${ACCENT_SOFT}` : '2px solid transparent' })
@@ -1955,11 +1971,15 @@ export function PlanView(props: { ctx: any; scope: any }) {
   }, 0)
   const pendingApprovals = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'approval' && isPending(t)).length
 
+  // 第一行 tab（2026-09-30 拍板拆分与追加）：测例/缺陷各自成 tab 且聚合
+  // （各 effort qa/ + .plan/qa/ 全局件）；【CONTEXT】居第一行末位。
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
     { id: 'map', label: '🗺️ 地图', count: openTickets(mapTickets) },
-    { id: 'qa', label: '🧪 测例&缺陷', count: openDefectCount(rootDefects) + rootCases.length },
+    { id: 'cases', label: '🧪 测例', count: cases.length },
+    { id: 'defects', label: '🐞 缺陷', count: openDefectCount(defects) },
     { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
+    { id: 'context', label: '📐 CONTEXT', count: 0 },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
@@ -2011,6 +2031,12 @@ export function PlanView(props: { ctx: any; scope: any }) {
           <div style={{ display: 'flex', gap: 2, padding: '4px 14px 0', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
             {([
               ['route', '🗺️ 路线', openTickets(mapTickets)],
+              // 第 2 子页（2026-09-30 拍板）：推演图 =【map】渲染 map.md 正文；
+              // 实施图（spec-only）=【spec】渲染 spec.md 正文。按选中 effort 的
+              // 文件有无互斥插入；「全部地图」态无单一正文，不显示。
+              ...(selEffort === undefined ? [] : selEffort.mapRaw !== ''
+                ? [['mapdoc', '🗺️ map', 0] as [MapSub, string, number]]
+                : selEffort.specRaw ? [['specdoc', '📄 spec', 0] as [MapSub, string, number]] : []),
               ['tickets', '🎫 工单', openTickets(mapTickets)],
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
@@ -2039,6 +2065,14 @@ export function PlanView(props: { ctx: any; scope: any }) {
               {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
             </>
           )}
+          {/* 第 2 子页正文：map.md（推演图）/ spec.md（spec-only 实施图），与
+              票面详情同一 markdown 渲染器。 */}
+          {mapSub === 'mapdoc' && selEffort !== undefined && selEffort.mapRaw !== '' && (
+            <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} dangerouslySetInnerHTML={{ __html: md(selEffort.mapRaw) }} />
+          )}
+          {mapSub === 'specdoc' && selEffort !== undefined && !!selEffort.specRaw && (
+            <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} dangerouslySetInnerHTML={{ __html: md(selEffort.specRaw as string) }} />
+          )}
           {mapSub === 'tickets' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
@@ -2048,28 +2082,33 @@ export function PlanView(props: { ctx: any; scope: any }) {
           {mapSub === 'speculation' && <SpeculationView tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
-      {top === 'qa' && (
+      {top === 'cases' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
-            全局件的测例与缺陷（无图归属：SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。
+            测例聚合（2026-09-30 拍板拆分）：各 effort `qa/cases.md` ＋ 全局回测 `.plan/qa/cases-*.md`；图内测例也在地图页「🧪 测例」子页按图查看。
           </div>
-          {rootDefects.length > 0 && (
-            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderBottom: `1px solid ${BORDER}` }}>
-              <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#f2555a' }}>🐞 缺陷</div>
-              <DefectView defects={rootDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
-            </div>
-          )}
-          {rootCases.length > 0 && (
-            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#609bfa' }}>🧪 测例</div>
-              <CasesView cases={rootCases} scope={scope} ctx={ctx} readOnly={readOnly} />
-            </div>
-          )}
-          {rootDefects.length === 0 && rootCases.length === 0 && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>
-              `.plan/qa/` 下暂无无图归属的测例 / 缺陷文档（全局件常驻 `.plan/qa/`，不随轮迁）。
-            </div>
-          )}
+          {cases.length > 0
+            ? <CasesView cases={cases} scope={scope} ctx={ctx} readOnly={readOnly} />
+            : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>暂无测例文档（一图一份 `qa/cases.md`；无图归属回测落 `.plan/qa/cases-*.md`）。</div>}
+        </div>
+      )}
+      {top === 'defects' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
+            缺陷聚合（2026-09-30 拍板拆分）：各 effort `qa/DEF-*.md` ＋ 全局无图归属 `.plan/qa/` 缺陷；图内缺陷也在地图页「🐞 缺陷」子页按图查看。
+          </div>
+          {defects.length > 0
+            ? <DefectView defects={defects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+            : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>暂无缺陷文档（`type: qa-defect` 一缺陷一文件，加头 = 被看见）。</div>}
+        </div>
+      )}
+      {top === 'context' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+          {contextRaw === null
+            ? <div style={{ color: TEXT_FAINT, fontSize: 12 }}>读取 CONTEXT.md…</div>
+            : contextRaw === ''
+              ? <div style={{ color: TEXT_FAINT, fontSize: 12 }}>本仓仓根暂无 CONTEXT.md（领域词汇表/概念正本落点；建立后本页自动呈现）。</div>
+              : <div dangerouslySetInnerHTML={{ __html: md(contextRaw) }} />}
         </div>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
@@ -2123,11 +2162,13 @@ function GuideView({ scope }: { scope: SessionScope }) {
 
         <H>这个页面是什么</H>
         <P>
-          总览 / 路线 / 工单 / 待拍板 / 台账 / 缺陷 各页显示的是两个治理目录下的 markdown：tracker 类
-          （spec / map / issues 票）在 <Code>.scratch/</Code>，审批档与全局缺陷/台账在 <Code>.plan/</Code>
-          （存量未迁移图仍按旧布局留在 <Code>.plan/</Code>，一并显示）。
-          本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议（每环节的位置与交接契约）记在同仓
-          <Code>skills/plan-protocol/SKILL.md</Code>，本页是它的可视化速览。
+          第一行页签（2026-09-30 拍板）：总览 / 地图 / 测例 / 缺陷 / 台账 / CONTEXT / 说明。测例与缺陷各自成页并
+          <strong style={{ color: TEXT }}>聚合全局</strong>（各 effort <Code>qa/</Code> ＋ <Code>.plan/qa/</Code>）；
+          【CONTEXT】渲染仓根 <Code>CONTEXT.md</Code>（词汇表/领域正本）。地图页内：推演图第 2 子页为【map】
+          （map.md 正文）、实施图（spec-only）第 2 子页为【spec】（spec.md 正文）。
+          各页显示的是两个治理目录下的 markdown：tracker 类（spec / map / issues 票）在 <Code>.scratch/</Code>，
+          审批档与全局缺陷/台账在 <Code>.plan/</Code>。本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议
+          （每环节的位置与交接契约）记在同仓 <Code>skills/plan-protocol/SKILL.md</Code>，本页是它的可视化速览。
         </P>
 
         <H>主流程：先决策，再落地</H>
