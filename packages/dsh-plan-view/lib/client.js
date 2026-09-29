@@ -148,6 +148,52 @@ window.__ModuleLoader__.load({
 			}
 		}
 		//#endregion
+		//#region src/client/file-path.ts
+		/**
+		* 票面文件路径的两个纯函数：①按会话地址化（点击打开用）；②按工作区相对化
+		* （页面显示用）。抽出来是因为渲染点有十来个，各写一遍必然漂移；且本模块
+		* 无 React、无 DOM，可直接被 `node --test` 加载（见 `test/file-path.test.js`）。
+		*
+		* 地址形态镜像官方 `@deepseek-ai/dsh-util-workspace-path` 的 `sessionFileAddress`：
+		* `dsh-resource://file/session/<sessionId>/<path>`，路径段逐段百分号编码。
+		* 不直接依赖该包——本插件自包含（零运行时依赖，见 api.ts 同款取舍），而地址
+		* 语法是右侧栏契约的一部分，宿主换语法时全站一起换，此处不是唯一的耦合点。
+		*
+		* **绝对路径在地址里带前导空段**（`…/session/<id>//Users/…`）——这不是笔误，
+		* 是官方语法：`parseFileAddress` 靠那个空段把路径还原成绝对形式。视图显示的是
+		* 相对工作区的短路径（见 `displayPath`），所以常态下不出现；仓外文件才走这条。
+		*/
+		/** 编码一个路径段：保留 `:` 字面量，让 Windows 盘符读起来仍是原样。 */
+		const encodeSegment = (segment) => encodeURIComponent(segment).replace(/%3A/gi, ":");
+		/**
+		* 一个文件在某个会话下的资源地址——与聊天里 `@文件`、文件树点开是同一条地址，
+		* 右侧栏据此路由到文本预览类型。
+		*
+		* 传进来的路径本就可相对或绝对：绝对路径的地址里保留一个前导空段（官方语法），
+		* 相对路径则原样拼在会话 id 后。
+		* @param sessionId - 读取该文件的会话 id。
+		* @param path - 绝对路径，或相对该会话工作目录的路径。
+		* @returns `dsh-resource://file/session/<sessionId>/<path>` 地址。
+		*/
+		function fileAddress(sessionId, path) {
+			const encoded = path.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "").split("/").map(encodeSegment).join("/");
+			return `dsh-resource://file/session/${encodeSegment(sessionId)}/${encoded}`;
+		}
+		/**
+		* 页面显示用的路径：在工作目录内显示相对形式（`.scratch/<effort>/issues/14-….md`），
+		* 仓外路径原样显示（绝对路径）——相对化只为好读，不改变它指向的文件。
+		* @param path - 文件的绝对路径（或已相对的路径）。
+		* @param cwd - 会话工作目录；未知则原样返回。
+		* @returns 显示路径。
+		*/
+		function displayPath(path, cwd) {
+			const normalized = path.replace(/\\/g, "/");
+			const root = cwd?.replace(/\\/g, "/").replace(/\/+$/, "");
+			if (root === void 0 || root === "") return normalized;
+			if (normalized === root) return ".";
+			return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : normalized;
+		}
+		//#endregion
 		//#region src/client/PlanView.tsx
 		/**
 		* Plan view v2: reads the governance roots (.scratch/ — all efforts, tracker
@@ -482,6 +528,73 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			"done",
 			"out_of_scope"
 		];
+		/**
+		* 在右栏打开一个治理目录下的文件。
+		* @param ctx - 客户端根上下文（需注入 `sidebarRight`）。
+		* @param scope - 当前会话作用域：地址按会话解析路径。
+		* @param path - 文件的绝对路径；缺省时退回文件名（服务端按会话 cwd 解析）。
+		* @returns 是否已发起打开（服务缺失时 false，调用方据此提示）。
+		*/
+		function openFileInSidebar(ctx, scope, path, fallbackName) {
+			try {
+				const sidebar = ctx?.get?.("sidebarRight");
+				if (sidebar?.openResource === void 0) return false;
+				sidebar.openResource(fileAddress(scope.sessionId, path ?? fallbackName));
+				return true;
+			} catch {
+				return false;
+			}
+		}
+		/**
+		* 票面的文件路径行：一行等宽小字，点击在右栏打开该文件。
+		*
+		* 显示的是**相对工作区**的路径（`.scratch/doc-authority/issues/05-….md`），仓外
+		* 文件显示绝对路径——相对化只为好读。整行是按钮（键盘可达、有 hover 反馈），
+		* 并 `stopPropagation`：卡片本身点击是「打开详情弹窗」，两件事不能互相吞掉。
+		* @param props.ticket - 该行所属的票（取 `path` / `file`）。
+		* @param props.scope - 会话作用域，决定地址解析与相对化基准。
+		* @param props.ctx - 客户端根上下文。
+		* @param props.size - 字号，默认 10.5；详情弹窗用 11.5。
+		* @returns 路径按钮。
+		*/
+		function FilePath({ ticket, scope, ctx, size = 10.5 }) {
+			const full = ticket.path;
+			const shown = full === void 0 ? ticket.file : displayPath(full, scope.cwd);
+			const open = (e) => {
+				e.stopPropagation();
+				openFileInSidebar(ctx, scope, full, ticket.file);
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				onClick: open,
+				title: `点击在右栏打开：${full ?? ticket.file}`,
+				style: {
+					display: "block",
+					maxWidth: "100%",
+					padding: 0,
+					border: "none",
+					background: "transparent",
+					textAlign: "left",
+					fontFamily: "ui-monospace,Menlo,monospace",
+					fontSize: size,
+					lineHeight: 1.5,
+					color: TEXT_FAINT,
+					cursor: "pointer",
+					overflow: "hidden",
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap"
+				},
+				onMouseEnter: (e) => {
+					e.currentTarget.style.color = ACCENT_SOFT;
+					e.currentTarget.style.textDecoration = "underline";
+				},
+				onMouseLeave: (e) => {
+					e.currentTarget.style.color = TEXT_FAINT;
+					e.currentTarget.style.textDecoration = "none";
+				},
+				children: shown
+			});
+		}
 		const TICKET_TYPES = new Set([
 			"task",
 			"research",
@@ -1079,6 +1192,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								})
 							]
 						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: { padding: "2px 20px 0" },
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+								ticket,
+								scope,
+								ctx,
+								size: 11.5
+							})
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
 								padding: "0 20px 12px",
@@ -1491,145 +1613,153 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										cursor: "pointer"
 									},
 									onClick: () => setFocus(t),
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										style: {
-											display: "flex",
-											alignItems: "center",
-											gap: 6
-										},
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													fontSize: 10,
-													fontFamily: "monospace",
-													color: "#888",
-													background: CHIP_BG,
-													borderRadius: 999,
-													minWidth: 20,
-													height: 20,
-													padding: "0 4px",
-													boxSizing: "border-box",
-													display: "flex",
-													alignItems: "center",
-													justifyContent: "center",
-													fontWeight: 700
-												},
-												children: shortId(t)
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: { fontSize: 12 },
-												children: ticketDisplayMeta(t).icon
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													flex: 1,
-													fontSize: 12,
-													fontWeight: 600,
-													lineHeight: 1.3,
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													whiteSpace: "nowrap"
-												},
-												children: t.title
-											})
-										]
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										style: {
-											display: "flex",
-											gap: 4,
-											marginTop: 6,
-											flexWrap: "wrap"
-										},
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: `${ticketDisplayMeta(t).color}22`,
-													color: ticketDisplayMeta(t).color
-												},
-												children: [
-													ticketDisplayMeta(t).icon,
-													" ",
-													ticketDisplayMeta(t).label
-												]
-											}),
-											t.type && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: `${typeTheme(t.type).color}22`,
-													color: typeTheme(t.type).color
-												},
-												children: t.type
-											}),
-											isPending(t) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: "#ffa94d33",
-													color: "#f7ad31"
-												},
-												children: ageLabel(t) ?? "待拍板"
-											}),
-											t.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: "#f0a50022",
-													color: "#f7ad31"
-												},
-												children: ["👤 ", t.claimedBy]
-											}),
-											t.blockedBy.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: "#ff6b6b22",
-													color: "#f2555a"
-												},
-												children: [" ", t.blockedBy.map((n) => `#${n}`).join(",")]
-											}),
-											t.qaCases && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												title: "测例已构建（qa_cases）",
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: "#609bfa22",
-													color: "#609bfa"
-												},
-												children: "🧪 测例"
-											}),
-											t.qaTested && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												title: "测例已执行（qa_tested）",
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: "#4ed17e22",
-													color: "#4ed17e"
-												},
-												children: "🧪 已测试"
-											}),
-											t.qaAccepted && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												title: "验收通过（qa_accepted）",
-												style: {
-													fontSize: 10,
-													padding: "1px 5px",
-													borderRadius: 999,
-													background: "#2ecc7122",
-													color: "#4ed17e"
-												},
-												children: "🏁 已验收"
-											})
-										]
-									})]
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												display: "flex",
+												alignItems: "center",
+												gap: 6
+											},
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														fontSize: 10,
+														fontFamily: "monospace",
+														color: "#888",
+														background: CHIP_BG,
+														borderRadius: 999,
+														minWidth: 20,
+														height: 20,
+														padding: "0 4px",
+														boxSizing: "border-box",
+														display: "flex",
+														alignItems: "center",
+														justifyContent: "center",
+														fontWeight: 700
+													},
+													children: shortId(t)
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: { fontSize: 12 },
+													children: ticketDisplayMeta(t).icon
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														flex: 1,
+														fontSize: 12,
+														fontWeight: 600,
+														lineHeight: 1.3,
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														whiteSpace: "nowrap"
+													},
+													children: t.title
+												})
+											]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+											ticket: t,
+											scope,
+											ctx
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												display: "flex",
+												gap: 4,
+												marginTop: 6,
+												flexWrap: "wrap"
+											},
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: `${ticketDisplayMeta(t).color}22`,
+														color: ticketDisplayMeta(t).color
+													},
+													children: [
+														ticketDisplayMeta(t).icon,
+														" ",
+														ticketDisplayMeta(t).label
+													]
+												}),
+												t.type && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: `${typeTheme(t.type).color}22`,
+														color: typeTheme(t.type).color
+													},
+													children: t.type
+												}),
+												isPending(t) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: "#ffa94d33",
+														color: "#f7ad31"
+													},
+													children: ageLabel(t) ?? "待拍板"
+												}),
+												t.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: "#f0a50022",
+														color: "#f7ad31"
+													},
+													children: ["👤 ", t.claimedBy]
+												}),
+												t.blockedBy.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: "#ff6b6b22",
+														color: "#f2555a"
+													},
+													children: [" ", t.blockedBy.map((n) => `#${n}`).join(",")]
+												}),
+												t.qaCases && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													title: "测例已构建（qa_cases）",
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: "#609bfa22",
+														color: "#609bfa"
+													},
+													children: "🧪 测例"
+												}),
+												t.qaTested && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													title: "测例已执行（qa_tested）",
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: "#4ed17e22",
+														color: "#4ed17e"
+													},
+													children: "🧪 已测试"
+												}),
+												t.qaAccepted && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													title: "验收通过（qa_accepted）",
+													style: {
+														fontSize: 10,
+														padding: "1px 5px",
+														borderRadius: 999,
+														background: "#2ecc7122",
+														color: "#4ed17e"
+													},
+													children: "🏁 已验收"
+												})
+											]
+										})
+									]
 								}, t.file))
 							})]
 						}, s))
@@ -2077,6 +2207,19 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											background: HEADER_BG
 										},
 										children: "Blocked"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("th", {
+										style: {
+											textAlign: "left",
+											padding: "7px 10px",
+											fontSize: 10,
+											fontWeight: 700,
+											color: "#777",
+											textTransform: "uppercase",
+											borderBottom: `1px solid ${BORDER}`,
+											background: HEADER_BG
+										},
+										children: "Path"
 									})
 								] }) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("tbody", { children: rows.map((t) => {
 									const th = typeTheme(t.type);
@@ -2185,6 +2328,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 													fontSize: 11
 												},
 												children: t.blockedBy.length > 0 ? t.blockedBy.map((n) => `#${n}`).join(" ") : "—"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+												style: {
+													padding: "7px 10px",
+													borderBottom: `1px solid ${BORDER_LIGHT}`,
+													maxWidth: 260
+												},
+												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+													ticket: t,
+													scope,
+													ctx
+												})
 											})
 										]
 									}, t.file);
@@ -2205,7 +2360,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
-		const NODE_W = 176, STEP_X = 200, NODE_H = 44;
+		const NODE_W = 176, STEP_X = 200, NODE_H = 66;
 		const RUNG_TOP = 140, RUNG_STEP = 110;
 		const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100;
 		const START = "\0start";
@@ -2445,58 +2600,67 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 												flexDirection: "column",
 												gap: 3
 											},
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												style: {
-													display: "flex",
-													alignItems: "center",
-													gap: 5
-												},
-												children: [
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: {
-															fontSize: 9,
-															fontFamily: "monospace",
-															color: "#888",
-															background: CHIP_BG,
-															borderRadius: 999,
-															minWidth: 18,
-															height: 18,
-															padding: "0 4px",
-															boxSizing: "border-box",
-															display: "flex",
-															alignItems: "center",
-															justifyContent: "center",
-															fontWeight: 700
-														},
-														children: shortId(t)
-													}),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: { fontSize: 12 },
-														children: ticketDisplayMeta(t).icon
-													}),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: {
-															fontSize: 11,
-															fontWeight: 700,
-															color: TEXT,
-															lineHeight: 1.3,
-															overflow: "hidden",
-															textOverflow: "ellipsis",
-															whiteSpace: "nowrap",
-															flex: 1
-														},
-														children: t.title
-													})
-												]
-											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												style: {
-													fontSize: 9,
-													color: TEXT_FAINT,
-													display: "flex",
-													gap: 6
-												},
-												children: [STATUS_LABELS[displayStatus(t)], t.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [" 👤 ", t.claimedBy] })]
-											})]
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+													style: {
+														display: "flex",
+														alignItems: "center",
+														gap: 5
+													},
+													children: [
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															style: {
+																fontSize: 9,
+																fontFamily: "monospace",
+																color: "#888",
+																background: CHIP_BG,
+																borderRadius: 999,
+																minWidth: 18,
+																height: 18,
+																padding: "0 4px",
+																boxSizing: "border-box",
+																display: "flex",
+																alignItems: "center",
+																justifyContent: "center",
+																fontWeight: 700
+															},
+															children: shortId(t)
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															style: { fontSize: 12 },
+															children: ticketDisplayMeta(t).icon
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															style: {
+																fontSize: 11,
+																fontWeight: 700,
+																color: TEXT,
+																lineHeight: 1.3,
+																overflow: "hidden",
+																textOverflow: "ellipsis",
+																whiteSpace: "nowrap",
+																flex: 1
+															},
+															children: t.title
+														})
+													]
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+													style: {
+														fontSize: 9,
+														color: TEXT_FAINT,
+														display: "flex",
+														gap: 6
+													},
+													children: [STATUS_LABELS[displayStatus(t)], t.claimedBy && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [" 👤 ", t.claimedBy] })]
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+													ticket: t,
+													scope,
+													ctx,
+													size: 9
+												})
+											]
 										})]
 									}, n);
 								}),
@@ -2537,56 +2701,65 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 												flexDirection: "column",
 												gap: 3
 											},
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												style: {
-													display: "flex",
-													alignItems: "center",
-													gap: 5
-												},
-												children: [
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: {
-															fontSize: 9,
-															fontFamily: "monospace",
-															color: "#888",
-															background: CHIP_BG,
-															borderRadius: 999,
-															minWidth: 18,
-															height: 18,
-															padding: "0 4px",
-															boxSizing: "border-box",
-															display: "flex",
-															alignItems: "center",
-															justifyContent: "center",
-															fontWeight: 700
-														},
-														children: shortId(t)
-													}),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: { fontSize: 12 },
-														children: "⛔"
-													}),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-														style: {
-															fontSize: 11,
-															fontWeight: 700,
-															color: TEXT,
-															lineHeight: 1.3,
-															overflow: "hidden",
-															textOverflow: "ellipsis",
-															whiteSpace: "nowrap",
-															flex: 1
-														},
-														children: t.title
-													})
-												]
-											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-												style: {
-													fontSize: 9,
-													color: TEXT_FAINT
-												},
-												children: "ruled out"
-											})]
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+													style: {
+														display: "flex",
+														alignItems: "center",
+														gap: 5
+													},
+													children: [
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															style: {
+																fontSize: 9,
+																fontFamily: "monospace",
+																color: "#888",
+																background: CHIP_BG,
+																borderRadius: 999,
+																minWidth: 18,
+																height: 18,
+																padding: "0 4px",
+																boxSizing: "border-box",
+																display: "flex",
+																alignItems: "center",
+																justifyContent: "center",
+																fontWeight: 700
+															},
+															children: shortId(t)
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															style: { fontSize: 12 },
+															children: "⛔"
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															style: {
+																fontSize: 11,
+																fontWeight: 700,
+																color: TEXT,
+																lineHeight: 1.3,
+																overflow: "hidden",
+																textOverflow: "ellipsis",
+																whiteSpace: "nowrap",
+																flex: 1
+															},
+															children: t.title
+														})
+													]
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: 9,
+														color: TEXT_FAINT
+													},
+													children: "ruled out"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+													ticket: t,
+													scope,
+													ctx,
+													size: 9
+												})
+											]
 										})]
 									}, n);
 								}),
@@ -2807,6 +2980,17 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										fontSize: 11
 									},
 									children: t.effort && t.effort !== ROOT_GROUP ? t.effort.split("/").pop() : ""
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+									style: {
+										padding: "7px 10px",
+										maxWidth: 280
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+										ticket: t,
+										scope,
+										ctx
+									})
 								})
 							]
 						}, t.path)) })
@@ -2990,16 +3174,29 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						},
 						children: shortId(t)
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						style: {
 							flex: 1,
-							fontSize: 12.5,
-							color: TEXT,
-							overflow: "hidden",
-							textOverflow: "ellipsis",
-							whiteSpace: "nowrap"
+							minWidth: 0,
+							display: "flex",
+							flexDirection: "column",
+							gap: 1
 						},
-						children: t.title
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							style: {
+								fontSize: 12.5,
+								color: TEXT,
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap"
+							},
+							children: t.title
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+							ticket: t,
+							scope,
+							ctx,
+							size: 10
+						})]
 					}),
 					right
 				]
@@ -3857,6 +4054,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						mapSub === "cases" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CasesView, {
 							cases: mapCases,
 							scope,
+							ctx,
 							readOnly
 						}),
 						mapSub === "speculation" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SpeculationView, {
@@ -3931,6 +4129,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CasesView, {
 									cases: rootCases,
 									scope,
+									ctx,
 									readOnly
 								})]
 							}),
@@ -4558,92 +4757,90 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									cursor: "pointer",
 									opacity: settled ? .75 : 1
 								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										display: "flex",
-										alignItems: "center",
-										gap: 8
-									},
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 13,
-												color: settled ? TEXT_FAINT : "#f7ad31"
-											},
-											children: settled ? "✓" : "⏳"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												flex: 1,
-												fontSize: 13,
-												fontWeight: 700,
-												color: settled ? TEXT_FAINT : TEXT,
-												lineHeight: 1.4
-											},
-											children: t.title
-										}),
-										!settled && age !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 11,
-												padding: "2px 8px",
-												borderRadius: 999,
-												background: hot ? "#7a4a1533" : CHIP_BG,
-												color: hot ? "#f7ad31" : "#888",
-												flexShrink: 0
-											},
-											children: ageLabel(t)
-										})
-									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										display: "flex",
-										gap: 6,
-										flexWrap: "wrap",
-										marginTop: 7
-									},
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 10,
-												padding: "1px 6px",
-												borderRadius: 999,
-												background: settled ? "#2ecc7122" : "#ffa94d22",
-												color: settled ? "#4ed17e" : "#f7ad31"
-											},
-											children: t.status ?? "pending"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 10,
-												padding: "1px 6px",
-												borderRadius: 999,
-												background: CHIP_BG,
-												color: "#888"
-											},
-											children: t.file
-										}),
-										t.origin && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											style: {
-												fontSize: 10,
-												padding: "1px 6px",
-												borderRadius: 999,
-												background: CHIP_BG,
-												color: "#888"
-											},
-											children: ["origin: ", t.origin]
-										}),
-										t.date && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 10,
-												padding: "1px 6px",
-												borderRadius: 999,
-												background: CHIP_BG,
-												color: "#888"
-											},
-											children: t.date
-										})
-									]
-								})]
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: 8
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													fontSize: 13,
+													color: settled ? TEXT_FAINT : "#f7ad31"
+												},
+												children: settled ? "✓" : "⏳"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													flex: 1,
+													fontSize: 13,
+													fontWeight: 700,
+													color: settled ? TEXT_FAINT : TEXT,
+													lineHeight: 1.4
+												},
+												children: t.title
+											}),
+											!settled && age !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													fontSize: 11,
+													padding: "2px 8px",
+													borderRadius: 999,
+													background: hot ? "#7a4a1533" : CHIP_BG,
+													color: hot ? "#f7ad31" : "#888",
+													flexShrink: 0
+												},
+												children: ageLabel(t)
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+										ticket: t,
+										scope,
+										ctx
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: 6,
+											flexWrap: "wrap",
+											marginTop: 7
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: settled ? "#2ecc7122" : "#ffa94d22",
+													color: settled ? "#4ed17e" : "#f7ad31"
+												},
+												children: t.status ?? "pending"
+											}),
+											t.origin && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: CHIP_BG,
+													color: "#888"
+												},
+												children: ["origin: ", t.origin]
+											}),
+											t.date && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: CHIP_BG,
+													color: "#888"
+												},
+												children: t.date
+											})
+										]
+									})
+								]
 							}, t.file);
 						})
 					}),
@@ -4842,7 +5039,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						}), shown.map((t) => {
 							const entries = parseLedgerEntries(t.body);
 							const single = entries.length === 1 ? entries[0] : void 0;
-							if (single !== void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							if (single !== void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								onClick: () => setFocus(t),
 								style: {
 									padding: "10px 12px",
@@ -4851,7 +5048,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									border: `1px solid ${BORDER}`,
 									cursor: "pointer"
 								},
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerCard, { entry: single })
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+									ticket: t,
+									scope,
+									ctx
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerCard, { entry: single })]
 							}, t.file);
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								style: {
@@ -4866,36 +5067,28 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											alignItems: "center",
 											gap: 8
 										},
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													fontSize: 13,
-													fontWeight: 700,
-													color: TEXT
-												},
-												children: t.title
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 6px",
-													borderRadius: 999,
-													background: CHIP_BG,
-													color: "#888"
-												},
-												children: t.file
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 6px",
-													borderRadius: 999,
-													background: CHIP_BG,
-													color: "#888"
-												},
-												children: [entries.length, " 笔在账"]
-											})
-										]
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: 13,
+												fontWeight: 700,
+												color: TEXT
+											},
+											children: t.title
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 6px",
+												borderRadius: 999,
+												background: CHIP_BG,
+												color: "#888"
+											},
+											children: [entries.length, " 笔在账"]
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+										ticket: t,
+										scope,
+										ctx
 									}),
 									entries.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										onClick: () => setFocus(t),
@@ -5163,121 +5356,129 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										flexDirection: "column",
 										gap: 8
 									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										style: {
-											display: "flex",
-											alignItems: "center",
-											gap: 8
-										},
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											style: {
-												fontSize: 13,
-												fontWeight: 700,
-												color: TEXT
-											},
-											children: [
-												t.effort?.split("/").pop(),
-												"/",
-												t.file
-											]
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											style: {
-												fontSize: 10,
-												padding: "1px 6px",
-												borderRadius: 999,
-												background: CHIP_BG,
-												color: "#888"
-											},
-											children: "一缺陷一文件"
-										})]
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										onClick: () => setFocus(t),
-										style: {
-											padding: "10px 12px",
-											borderRadius: 10,
-											background: closed ? CARD_DARK : CARD,
-											border: `1px solid ${BORDER}`,
-											cursor: "pointer",
-											opacity: closed ? .75 : 1
-										},
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
 												display: "flex",
 												alignItems: "center",
 												gap: 8
 											},
-											children: [
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													style: {
-														fontSize: 10,
-														padding: "1px 8px",
-														borderRadius: 999,
-														background: closed ? "#2ecc7122" : "#ffa94d22",
-														color: closed ? "#4ed17e" : "#f7ad31",
-														flexShrink: 0
-													},
-													children: single.state
-												}),
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													style: {
-														flex: 1,
-														fontSize: 13,
-														fontWeight: 700,
-														color: TEXT
-													},
-													children: single.title
-												}),
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													style: {
-														fontSize: 10,
-														fontFamily: "monospace",
-														color: TEXT_FAINT,
-														flexShrink: 0
-													},
-													children: single.id
-												})
-											]
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												style: {
+													fontSize: 13,
+													fontWeight: 700,
+													color: TEXT
+												},
+												children: [
+													single.id,
+													" ",
+													single.title
+												]
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													fontSize: 10,
+													padding: "1px 6px",
+													borderRadius: 999,
+													background: CHIP_BG,
+													color: "#888"
+												},
+												children: "一缺陷一文件"
+											})]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+											ticket: t,
+											scope,
+											ctx
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											onClick: () => setFocus(t),
 											style: {
-												display: "flex",
-												gap: 6,
-												flexWrap: "wrap",
-												marginTop: 6
+												padding: "10px 12px",
+												borderRadius: 10,
+												background: closed ? CARD_DARK : CARD,
+												border: `1px solid ${BORDER}`,
+												cursor: "pointer",
+												opacity: closed ? .75 : 1
 											},
-											children: [
-												single.severity && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-													style: {
-														fontSize: 10,
-														padding: "1px 6px",
-														borderRadius: 999,
-														background: CHIP_BG,
-														color: "#888"
-													},
-													children: ["严重度 ", single.severity]
-												}),
-												single.kind && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-													style: {
-														fontSize: 10,
-														padding: "1px 6px",
-														borderRadius: 999,
-														background: CHIP_BG,
-														color: "#888"
-													},
-													children: ["类型 ", single.kind]
-												}),
-												single.source && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-													style: {
-														fontSize: 10,
-														padding: "1px 6px",
-														borderRadius: 999,
-														background: CHIP_BG,
-														color: "#888"
-													},
-													children: ["发现源 ", single.source]
-												})
-											]
-										})]
-									})]
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: {
+													display: "flex",
+													alignItems: "center",
+													gap: 8
+												},
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															fontSize: 10,
+															padding: "1px 8px",
+															borderRadius: 999,
+															background: closed ? "#2ecc7122" : "#ffa94d22",
+															color: closed ? "#4ed17e" : "#f7ad31",
+															flexShrink: 0
+														},
+														children: single.state
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															flex: 1,
+															fontSize: 13,
+															fontWeight: 700,
+															color: TEXT
+														},
+														children: single.title
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															fontSize: 10,
+															fontFamily: "monospace",
+															color: TEXT_FAINT,
+															flexShrink: 0
+														},
+														children: single.id
+													})
+												]
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: {
+													display: "flex",
+													gap: 6,
+													flexWrap: "wrap",
+													marginTop: 6
+												},
+												children: [
+													single.severity && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+														style: {
+															fontSize: 10,
+															padding: "1px 6px",
+															borderRadius: 999,
+															background: CHIP_BG,
+															color: "#888"
+														},
+														children: ["严重度 ", single.severity]
+													}),
+													single.kind && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+														style: {
+															fontSize: 10,
+															padding: "1px 6px",
+															borderRadius: 999,
+															background: CHIP_BG,
+															color: "#888"
+														},
+														children: ["类型 ", single.kind]
+													}),
+													single.source && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+														style: {
+															fontSize: 10,
+															padding: "1px 6px",
+															borderRadius: 999,
+															background: CHIP_BG,
+															color: "#888"
+														},
+														children: ["发现源 ", single.source]
+													})
+												]
+											})]
+										})
+									]
 								}, `${t.effort}/${t.file}`);
 							}
 							const entries = parseDefectEntries(t.body);
@@ -5294,40 +5495,28 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											alignItems: "center",
 											gap: 8
 										},
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													fontSize: 13,
-													fontWeight: 700,
-													color: TEXT
-												},
-												children: t.title
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 6px",
-													borderRadius: 999,
-													background: CHIP_BG,
-													color: "#888"
-												},
-												children: [
-													t.effort?.split("/").pop(),
-													"/",
-													t.file
-												]
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												style: {
-													fontSize: 10,
-													padding: "1px 6px",
-													borderRadius: 999,
-													background: CHIP_BG,
-													color: "#888"
-												},
-												children: [entries.length, " 条"]
-											})
-										]
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: 13,
+												fontWeight: 700,
+												color: TEXT
+											},
+											children: t.title
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 6px",
+												borderRadius: 999,
+												background: CHIP_BG,
+												color: "#888"
+											},
+											children: [entries.length, " 条"]
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+										ticket: t,
+										scope,
+										ctx
 									}),
 									entries.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										onClick: () => setFocus(t),
@@ -5666,7 +5855,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const walk = (key, depth) => {
 				const node = byKey.get(key);
 				const x = depth * INDENT;
-				const y = TOP + row * 68;
+				const y = TOP + row * 80;
 				row++;
 				nodes.push({
 					node,
@@ -5681,7 +5870,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			};
 			for (const r of roots) walk(r.key, 0);
 			const maxRight = Math.max(...nodes.map((n) => n.x + NODE_W), NODE_W);
-			const H = Math.max(TOP + row * 68, 120) + 30;
+			const H = Math.max(TOP + row * 80, 120) + 30;
 			return {
 				nodes,
 				treeEdges,
@@ -5717,7 +5906,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			]);
 			const isConnected = (e) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false);
 			const mk = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`;
-			const NODE_H = 56;
+			const NODE_H = 68;
 			const KIND_COLOR = {
 				ticket: "#609bfa",
 				ledger: "#f7ad31",
@@ -5925,46 +6114,55 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 												flexDirection: "column",
 												gap: 3
 											},
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												style: {
-													display: "flex",
-													alignItems: "center",
-													gap: 6,
-													paddingRight: 14
-												},
-												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+													style: {
+														display: "flex",
+														alignItems: "center",
+														gap: 6,
+														paddingRight: 14
+													},
+													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															fontSize: 9,
+															padding: "1px 6px",
+															borderRadius: 999,
+															flexShrink: 0,
+															background: CHIP_BG,
+															color: "#999"
+														},
+														children: node.badge
+													}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															fontSize: 11,
+															fontWeight: 700,
+															color: TEXT,
+															lineHeight: 1.3,
+															overflow: "hidden",
+															textOverflow: "ellipsis",
+															whiteSpace: "nowrap",
+															flex: 1
+														},
+														children: node.title
+													})]
+												}),
+												node.sub && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 													style: {
 														fontSize: 9,
-														padding: "1px 6px",
-														borderRadius: 999,
-														flexShrink: 0,
-														background: CHIP_BG,
-														color: "#999"
-													},
-													children: node.badge
-												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													style: {
-														fontSize: 11,
-														fontWeight: 700,
-														color: TEXT,
-														lineHeight: 1.3,
+														color: TEXT_FAINT,
 														overflow: "hidden",
 														textOverflow: "ellipsis",
-														whiteSpace: "nowrap",
-														flex: 1
+														whiteSpace: "nowrap"
 													},
-													children: node.title
-												})]
-											}), node.sub && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-												style: {
-													fontSize: 9,
-													color: TEXT_FAINT,
-													overflow: "hidden",
-													textOverflow: "ellipsis",
-													whiteSpace: "nowrap"
-												},
-												children: node.sub
-											})]
+													children: node.sub
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+													ticket: node.ticket,
+													scope,
+													ctx,
+													size: 9
+												})
+											]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											title: node.badge,
@@ -6002,7 +6200,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			for (const e of [...treeEdges, ...crossEdges]) if (e.from === key && e.to === active || e.from === active && e.to === key) return true;
 			return false;
 		}
-		function CasesView({ cases, scope, readOnly }) {
+		function CasesView({ cases, scope, ctx, readOnly }) {
 			if (cases.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
@@ -6057,19 +6255,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								color: TEXT
 							},
 							children: ["🧪 ", c.title]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							style: {
-								fontSize: 10,
-								padding: "1px 6px",
-								borderRadius: 999,
-								background: CHIP_BG,
-								color: "#888"
-							},
-							children: [
-								c.effort?.split("/").pop(),
-								"/",
-								c.file
-							]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+							ticket: c,
+							scope,
+							ctx
 						})]
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {

@@ -14,6 +14,7 @@ import {
   type SessionScope, type SessionSummary, type FsEntry,
 } from './api'
 import { deliverDraft, isBridged } from './input-bridge'
+import { fileAddress, displayPath } from './file-path'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -333,6 +334,76 @@ const typeTheme = (t: string | undefined) => TYPE_THEME[t ?? ''] ?? TYPE_FALLBAC
 const DOT: Record<string, string> = { open: '#81858c', claimed: '#f7ad31', done: '#4ed17e', out_of_scope: '#61666b' }
 const STATUS_LABELS: Record<TicketStatus, string> = { open: 'Open', claimed: 'Claimed', done: 'Done', out_of_scope: 'Out of scope' }
 const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'done', 'out_of_scope']
+
+// ─── 票面路径（2026-09-29 拍板）：头部显示 + 点击打开 ──────────────────────────
+//
+// 视图里的每一张票都来自一个真实文件，但页面此前只显示文件名——同一个 `01.md`
+// 可能属于三张图，读的人无法判断手里这张是哪个。头部补一行路径解决两件事：
+// ①**同一性**（这是哪个文件）；②**可达性**（点一下就打开它）。
+//
+// 打开走官方右栏协议 `sidebarRight.openResource`：与聊天里点 `@文件`、文件树
+// 点开是同一条通道，内容留在产品内、与会话并排；`openResource` 自带展开语义
+// （服务契约：「用户看不见的内容不算打开」），收起态点击也生效。
+//
+// 路径取自 `ParsedTicket.path`——它是 fs 树读到的真实绝对路径，所以相对化后
+// 天然与仓库当前布局一致（`.scratch/<effort>/issues/14-x.md`）。拿不到 path 的
+// 调用方（历史轮快照以外无此情形）退回文件名，仍可点开。
+
+/**
+ * 在右栏打开一个治理目录下的文件。
+ * @param ctx - 客户端根上下文（需注入 `sidebarRight`）。
+ * @param scope - 当前会话作用域：地址按会话解析路径。
+ * @param path - 文件的绝对路径；缺省时退回文件名（服务端按会话 cwd 解析）。
+ * @returns 是否已发起打开（服务缺失时 false，调用方据此提示）。
+ */
+function openFileInSidebar(ctx: any, scope: SessionScope, path: string | undefined, fallbackName: string): boolean {
+  try {
+    const sidebar = ctx?.get?.('sidebarRight') as { openResource?: (address: string) => void } | undefined
+    if (sidebar?.openResource === undefined) return false
+    sidebar.openResource(fileAddress(scope.sessionId, path ?? fallbackName))
+    return true
+  } catch {
+    // 无会话面挂载等宿主异常：返回 false，由 chip 的 title 提示点击无效。
+    return false
+  }
+}
+
+/**
+ * 票面的文件路径行：一行等宽小字，点击在右栏打开该文件。
+ *
+ * 显示的是**相对工作区**的路径（`.scratch/doc-authority/issues/05-….md`），仓外
+ * 文件显示绝对路径——相对化只为好读。整行是按钮（键盘可达、有 hover 反馈），
+ * 并 `stopPropagation`：卡片本身点击是「打开详情弹窗」，两件事不能互相吞掉。
+ * @param props.ticket - 该行所属的票（取 `path` / `file`）。
+ * @param props.scope - 会话作用域，决定地址解析与相对化基准。
+ * @param props.ctx - 客户端根上下文。
+ * @param props.size - 字号，默认 10.5；详情弹窗用 11.5。
+ * @returns 路径按钮。
+ */
+function FilePath({ ticket, scope, ctx, size = 10.5 }: { ticket: ParsedTicket; scope: SessionScope; ctx: any; size?: number }) {
+  const full = ticket.path
+  const shown = full === undefined ? ticket.file : displayPath(full, scope.cwd)
+  const open = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    openFileInSidebar(ctx, scope, full, ticket.file)
+  }
+  return (
+    <button
+      type="button"
+      onClick={open}
+      title={`点击在右栏打开：${full ?? ticket.file}`}
+      style={{
+        display: 'block', maxWidth: '100%', padding: 0, border: 'none', background: 'transparent',
+        textAlign: 'left', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: size, lineHeight: 1.5,
+        color: TEXT_FAINT, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.color = ACCENT_SOFT; e.currentTarget.style.textDecoration = 'underline' }}
+      onMouseLeave={e => { e.currentTarget.style.color = TEXT_FAINT; e.currentTarget.style.textDecoration = 'none' }}
+    >
+      {shown}
+    </button>
+  )
+}
 
 // ─── "Waiting on you" ────────────────────────────────────────────────────────
 //
@@ -945,6 +1016,10 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
           <span style={{ fontSize: 16, fontWeight: 700, color: TEXT, lineHeight: 1.4, flex: 1 }}>{ticket.title}</span>
           <button style={{ background: 'transparent', border: 'none', color: '#888', fontSize: 18, cursor: 'pointer' }} onClick={onClose}>✕</button>
         </div>
+        {/* 路径独占标题下一行：标题长短不一时路径起点仍对齐，扫读时是同一列。 */}
+        <div style={{ padding: '2px 20px 0' }}>
+          <FilePath ticket={ticket} scope={scope} ctx={ctx} size={11.5} />
+        </div>
         <div style={{ padding: '0 20px 12px', display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, borderBottom: `1px solid ${BORDER_LIGHT}` }}>
           <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: CHIP_BG, color: '#888', border: `1px solid ${BORDER}` }}>#{shortId(ticket)}</span>
           <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: `${ticketDisplayMeta(ticket).color}22`, color: ticketDisplayMeta(ticket).color }}>{ticketDisplayMeta(ticket).icon} {ticketDisplayMeta(ticket).label}</span>
@@ -1034,6 +1109,7 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
                     <span style={{ fontSize: 12 }}>{ticketDisplayMeta(t).icon}</span>
                     <span style={{ flex: 1, fontSize: 12, fontWeight: 600, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
                   </div>
+                  <FilePath ticket={t} scope={scope} ctx={ctx} />
                   <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${ticketDisplayMeta(t).color}22`, color: ticketDisplayMeta(t).color }}>{ticketDisplayMeta(t).icon} {ticketDisplayMeta(t).label}</span>
                     {t.type && <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 999, background: `${typeTheme(t.type).color}22`, color: typeTheme(t.type).color }}>{t.type}</span>}
@@ -1173,6 +1249,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, cursor: 'pointer' }} onClick={() => sortBy('status')}>Status {arrow('status')}</th>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>Owner</th>
                   <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>Blocked</th>
+                  <th style={{ textAlign: 'left', padding: '7px 10px', fontSize: 10, fontWeight: 700, color: '#777', textTransform: 'uppercase', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG }}>Path</th>
                 </tr>
               </thead>
               <tbody>
@@ -1187,6 +1264,8 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}` }}><span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: DOT[displayStatus(t)] }} />{STATUS_LABELS[displayStatus(t)]}</span></td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}`, color: t.claimedBy ? '#f7ad31' : TEXT_FAINT }}>{t.claimedBy ?? '—'}</td>
                       <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}`, color: t.blockedBy.length > 0 ? '#f2555a' : TEXT_FAINT, fontFamily: 'monospace', fontSize: 11 }}>{t.blockedBy.length > 0 ? t.blockedBy.map(n => `#${n}`).join(' ') : '—'}</td>
+                      {/* 路径列：宽度交给内容（表格自适应），过长由 FilePath 省略号截断，title 里有全路径。 */}
+                      <td style={{ padding: '7px 10px', borderBottom: `1px solid ${BORDER_LIGHT}`, maxWidth: 260 }}><FilePath ticket={t} scope={scope} ctx={ctx} /></td>
                     </tr>
                   )
                 })}
@@ -1202,7 +1281,7 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
 
 // ─── Variant D: Relation Graph (tiered DAG) ──────────────────────────────────
 
-const NODE_W = 176, STEP_X = 200, NODE_H = 44
+const NODE_W = 176, STEP_X = 200, NODE_H = 66
 const RUNG_TOP = 140, RUNG_STEP = 110
 const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100
 
@@ -1335,6 +1414,8 @@ function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
                     <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</span>
                   </div>
                   <div style={{ fontSize: 9, color: TEXT_FAINT, display: 'flex', gap: 6 }}>{STATUS_LABELS[displayStatus(t)]}{t.claimedBy && <> 👤 {t.claimedBy}</>}</div>
+                  {/* 节点高度 44→66 就是为这行路径让位（NODE_H 常量同步改）。 */}
+                  <FilePath ticket={t} scope={scope} ctx={ctx} size={9} />
                 </div>
               </div>
             )
@@ -1351,6 +1432,7 @@ function ViewD({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
                     <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{t.title}</span>
                   </div>
                   <div style={{ fontSize: 9, color: TEXT_FAINT }}>ruled out</div>
+                  <FilePath ticket={t} scope={scope} ctx={ctx} size={9} />
                 </div>
               </div>
             )
@@ -1452,6 +1534,7 @@ function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, re
               <td style={{ padding: '7px 10px', color: TEXT }}>{t.title}</td>
               <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT }}>{displayStatus(t)}</td>
               <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT, fontSize: 11 }}>{t.effort && t.effort !== ROOT_GROUP ? t.effort.split('/').pop() : ''}</td>
+              <td style={{ padding: '7px 10px', maxWidth: 280 }}><FilePath ticket={t} scope={scope} ctx={ctx} /></td>
             </tr>
           ))}
         </tbody>
@@ -1585,7 +1668,11 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
     <div key={`${t.effort}/${t.file}`} onClick={() => setFocus(t)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', background: 'transparent' }}
       onMouseEnter={e => { e.currentTarget.style.background = RAISED }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}>
       <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, minWidth: 28 }}>{shortId(t)}</span>
-      <span style={{ flex: 1, fontSize: 12.5, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+      {/* 标题与路径成列：路径换行显示而不是被挤到行尾，`minWidth: 0` 让省略号生效。 */}
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <span style={{ fontSize: 12.5, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+        <FilePath ticket={t} scope={scope} ctx={ctx} size={10} />
+      </span>
       {right}
     </div>
   )
@@ -1957,7 +2044,7 @@ export function PlanView(props: { ctx: any; scope: any }) {
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={mapCases} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} readOnly={readOnly} />}
+          {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} ctx={ctx} readOnly={readOnly} />}
           {mapSub === 'speculation' && <SpeculationView tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
@@ -1975,7 +2062,7 @@ export function PlanView(props: { ctx: any; scope: any }) {
           {rootCases.length > 0 && (
             <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <div style={{ padding: '6px 14px', fontSize: 11, fontWeight: 700, color: '#609bfa' }}>🧪 测例</div>
-              <CasesView cases={rootCases} scope={scope} readOnly={readOnly} />
+              <CasesView cases={rootCases} scope={scope} ctx={ctx} readOnly={readOnly} />
             </div>
           )}
           {rootDefects.length === 0 && rootCases.length === 0 && (
@@ -2229,9 +2316,10 @@ function ApprovalsView({ approvals, scope, ctx, sessions, onChanged, readOnly }:
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: settled ? TEXT_FAINT : TEXT, lineHeight: 1.4 }}>{t.title}</span>
                   {!settled && age !== undefined && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: hot ? '#7a4a1533' : CHIP_BG, color: hot ? '#f7ad31' : '#888', flexShrink: 0 }}>{ageLabel(t)}</span>}
                 </div>
+                {/* 文件名 chip 由路径行取代——路径以文件名结尾，信息更全且可点开。 */}
+                <FilePath ticket={t} scope={scope} ctx={ctx} />
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
                   <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: settled ? '#2ecc7122' : '#ffa94d22', color: settled ? '#4ed17e' : '#f7ad31' }}>{t.status ?? 'pending'}</span>
-                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{t.file}</span>
                   {t.origin && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>origin: {t.origin}</span>}
                   {t.date && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{t.date}</span>}
                 </div>
@@ -2365,9 +2453,10 @@ function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, read
           const entries = parseLedgerEntries(t.body)
           const single = entries.length === 1 ? entries[0] : undefined
           if (single !== undefined) {
-            // 一账一文件：整个文件就是一笔，直接渲染卡片，不要组头。
+            // 一账一文件：整个文件就是一笔，直接渲染卡片，不要组头——路径行即它的头部。
             return (
               <div key={t.file} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer' }}>
+                <FilePath ticket={t} scope={scope} ctx={ctx} />
                 <LedgerCard entry={single} />
               </div>
             )
@@ -2376,9 +2465,9 @@ function LedgerView({ ledgers, mapTickets, scope, ctx, sessions, onChanged, read
             <div key={t.file} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{t.title}</span>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{t.file}</span>
                 <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{entries.length} 笔在账</span>
               </div>
+              <FilePath ticket={t} scope={scope} ctx={ctx} />
               {entries.length === 0 && (
                 <div onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', fontSize: 12, color: TEXT_FAINT }}>
                   未解析出台账条目（需要 `# 挂账-NN` 标题或 `### 挂账-NN` 小节格式），点开看全文。
@@ -2522,9 +2611,11 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
             return (
               <div key={`${t.effort}/${t.file}`} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{t.effort?.split('/').pop()}/{t.file}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{single.id} {single.title}</span>
                   <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>一缺陷一文件</span>
                 </div>
+                {/* 组头原写「<effort>/<文件名>」——路径行以文件名结尾，信息更全且可点开。 */}
+                <FilePath ticket={t} scope={scope} ctx={ctx} />
                 <div onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: closed ? CARD_DARK : CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', opacity: closed ? 0.75 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{single.state}</span>
@@ -2545,9 +2636,9 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
             <div key={`${t.effort}/${t.file}`} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{t.title}</span>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{t.effort?.split('/').pop()}/{t.file}</span>
                 <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{entries.length} 条</span>
               </div>
+              <FilePath ticket={t} scope={scope} ctx={ctx} />
               {entries.length === 0 && (
                 <div onClick={() => setFocus(t)} style={{ padding: 12, borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', fontSize: 12, color: TEXT_FAINT }}>
                   未解析出缺陷条目（需要「清单总览」表格，表头含缺陷号/标题/严重度等列），点开看全文。
@@ -2620,7 +2711,7 @@ function buildChain(tickets: ParsedTicket[], defects: ParsedTicket[], ledgers: P
   H: number
   orphans: { ticket: number; ledger: number; defect: number }
 } {
-  const NODE_W = 250, NODE_H = 56, INDENT = 64, GAP_Y = 12, TOP = 20
+  const NODE_W = 250, NODE_H = 68, INDENT = 64, GAP_Y = 12, TOP = 20
   const nodes: { node: ChainNode; x: number; y: number }[] = []
   const pos = new Map<string, { x: number; y: number }>()
   const edges: ChainEdge[] = []
@@ -2804,7 +2895,7 @@ function ChainView({ tickets, defects, ledgers, cases, planDir, scope, ctx, sess
   }, [treeEdges, crossEdges, active])
   const isConnected = (e: ChainEdge) => active === null || (connectedEdges.get(active)?.has(`${e.from}->${e.to}`) ?? false)
   const mk = (x1: number, y1: number, x2: number, y2: number) => `M ${x1} ${y1} C ${x1 + 40} ${y1}, ${x2 - 40} ${y2}, ${x2} ${y2}`
-  const NODE_H = 56
+  const NODE_H = 68
   const KIND_COLOR: Record<ChainNode['kind'], string> = { ticket: '#609bfa', ledger: '#f7ad31', defect: '#f2555a', cases: '#4ed17e' }
   const KIND_LABEL: Record<ChainNode['kind'], string> = { ticket: '工单/拍板', ledger: '挂账', defect: '缺陷', cases: '测例' }
 
@@ -2878,6 +2969,8 @@ function ChainView({ tickets, defects, ledgers, cases, planDir, scope, ctx, sess
                       <span style={{ fontSize: 11, fontWeight: 700, color: TEXT, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{node.title}</span>
                     </div>
                     {node.sub && <div style={{ fontSize: 9, color: TEXT_FAINT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.sub}</div>}
+                    {/* 节点高度 56→68 为路径行让位（buildChain 的 NODE_H 同步改）。 */}
+                    <FilePath ticket={node.ticket} scope={scope} ctx={ctx} size={9} />
                   </div>
                   <span title={node.badge} style={{ position: 'absolute', right: 7, top: 7, width: 8, height: 8, borderRadius: 999, background: node.badgeColor, boxShadow: '0 0 0 2px rgba(0,0,0,.25)' }} />
                 </div>
@@ -2905,7 +2998,7 @@ function edgesRelated(key: string, active: string | null, treeEdges: ChainEdge[]
 // 不拆文件：测例是批量设计文档，§0-§2 的被测对象/七源盘点/覆盖矩阵是共享
 // 上下文；单用例需要独立跟踪时它已升级为缺陷（拆出去的是缺陷不是测例）。
 
-function CasesView({ cases, scope, readOnly }: { cases: ParsedTicket[]; scope: SessionScope; readOnly?: boolean }) {
+function CasesView({ cases, scope, ctx, readOnly }: { cases: ParsedTicket[]; scope: SessionScope; ctx: any; readOnly?: boolean }) {
   if (cases.length === 0) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
@@ -2922,7 +3015,7 @@ function CasesView({ cases, scope, readOnly }: { cases: ParsedTicket[]; scope: S
         <div key={`${c.effort}/${c.file}`} style={{ border: `1px solid ${BORDER}`, borderRadius: 10, background: CARD, overflow: 'hidden' }}>
           <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8, background: HEADER_BG }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>🧪 {c.title}</span>
-            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>{c.effort?.split('/').pop()}/{c.file}</span>
+            <FilePath ticket={c} scope={scope} ctx={ctx} />
           </div>
           <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(c.body) }} />
         </div>

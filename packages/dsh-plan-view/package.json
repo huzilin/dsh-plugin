@@ -38,7 +38,8 @@
     }
   },
   "scripts": {
-    "build:client": "tsdown"
+    "build:client": "tsdown",
+    "test": "node --test test/"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
