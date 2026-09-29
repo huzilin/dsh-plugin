@@ -53,9 +53,23 @@ export async function fsWrite(scope: SessionScope, path: string, content: string
   await call('fs.write', scopePayload(scope, { path, content }))
 }
 
-/** Resolve the session's working directory server-side (client may omit cwd). */
+/**
+ * Resolve the session's working directory. Primary source is the harness
+ * gateway's session/list (its items carry `cwd`): the better-sidebar
+ * `session.cwd` route, when its header lookup misses, falls into
+ * sessionPersistence.open and that read has been observed to hang forever
+ * (2026-09-30 真机实测：不带 cwd 的 /sidebar/api 调用无响应挂死，Plan tab
+ * 因此永停加载行；带 cwd 的调用全部正常). The route stays as fallback for
+ * sessions the list's first page does not cover, capped so the tab degrades
+ * to its failure line instead of spinning.
+ */
 export async function sessionCwd(scope: SessionScope): Promise<{ sessionId: string; cwd: string }> {
-  return call('session.cwd', scopePayload(scope, {}))
+  const listed = await sessionList().then(items => items.find(s => s.sessionId === scope.sessionId))
+  if (listed?.cwd) return { sessionId: scope.sessionId, cwd: listed.cwd }
+  return Promise.race([
+    call('session.cwd', scopePayload(scope, {})),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('session.cwd timed out')), 10_000)),
+  ])
 }
 
 // ─── /api — harness Typert gateway ───────────────────────────────────────────
