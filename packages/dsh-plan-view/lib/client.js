@@ -555,6 +555,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return KIND_META[k];
 		}
+		/** Whether the ticket is one of the wayfinder speculation types (research/prototype/grilling). */
+		function isSpecTicket(t) {
+			return SPECULATION_TYPES.has((t.type ?? "").trim().toLowerCase());
+		}
 		const SPECULATION_TYPES = /* @__PURE__ */ new Set([
 			"research",
 			"grilling",
@@ -2720,6 +2724,111 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return t.effort === dir || t.effort === ROOT_GROUP;
 		}
 		const isDshSession = (id) => id.startsWith("session-");
+		function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+			const [focus, setFocus] = (0, react.useState)(null);
+			const rows = (0, react.useMemo)(() => tickets.filter(isSpecTicket), [tickets]);
+			if (rows.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					padding: 24,
+					fontSize: 12.5,
+					color: TEXT_FAINT
+				},
+				children: [
+					"当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter ",
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "type" }),
+					" 区分。"
+				]
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					overflow: "auto",
+					padding: "10px 14px"
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						style: {
+							fontSize: 11,
+							color: TEXT_FAINT,
+							marginBottom: 8
+						},
+						children: "🔍 调研票 ＋ 🧩 原型票 ＋ 🔥 拷问票 全量清单（含已收口）；推演图（后三种组成）终点是决策清零。"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("table", {
+						style: {
+							width: "100%",
+							borderCollapse: "collapse",
+							fontSize: 12.5
+						},
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("tbody", { children: rows.map((t) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", {
+							style: {
+								cursor: "pointer",
+								borderBottom: `1px solid ${BORDER_LIGHT}`
+							},
+							onClick: () => setFocus(t),
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+									style: {
+										padding: "7px 10px",
+										width: 1,
+										whiteSpace: "nowrap"
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										style: {
+											fontSize: 10,
+											padding: "1px 6px",
+											borderRadius: 999,
+											background: `${ticketDisplayMeta(t).color}1e`,
+											color: ticketDisplayMeta(t).color,
+											border: `1px solid ${ticketDisplayMeta(t).color}44`
+										},
+										children: [
+											ticketDisplayMeta(t).icon,
+											" ",
+											ticketDisplayMeta(t).label
+										]
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+									style: {
+										padding: "7px 10px",
+										color: TEXT
+									},
+									children: t.title
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+									style: {
+										padding: "7px 10px",
+										whiteSpace: "nowrap",
+										color: TEXT_FAINT
+									},
+									children: displayStatus(t)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+									style: {
+										padding: "7px 10px",
+										whiteSpace: "nowrap",
+										color: TEXT_FAINT,
+										fontSize: 11
+									},
+									children: t.effort && t.effort !== ROOT_GROUP ? t.effort.split("/").pop() : ""
+								})
+							]
+						}, t.path)) })
+					}),
+					focus && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
+						ticket: focus,
+						planDir,
+						scope,
+						ctx,
+						sessions,
+						onChanged,
+						onClose: () => setFocus(null),
+						readOnly
+					})
+				]
+			});
+		}
 		function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }) {
 			const groups = [
 				"speculation",
@@ -3626,6 +3735,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									"chain",
 									"🧪 串联",
 									buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length
+								],
+								[
+									"speculation",
+									"🔍 推演票",
+									mapTickets.filter(isSpecTicket).length
 								]
 							].map(([id, label, n]) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",
@@ -3748,6 +3862,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						mapSub === "cases" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CasesView, {
 							cases: mapCases,
 							scope,
+							readOnly
+						}),
+						mapSub === "speculation" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SpeculationView, {
+							tickets: mapTickets,
+							planDir,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
 							readOnly
 						})
 					] }),
@@ -4255,7 +4378,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											style: { color: TEXT },
 											children: "落码验收"
 										}),
-										"； 卡片上的彩色徽标即票型身份。"
+										"； 卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（工单表默认只显 open/claimed，收口票看这里）。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6073,7 +6196,20 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				order: ENTRY_ORDER,
 				registrant: "dsh-plan-view",
 				inject: () => ({ open: () => {
-					ctx.betterSidebar.openTab({ type: PLAN_TAB_ID });
+					const corner = document.querySelector("[data-sidebar-right-expand]");
+					if (!corner) {
+						ctx.betterSidebar.openTab({ type: PLAN_TAB_ID });
+						return;
+					}
+					corner.click();
+					let tries = 8;
+					const tick = () => {
+						try {
+							ctx.betterSidebar.openTab({ type: PLAN_TAB_ID });
+						} catch {}
+						if (--tries > 0 && document.querySelector("[data-sidebar-right-expand]")) window.setTimeout(tick, 120);
+					};
+					window.setTimeout(tick, 120);
 				} })
 			}, PlanEntryButton));
 		}

@@ -8,9 +8,9 @@
  * 该位是「列表型」（list）：用本插件自己的 id 注册即并列新增一行，不会顶掉
  * 邻居（better-sidebar 的底部面板开关、Watcher 状态等）。
  *
- * 打开动作走插件自己的服务 `ctx.betterSidebar.openTab`：默认目标就是 DSH 原生
- * 右侧栏，且打开这个动作本身会把右侧栏展开（服务内部写死），因此不需要我们
- * 再调任何展开接口。标签页描述符带 `single: true`，重复点击只会聚焦已开的那一个。
+ * 打开动作走插件自己的服务 `ctx.betterSidebar.openTab`：标签页描述符带
+ * `single: true`，重复点击只会聚焦已开的那一个。展开右侧栏由本文件自己保证
+ * （收起态先点壳的展开角标再开票——DSH 0.1.5+ openTab 不再承诺展开，见 onClick 内注释）。
  */
 import type { Context } from 'cordis'
 import { PLAN_TAB_ID, PlanIcon } from './plan-icon'
@@ -66,7 +66,26 @@ export function registerPlanEntry(ctx: Context): () => void {
       id: 'dsh-plan-view:header-entry',
       order: ENTRY_ORDER,
       registrant: 'dsh-plan-view',
-      inject: () => ({ open: () => { ctx.betterSidebar.openTab({ type: PLAN_TAB_ID }) } }),
+      inject: () => ({ open: () => {
+        // 0.1.5+ 右栏归 DSH 原生 Sidebar：收起态下 openTab 链路的原生写操作全部
+        // 失效——controller.require() 直接抛「no session surface is mounted」，
+        // openTabIn 对未挂载 session 静默（均实测）。壳自带的展开角标
+        // （ExpandButton，data-sidebar-right-expand，收起态常驻标题栏角落）是
+        // 唯一在收起态仍可用的展开路径：先点它，等右栏挂载完成再开票；角标
+        // 消失即已展开，停。展开态（无角标）直接开票，原行为。
+        const corner = document.querySelector('[data-sidebar-right-expand]') as HTMLElement | null
+        if (!corner) {
+          ctx.betterSidebar.openTab({ type: PLAN_TAB_ID })
+          return
+        }
+        corner.click()
+        let tries = 8
+        const tick = (): void => {
+          try { ctx.betterSidebar.openTab({ type: PLAN_TAB_ID }) } catch { /* seat 未挂载完，下一拍重试 */ }
+          if (--tries > 0 && document.querySelector('[data-sidebar-right-expand]')) window.setTimeout(tick, 120)
+        }
+        window.setTimeout(tick, 120)
+      } }),
     },
     PlanEntryButton,
   ))

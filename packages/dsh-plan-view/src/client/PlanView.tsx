@@ -423,6 +423,11 @@ function ticketDisplayMeta(t: ParsedTicket): { label: string; icon: string; colo
   return KIND_META[k]
 }
 
+/** Whether the ticket is one of the wayfinder speculation types (research/prototype/grilling). */
+function isSpecTicket(t: ParsedTicket): boolean {
+  return SPECULATION_TYPES.has((t.type ?? '').trim().toLowerCase())
+}
+
 // ─── Map kinds: 推演图 vs 实施图 ─────────────────────────────────────────────
 //
 // 一个 effort 是推演图（wayfinder：票型 research/grilling/prototype，终点=决策
@@ -1415,6 +1420,45 @@ function inEffort(t: ParsedTicket, dir: string): boolean {
 // 点击复制恢复命令（zcode --resume），不做 DSH 跳转。
 const isDshSession = (id: string): boolean => id.startsWith('session-')
 
+// ─── 推演票专页（2026-09-29 票 12）──────────────────────────────────────────
+//
+// research / prototype / grilling 的子页。工单表（ViewC）默认只显示
+// open/claimed——收口后的推演图（novel 的 15 张全是 done）在那里默认不可见，
+// 本页全量列出，行点开详情；徽标与卡片同款（ticketDisplayMeta）。
+function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
+  const [focus, setFocus] = useState<ParsedTicket | null>(null)
+  const rows = useMemo(() => tickets.filter(isSpecTicket), [tickets])
+  if (rows.length === 0) {
+    return (
+      <div style={{ padding: 24, fontSize: 12.5, color: TEXT_FAINT }}>
+        当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter <Code>type</Code> 区分。
+      </div>
+    )
+  }
+  return (
+    <div style={{ flex: 1, overflow: 'auto', padding: '10px 14px' }}>
+      <div style={{ fontSize: 11, color: TEXT_FAINT, marginBottom: 8 }}>
+        🔍 调研票 ＋ 🧩 原型票 ＋ 🔥 拷问票 全量清单（含已收口）；推演图（后三种组成）终点是决策清零。
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+        <tbody>
+          {rows.map(t => (
+            <tr key={t.path} style={{ cursor: 'pointer', borderBottom: `1px solid ${BORDER_LIGHT}` }} onClick={() => setFocus(t)}>
+              <td style={{ padding: '7px 10px', width: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: `${ticketDisplayMeta(t).color}1e`, color: ticketDisplayMeta(t).color, border: `1px solid ${ticketDisplayMeta(t).color}44` }}>{ticketDisplayMeta(t).icon} {ticketDisplayMeta(t).label}</span>
+              </td>
+              <td style={{ padding: '7px 10px', color: TEXT }}>{t.title}</td>
+              <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT }}>{displayStatus(t)}</td>
+              <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT, fontSize: 11 }}>{t.effort && t.effort !== ROOT_GROUP ? t.effort.split('/').pop() : ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
+    </div>
+  )
+}
+
 function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }: {
   efforts: { dir: string; mapRaw: string }[]
   all: ParsedTicket[]
@@ -1660,7 +1704,7 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 type TopView = 'overview' | 'map' | 'qa' | 'ledger' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
-type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases'
+	type MapSub = 'route' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
 
 export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; visible: boolean }) {
   const { ctx, scope } = props as { ctx: any; scope: SessionScope; tab: any; visible: boolean }
@@ -1885,6 +1929,9 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
               ['cases', '🧪 测例', mapCases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)],
               // 串联计数 = 实际入画的连通节点数（孤岛被折叠，不计入），与画布一致
               ['chain', '🧪 串联', buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length],
+              // 推演票专页计数 = 当前范围 research/prototype/grilling 票总数（含 done——
+              // 收口推演图的票在工单表默认过滤里不可见，这里就是给它们一个全量页）
+              ['speculation', '🔍 推演票', mapTickets.filter(isSpecTicket).length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
                 {label}<span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>
@@ -1909,6 +1956,7 @@ export function PlanView(props: { ctx: any; store: any; scope: any; tab: any; vi
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={mapCases} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} readOnly={readOnly} />}
+          {mapSub === 'speculation' && <SpeculationView tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
       {top === 'qa' && (
@@ -2083,7 +2131,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
             <Code>prototype</Code>＝原型票（🧩 做粗糙实物给讨论反应）；
             <Code>grilling</Code>＝拷问票（🔥 逐题拍板）。
             推演图（后三种组成）终点是<strong style={{ color: TEXT }}>决策清零</strong>，实施图（task）终点是<strong style={{ color: TEXT }}>落码验收</strong>；
-            卡片上的彩色徽标即票型身份。
+            卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（工单表默认只显 open/claimed，收口票看这里）。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
