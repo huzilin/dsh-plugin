@@ -677,7 +677,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const rootTree = await fsTree(scope, planDir);
 			const hasMapHere = rootTree.entries.some((e) => e.name === "map.md" && !e.isDir);
 			const subDirs = rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules");
-			const effortDirs = (await Promise.all(subDirs.map(async (d) => (await fsTree(scope, d.path)).entries.some((e) => e.name === "map.md" && !e.isDir) ? d.path : null))).filter((p) => p !== null);
+			const effortDirs = (await Promise.all(subDirs.map(async (d) => {
+				return (await fsTree(scope, d.path)).entries.some((e) => !e.isDir && (e.name === "map.md" || e.name === "spec.md")) ? d.path : null;
+			}))).filter((p) => p !== null);
 			const allEfforts = hasMapHere ? [planDir, ...effortDirs] : effortDirs;
 			const [mapRaws, ...fileGroups] = await Promise.all([
 				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`))),
@@ -2779,9 +2781,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							const on = effortIdx === i;
 							const done = allAccepted(e.dir);
 							const accent = done ? "#4ed17e" : ACCENT;
+							const specOnly = e.mapRaw === "";
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								onClick: () => setEffortIdx(i),
-								title: done ? `${e.dir}（全部工单已验收）` : e.dir,
+								title: `${e.dir}${specOnly ? "（spec-only 实施图：无 map.md，凭 spec.md 加载，路线页无 Destination）" : ""}${done ? "（全部工单已验收）" : ""}`,
 								style: {
 									fontSize: 11.5,
 									padding: "4px 12px",
@@ -2795,6 +2798,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									kind ? MAP_KIND_META[kind].icon : "🗺️",
 									" ",
 									e.dir.split("/").pop(),
+									specOnly ? " 📄" : "",
 									" ",
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										style: { opacity: .7 },
@@ -3761,7 +3765,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									fontSize: 11,
 									color: TEXT_FAINT
 								},
-								children: "无图归属的测例与缺陷（SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。"
+								children: "全局件的测例与缺陷（无图归属：SOP 回测 / 整页回测等，落 `.plan/qa/cases-*.md` 与 `.plan/qa/DEF-*.md`）——能挂到具体工单/图的测例与缺陷放图内 `qa/`，不进本页。"
 							}),
 							rootDefects.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								style: {
@@ -4174,7 +4178,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								".plan/ \xA0",
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: { color: TEXT_FAINT },
-									children: "← 全局审批档（待拍板-*.md）＋全局 qa/、ledger/"
+									children: "← 全局件目录：根层审批档（待拍板-*.md）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——三件即封闭清单，清单外新子目录由 plan-lint 拦"
 								})
 							]
 						}),
@@ -4263,7 +4267,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
 										"结构漂移先用只读脚本查：",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan" }),
-										"（同票双档、缺 map.md、缺状态头/非法 status、effort 票尽未标 superseded-by）； 再跑 ",
+										"（同票双档、缺 map.md、缺状态头/非法 status、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单）； 再跑 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
 										" 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。 两者都只报告、不擅自改。"
 									]
@@ -4629,7 +4633,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							fontSize: 12,
 							color: TEXT_FAINT
 						},
-						children: "一账一文件：全局放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.scratch/<effort>/ledger/`，frontmatter 带 `type: ledger`。"
+						children: "一账一文件：全局件放 `.plan/ledger/挂账-NN-slug.md`，图内放 `.scratch/<effort>/ledger/`，frontmatter 带 `type: ledger`。"
 					})
 				]
 			});

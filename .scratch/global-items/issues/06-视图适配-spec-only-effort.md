@@ -18,7 +18,7 @@ status: done 2026-09-29
 - [x] EffortChips 对 mapRaw 空的 effort 加 spec-only 标注（chip 后缀 📄 + title 说明「无 map.md，凭 spec.md 加载，路线页无 Destination」）
 - [x] plan-lint 检查 [2] 口径同步：有 spec.md 落路径的目录不再报 missing-map；本仓全量 0 发现（global-items 两条发现消解，75 markdown）
 - [x] plan-protocol「effort 标志」条、§二 to-tickets 行、to-tickets SKILL.md 口径一致（双源零漂移）；install-skills 同步过
-- [x] esbuild transform 语法零错（bundle 复验受票 05 落地注同一环境阻塞，一并挂起）
+- [x] esbuild transform 语法零错；bundle 已随构建链恢复一并复验过（`tsdown.standalone.ts`，2026-09-29，新判据与 spec-only 标注均编译进产物）
 
 ## 落地注
 

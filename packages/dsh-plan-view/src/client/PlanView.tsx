@@ -2053,7 +2053,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
           &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md<br />
           &nbsp;&nbsp;approval/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内审批档（待拍板-*.md，grill / wayfinder 生成）</span><br />
-          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局件：根层审批档（待拍板-*.md）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——封闭清单，不得新落子目录</span>
+          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局件目录：根层审批档（待拍板-*.md）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——三件即封闭清单，清单外新子目录由 plan-lint 拦</span>
         </div>
         <P>
           <strong style={{ color: TEXT }}>为什么必须一票一文件</strong>：把多张票写进同一个文件（如 <Code>tickets.md</Code>），
