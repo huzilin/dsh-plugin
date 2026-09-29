@@ -629,8 +629,10 @@ async function loadPlan(scope: SessionScope, planDir: string, opts?: { effortSca
   // one map at a time with only that map's tickets. Without this the tickets are
   // one undifferentiated pile and a map's own work cannot be isolated.
   const [mapRaws, ...fileGroups] = await Promise.all([
-    // spec-only effort 无 map.md：fsRead 缺档返回非 text，efforts 里 mapRaw 记空串。
-    Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`))),
+    // spec-only effort 无 map.md：fsRead 缺档在 better-sidebar 侧是 fs-error 抛错
+    // （readText 对 ENOENT 抛 400），并非「返回非 text」——不容缺会让整个
+    // `.scratch` 侧 loadPlan 被上层 .catch(()=>null) 吞掉（2026-09-29 nvwa 实证）。
+    Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/map.md`).catch(() => null))),
     Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
     // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
     rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'ledger')
