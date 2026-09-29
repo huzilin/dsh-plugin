@@ -777,6 +777,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return ids.map((id) => meta.get(id) ?? { id });
 		}
 		const mdEntries = (tree) => tree.entries.filter((e) => e.name.endsWith(".md") && !e.isDir);
+		const PLAN_ROOT_ALLOW = /^(?:待拍板|已拍板)-/;
 		const ROOT_GROUP = "\0root";
 		const COLLECT_DIR_NAMES = /* @__PURE__ */ new Set([
 			"issues",
@@ -813,7 +814,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		async function loadPlan(scope, planDir, opts) {
 			const rootTree = await fsTree(scope, planDir);
 			const hasMapHere = opts?.effortScan === false ? false : rootTree.entries.some((e) => e.name === "map.md" && !e.isDir);
-			const subDirs = opts?.effortScan !== false ? rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules") : [];
+			const effortScan = opts?.effortScan !== false;
+			const subDirs = effortScan ? rootTree.entries.filter((e) => e.isDir && !e.hidden && e.name !== "node_modules") : [];
 			const effortDirs = (await Promise.all(subDirs.map(async (d) => {
 				return (await fsTree(scope, d.path)).entries.some((e) => !e.isDir && (e.name === "map.md" || e.name === "spec.md")) ? d.path : null;
 			}))).filter((p) => p !== null);
@@ -821,7 +823,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const [mapRaws, specRaws, ...fileGroups] = await Promise.all([
 				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/map.md`).catch(() => null))),
 				Promise.all(allEfforts.map((d) => fsRead(scope, `${d}/spec.md`).catch(() => null))),
-				Promise.resolve(mdEntries(rootTree).map((f) => ({
+				Promise.resolve((effortScan ? mdEntries(rootTree) : mdEntries(rootTree).filter((f) => PLAN_ROOT_ALLOW.test(f.name))).map((f) => ({
 					file: f,
 					from: ROOT_GROUP,
 					group: ROOT_GROUP

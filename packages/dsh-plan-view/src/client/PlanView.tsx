@@ -602,6 +602,13 @@ async function loadRounds(scope: SessionScope, root: string): Promise<RoundInfo[
 
 const mdEntries = (tree: { entries: FsEntry[] }) => tree.entries.filter((e: FsEntry) => e.name.endsWith('.md') && !e.isDir)
 
+// `.plan` 侧根层展示白名单（2026-09-30 用户拍板「路线不该看到」）：只收审批档
+// 形状（待拍板-*/已拍板-*）——与 plan-lint 检查[9] 同判据、双源一致。形状不符的
+// 根层文件（复盘-/梳理-/需求- 类调研档）是数据违例（lint[9] 报、按写入矩阵分流），
+// 视图不迁就：不收集、不当票展示，等数据侧迁移后自然对齐。与「.plan 子目录
+// 一律不作为 effort 加载」同构（2026-09-29 拍板）。
+const PLAN_ROOT_ALLOW = /^(?:待拍板|已拍板)-/
+
 // Marks files read from `.plan/`'s own top level, which belong to no effort.
 const ROOT_GROUP = '\u0000root'
 
@@ -702,7 +709,8 @@ async function loadPlan(scope: SessionScope, planDir: string, opts?: { effortSca
     // 有 map 的 effort 也读（map+spec 并存合法），但 spec 子页只对无 map 的
     // spec-only effort 显示——多余的一次读取换实现简单。
     Promise.all(allEfforts.map((d: string) => fsRead(scope, `${d}/spec.md`).catch(() => null))),
-    Promise.resolve(mdEntries(rootTree).map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
+    Promise.resolve((effortScan ? mdEntries(rootTree) : mdEntries(rootTree).filter((f: FsEntry) => PLAN_ROOT_ALLOW.test(f.name)))
+      .map(f => ({ file: f, from: ROOT_GROUP, group: ROOT_GROUP }))),
     // 全局台账目录（2026-09-21 拍板一账一文件）：`.plan/ledger/*.md`，from=ROOT_GROUP。
     rootTree.entries.some((e: FsEntry) => e.isDir && e.name === 'ledger')
       ? fsTree(scope, `${planDir}/ledger`).then(t => mdEntries(t).map(f => ({ file: f, from: ROOT_GROUP, group: 'ledger' })))
