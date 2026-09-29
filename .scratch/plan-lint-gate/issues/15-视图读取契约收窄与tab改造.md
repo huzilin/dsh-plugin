@@ -18,6 +18,7 @@ status: open
 4. **新增第 2 tab【spec】**（实施图/spec-only 专属）：仅含 `spec.md` 的 effort 显示 spec 正文渲染；两类 effort 的第 2 tab 互斥（图类型由 map/spec 有无推导，既有 mapKind 逻辑）。
 5. **全局【测例&缺陷】拆两 tab**：【测例】= 各 effort `qa/cases*.md` 聚合 `.plan/qa/cases-*.md`；【缺陷】= 各 effort `qa/DEF-*.md` 聚合 `.plan/qa/DEF-*.md`。
 6. **总览改版**：effort 汇总卡（每 effort 票数/状态概要）+ 全局待拍板区（`.plan/` 根层审批档）——全局件在总览保留展示位。
+7. **全局新增【CONTEXT】tab**（2026-09-30 追加拍板，放第一行**最后**）：读仓根 `CONTEXT.md` 渲染（复用 `md()`）；词汇表/领域正本展示位；文件缺失时显示空态提示行（tab 常驻不隐藏，与测例&缺陷计数 0 同理）。
 
 ## Acceptance
 
@@ -26,4 +27,5 @@ status: open
 - [ ] 推演图 effort 出现【map】tab 且渲染 map.md 正文；spec-only effort 出现【spec】tab（global-items 实测）
 - [ ] 全局【测例】【缺陷】两 tab 数据齐全（图内 + `.plan/qa/` 聚合，计数与文件清单对账）
 - [ ] 总览含 effort 汇总卡 + 全局待拍板区
+- [ ] 全局【CONTEXT】tab 位于第一行末位，渲染仓根 CONTEXT.md 正文；无 CONTEXT.md 的仓显示空态提示
 - [ ] `node --test test/` 全绿 + 隔离实例浏览器实测（test profile 纪律）
