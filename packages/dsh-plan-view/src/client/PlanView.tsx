@@ -1806,7 +1806,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // （各 effort qa/ + .plan/qa/ 全局件）；【CONTEXT】居第一行末位。
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
-    { id: 'map', label: '🗺️ 地图', count: openTickets(mapTickets) },
+    // 地图 tab 计数用全局口径（mapOwnTickets），不随 chips 选中图跳变——
+    // 随选中变化曾把选中无 open 票的图显示成「地图 0」，读作计数不准（2026-09-30 用户反馈）。
+    { id: 'map', label: '🗺️ 地图', count: openTickets(mapOwnTickets) },
     { id: 'cases', label: '🧪 测例', count: cases.length },
     { id: 'defects', label: '🐞 缺陷', count: openDefectCount(defects) },
     { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
@@ -1820,7 +1822,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
             {t.label}
-            {t.id !== 'guide' && <span style={{ marginLeft: 5, fontSize: 11, color: (t.id === 'approvals' || t.id === 'overview') && t.count > 0 ? '#f7ad31' : '#777' }}>{t.count}</span>}
+            {/* 计数 0 不显示：文档类页签（CONTEXT/说明）计数恒 0，带一个「0」只有噪音
+                （2026-09-30 用户反馈：context/spec/map 不要显示数量）。 */}
+            {t.id !== 'guide' && t.count > 0 && <span style={{ marginLeft: 5, fontSize: 11, color: (t.id === 'approvals' || t.id === 'overview') ? '#f7ad31' : '#777' }}>{t.count}</span>}
           </button>
         ))}
         {/* The files change outside this view — another session writes them, or
@@ -1880,7 +1884,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
               ['speculation', '🔍 推演票', mapTickets.filter(isSpecTicket).length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
-                {label}<span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>
+                {label}{n > 0 && <span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>}
               </button>
             ))}
           </div>

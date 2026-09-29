@@ -3646,7 +3646,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				{
 					id: "map",
 					label: "🗺️ 地图",
-					count: openTickets(mapTickets)
+					count: openTickets(mapOwnTickets)
 				},
 				{
 					id: "cases",
@@ -3698,11 +3698,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							type: "button",
 							style: tabBtn(top === t.id),
 							onClick: () => setTop(t.id),
-							children: [t.label, t.id !== "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							children: [t.label, t.id !== "guide" && t.count > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								style: {
 									marginLeft: 5,
 									fontSize: 11,
-									color: (t.id === "approvals" || t.id === "overview") && t.count > 0 ? "#f7ad31" : "#777"
+									color: t.id === "approvals" || t.id === "overview" ? "#f7ad31" : "#777"
 								},
 								children: t.count
 							})]
@@ -3838,7 +3838,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								type: "button",
 								style: { ...mapTab(mapSub === id) },
 								onClick: () => setMapSub(id),
-								children: [label, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								children: [label, n > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: {
 										marginLeft: 5,
 										fontSize: 11,
