@@ -263,14 +263,14 @@ window.__ModuleLoader__.load({
 				qaAccepted: fm.qa_accepted === "true"
 			};
 		}
-		const DONE_STATUS = new Set([
+		const DONE_STATUS = /* @__PURE__ */ new Set([
 			"done",
 			"closed",
 			"complete",
 			"completed",
 			"shipped"
 		]);
-		const OUT_STATUS = new Set([
+		const OUT_STATUS = /* @__PURE__ */ new Set([
 			"abandoned",
 			"rejected",
 			"wontfix",
@@ -279,7 +279,7 @@ window.__ModuleLoader__.load({
 			"canceled",
 			"superseded"
 		]);
-		const CLAIMED_STATUS = new Set([
+		const CLAIMED_STATUS = /* @__PURE__ */ new Set([
 			"doing",
 			"in_progress",
 			"in-progress",
@@ -598,7 +598,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				children: shown
 			});
 		}
-		const TICKET_TYPES = new Set([
+		const TICKET_TYPES = /* @__PURE__ */ new Set([
 			"task",
 			"research",
 			"prototype",
@@ -675,12 +675,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return KIND_META[k];
 		}
-		const SPECULATION_TYPES = new Set([
+		const SPECULATION_TYPES = /* @__PURE__ */ new Set([
 			"research",
 			"grilling",
 			"prototype"
 		]);
-		const IMPL_TYPES = new Set(["task"]);
+		const IMPL_TYPES = /* @__PURE__ */ new Set(["task"]);
 		function mapKind(dir, tickets) {
 			let speculation = false, impl = false;
 			for (const t of tickets) {
@@ -968,15 +968,17 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			});
 			const actions = [];
 			if (!readOnly) {
-				if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
-					actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
-					actions.push(btn("取消", () => {
-						setRebind(false);
-						setMsg(null);
-					}, "cancel", "#666"));
-				} else {
-					if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
-					actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+				if (kind === "ticket") {
+					if (ticket.session !== void 0 && rebind) {
+						actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
+						actions.push(btn("取消", () => {
+							setRebind(false);
+							setMsg(null);
+						}, "cancel", "#666"));
+					} else {
+						if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
+						actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+					}
 				}
 				if (kind === "approval" && pending) actions.push(btn("✅ 拍板（预填 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 			}
@@ -1304,6 +1306,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
+					minHeight: 0,
+					overflow: "hidden",
 					display: "flex",
 					flexDirection: "column",
 					background: BG,
@@ -1686,7 +1690,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				return tickets.some((t) => !t.type) ? [...named, NO_TYPE] : named;
 			}, [tickets]);
 			const [typeSet, setTypeSet] = (0, react.useState)(() => new Set(Object.keys(TYPE_THEME)));
-			const [kindSet, setKindSet] = (0, react.useState)(() => new Set([
+			const [kindSet, setKindSet] = (0, react.useState)(() => /* @__PURE__ */ new Set([
 				"ticket",
 				"approval",
 				"note"
@@ -1747,6 +1751,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
+					minHeight: 0,
+					overflow: "hidden",
 					display: "flex",
 					flexDirection: "column",
 					background: BG,
@@ -1975,7 +1981,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										setQuery("");
 										setStatusSet(new Set(OUTSTANDING));
 										setTypeSet(new Set(allTypes));
-										setKindSet(new Set([
+										setKindSet(/* @__PURE__ */ new Set([
 											"ticket",
 											"approval",
 											"note"
@@ -2260,9 +2266,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
-		const NODE_W = 176, STEP_X = 200, NODE_H = 66;
-		const RUNG_TOP = 140, RUNG_STEP = 110;
-		const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100;
+		const NODE_W = 176;
+		const STEP_X = 200;
+		const NODE_H = 66;
+		const RUNG_TOP = 140;
+		const RUNG_STEP = 110;
+		const START_Y = 36;
+		const END_GAP = 110;
+		const CAP_H = 30;
+		const CAP_W = 100;
 		const START = "\0start";
 		const END = "\0end";
 		function layoutGraph(tickets) {
@@ -2315,7 +2327,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN;
 			const pos = /* @__PURE__ */ new Map();
 			layers.forEach((o, li) => {
-				const left = (W_MAIN - (o.length * STEP_X - 24)) / 2;
+				const lw = o.length * STEP_X - 24;
+				const left = (W_MAIN - lw) / 2;
 				o.forEach((t, i) => {
 					const x = left + i * STEP_X;
 					pos.set(t.id, {
@@ -3752,6 +3765,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
+					minHeight: 0,
+					overflow: "hidden",
 					display: "flex",
 					flexDirection: "column",
 					background: BG,
@@ -5311,7 +5326,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return [];
 		}
-		const DEFECT_CLOSED = new Set([
+		const DEFECT_CLOSED = /* @__PURE__ */ new Set([
 			"已关闭",
 			"关闭",
 			"挂起"
@@ -6091,8 +6106,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									const sx = a.x + NODE_W, sy = a.y + NODE_H / 2;
 									const ex = b.x, ey = b.y + NODE_H / 2;
 									const slotX = ex - 18;
+									const d = ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`;
 									return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-										d: ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`,
+										d,
 										fill: "none",
 										stroke: on ? st.color : "rgba(255,255,255,.16)",
 										strokeWidth: on ? 2.2 : 1.4,

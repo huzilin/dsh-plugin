@@ -918,8 +918,10 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
   const active = tickets.filter(t => !t.outOfScope)
   const done = tickets.filter(t => t.done).length
   const pct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
+  // minHeight:0：Kanban 列体（下方 overflowY:auto）要在受限高度里才能滚，
+  // 列方向 flex 的自动最小高度会把本根撑到内容高、被上层裁掉（同根节点）。
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: BG, color: TEXT }}>
       <div style={{ padding: '12px 16px 0', display: 'flex', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Kanban</span>
         <span style={{ fontSize: 12, color: '#888' }}>{tickets.length} tickets · {done} done</span>
@@ -1038,8 +1040,9 @@ function ViewC({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: 
   const toggle = <T,>(set: Set<T>, v: T): Set<T> => { const nx = new Set(set); if (nx.has(v)) nx.delete(v); else nx.add(v); return nx }
   const sortBy = (key: string) => setSort(s => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
   const arrow = (key: string) => (sort.key === key ? (sort.dir === 1 ? ' ↑' : ' ↓') : '')
+  // minHeight:0 同 ViewA：表格体（下方 overflow:hidden 内 overflowY:auto）靠受限高度才滚。
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: BG, color: TEXT }}>
       <div style={{ padding: '10px 16px', background: HEADER_BG, borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Table</span>
         <span style={{ fontSize: 12, color: '#888' }}>
@@ -1855,8 +1858,11 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
 
+  // 宿主 .tabBody（ui-sidebar-right）height:100% + overflow:hidden：pane 高度
+  // 固定、溢出裁切，滚动责任在本视图。minHeight:0 解除 flex 列方向的内容式
+  // 自动最小高度，否则根被正文撑高后被宿主裁掉——全 tab 不可滚动。
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14 }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14 }}>
       <div style={{ display: 'flex', gap: 4, padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, alignItems: 'center' }}>
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
