@@ -10,7 +10,7 @@
 # 存量未迁移图仍按旧布局留在 .plan/。两个目录各跑一遍全量检查，发现数累计。
 # 票目录名 issues/（新）与 tickets/（存量）双认。
 #
-# 抓七类漂移：
+# 抓十类漂移（[7] terms 仅带 --terms 时执行）：
 #   1. 同票双档：同一票 id 多处落点，且多于一份未标 superseded-by
 #      （map/readme 豁免；type: ledger 是台账登记簿不是票，2026-09-21 拍板；
 #      qa/ 下的缺陷/测例档不是票，整目录豁免）
@@ -62,6 +62,11 @@
 #      其余（梳理/复盘/参考/需求等）按写入矩阵分流（docs/research/、
 #      docs/requirements/、.tmp/、effort assets/）。子目录由检查[6]管，
 #      本查只管根层文件。
+#   10. 审批档归属声明（2026-09-30 拍板 A，to-approval 参数化配套）：图内档
+#      frontmatter 带 effort: <slug> 且落 .scratch/<slug>/approval/；全局档不
+#      带该字段、落 .plan/approval/（路径即声明）。声明与落点不符报
+#      approval-misplaced，缺声明报 approval-scope。lint 不知场景，只验声明
+#      与落点一致；全局档带 effort: 字段同样报。
 #
 # 非治理区（遍历时整棵剪掉，与 mjs SKIP 一致）：.archive / node_modules /
 # assets / handoffs / ledger / 一切隐藏目录与隐藏文件。
@@ -427,6 +432,44 @@ for PD in $PLAN_DIRS; do
     echo
     ;;
   esac
+
+  # ── 10. 审批档归属声明一致性（2026-09-30 拍板 A，to-approval 参数化配套）──
+  # 判据正本 = plan-protocol §三「审批文档归属」条：图内档 frontmatter 带
+  # effort: <slug> 且落 .scratch/<slug>/approval/；全局档不带 effort: 字段、
+  # 落 .plan/approval/（路径即声明）。lint 不知场景，只验「声明 vs 落点」
+  # 一致：全局档带 effort: → 报；图内档缺声明或声明≠所在目录 → 报。
+  # 形状类违例（根层/契约外目录）归检查[6][8][9]，本查只管 approval/ 目录内。
+  echo "[10] 审批档归属声明（图内带 effort: 声明、全局不带；声明与落点一致）"
+  bad10=0
+  if [ "$(basename "$PD")" = ".plan" ] && [ -d "$PD/approval" ]; then
+    for f in "$PD/approval"/*.md; do
+      [ -f "$f" ] || continue
+      if [ -n "$(fm_field "$f" effort)" ]; then
+        note "✗ $f: approval-scope — 全局审批档（.plan/approval/）不得带 effort: 字段（路径即声明）；归属某图请迁 .scratch/<slug>/approval/ 并带声明"
+        bad10=$((bad10 + 1))
+      fi
+    done
+  fi
+  for d in "$PD"/*/; do
+    [ -d "$d" ] || continue
+    [ -d "${d}approval" ] || continue
+    [ "$(basename "$d")" = "approval" ] && continue  # .plan 全局面已在上方处理
+    eff="$(basename "$d")"
+    for f in "${d}approval"/*.md; do
+      [ -f "$f" ] || continue
+      v=$(fm_field "$f" effort)
+      if [ -z "$v" ]; then
+        note "✗ $f: approval-scope — 图内审批档缺 effort: 声明（frontmatter 加 effort: $eff）"
+        bad10=$((bad10 + 1))
+      elif [ "$v" != "$eff" ]; then
+        note "✗ $f: approval-misplaced — 声明 effort: $v 与落点 $eff/approval/ 不符（迁移文件或改声明，二者取一）"
+        bad10=$((bad10 + 1))
+      fi
+    done
+  done
+  [ "$bad10" -eq 0 ] && note "✓ 无"
+  findings=$((findings + bad10))
+  echo
 
   # ── 汇总（本目录） ─────────────────────────────────────────────────────────
   total=$(wc -l < "$TMP/files.txt" | tr -d ' ')

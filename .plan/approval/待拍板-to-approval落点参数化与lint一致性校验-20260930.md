@@ -1,7 +1,7 @@
 ---
 type: approval
 date: 2026-09-30
-status: pending
+status: closed
 origin: proactive
 ---
 
@@ -61,3 +61,17 @@ lint 新增检查（拟编 [10] `approval-scope`）机械校验**声明与落点
 - **C**：另立票分期——参数化与 lint 检查分两轮，颗粒度小但两次施工两次验证。
 
 拍板 A 后建议以 plan-lint-gate 或新 effort 立票实施（改动面 = 2 个 skill 源 + plan-lint.sh + PlanView.tsx 重建 + 测试 + 协议正本一处）。
+
+---
+
+## 五、裁定记录（2026-09-30，plan-approve 结算）
+
+**你的原话**：
+
+> A
+> plan-loop，默认就放到 .plan/approval/
+
+- **A 全量落地**：参数化（§二）+ lint 声明一致性检查[10]（§一）+ 五处联动（§三）一轮清完。
+- **追加裁定**：plan-loop（收口裁决单）**默认**落 `.plan/approval/`——裁决单是跨图收口产物、全局件，不需逐轮判断归属；plan-loop 场景的 to-approval 调用默认传 `global`（明确归属某图时才传该图 slug）。遗漏 #2/#3/#4 按「plan-loop 默认全局」统一处置。
+
+**落地类型**：代码（to-approval / grilling / plan-loop 三 skill 源 + plan-lint.sh 检查[10] + PlanView.tsx 重建）+ 协议正本一处，本会话当场施工，commit 见结算汇报。

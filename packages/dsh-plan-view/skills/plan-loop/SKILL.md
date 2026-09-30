@@ -15,7 +15,7 @@ disable-model-invocation: true
 
 本 skill 是 plan 生态的**循环驱动器**：不发明任何单据格式与状态词，只按 `plan-protocol` skill（公共协议层）的形态契约与交接契约，把治理目录里既有单据一轮轮推到终态。三条流程、票面词表、台账恢复口径、缺陷状态机，均以 `plan-protocol` skill 为准。
 
-**单据**（本 skill 的统一对象词，即循环的推进对象）：`.scratch/` 下四类带状态的文档——工单（`issues/<NN>-*.md`，状态读 frontmatter `status`）、缺陷（图内 `qa/DEF-*.md`，读 `- 状态:` 字段行；全局缺陷在 `.plan/qa/`）、测例（图内 `qa/cases.md`，推进方式 = 执行并回写票面 qa 标记）、挂账台账（两级 `ledger/`——全局 `.plan/ledger/`、图内 `.scratch/<effort>/ledger/`，读 `- 状态:` 字段行）。审批文档（`.plan/approval/待拍板-*.md`）**不是单据、不推进**——要人工决策；循环只在收尾呈报，拍板后产生的新单据由下一轮盘点自然接住。effort 唯一落点 = `.scratch/`，`.plan/` 下无 effort（2026-09-29 拍板）。
+**单据**（本 skill 的统一对象词，即循环的推进对象）：`.scratch/` 下四类带状态的文档——工单（`issues/<NN>-*.md`，状态读 frontmatter `status`）、缺陷（图内 `qa/DEF-*.md`，读 `- 状态:` 字段行；全局缺陷在 `.plan/qa/`）、测例（图内 `qa/cases.md`，推进方式 = 执行并回写票面 qa 标记）、挂账台账（两级 `ledger/`——全局 `.plan/ledger/`、图内 `.scratch/<effort>/ledger/`，读 `- 状态:` 字段行）。审批文档（两级：全局 `.plan/approval/待拍板-*.md`、图内 `.scratch/<effort>/approval/`，2026-09-30 拍板 A 参数化后图内档带 `effort:` 声明）**不是单据、不推进**——要人工决策；循环只在收尾呈报，拍板后产生的新单据由下一轮盘点自然接住。effort 唯一落点 = `.scratch/`，`.plan/` 下无 effort（2026-09-29 拍板）。
 
 **右推纪律（第一约束）**：循环期间不停下等确认、不逐项提问。凡需用户拍板的动作——选型分叉、收图判定、证据不足的翻面——记入本轮**裁决单**，循环继续推其余可执行项。仅两种情况允许提前停：不可逆的破坏性操作；剩余单据已全部处于待拍板或终态。收尾一次交付 Brief 与裁决单，用户逐行回批（如「A1 批；B 全批；C2 选 C」），回批项由下一轮落地。
 
@@ -31,7 +31,7 @@ disable-model-invocation: true
 - **待拍板**：卡在选型分叉的单据、缺陷暴露的需求级分歧
 - **已终态**：票 `done` / `out_of_scope`、缺陷 `已关闭`、台账 `已销` / `已转票`——本轮跳过
 
-同时扫 `待拍板-*.md`（状态头 `pending` / `active`）逐档记一行卡点：不进桶、不推进，收尾呈报。盘点后先跑 plan-lint（脚本随 plan 系 skill 安装，在本 skill `scripts/` 下），形态违例先修复再推进。
+同时扫两级审批档（`.plan/approval/` + 各 effort 的 `.scratch/<effort>/approval/`，文件名形状 `待拍板-*`）状态头 `pending` / `active` 的逐档记一行卡点：不进桶、不推进，收尾呈报。盘点后先跑 plan-lint（脚本随 plan 系 skill 安装，在本 skill `scripts/` 下），形态违例先修复再推进。
 
 ### 2. 排序
 
@@ -48,7 +48,7 @@ disable-model-invocation: true
 | 工单 | `done` 但验收框有空 | 按 `plan-sync` skill 口径对账：证据支撑的逐条补勾；附因留格（如「真腿未直证」）如实保留、归等待态 | 框齐，或缺据列明 |
 | 图 | 决策已定案（spec / 拍板档 / 设计定稿）但工单未拆 | 按 `to-tickets` skill 从定案文档拆票（一票一文件 + frontmatter） | 工单落盘进图 |
 | 缺陷 | 待修复 / 已确认 / 修复中 / 待复测 | 按 `diagnosing-bugs` skill 修复（`待复测` 态则跳过修复直接复测；只回写 DEF 的 C 节），回 `run-qa-testcases` skill 同命令复测翻绿 | `已关闭` |
-| 缺陷 | 暴露需求级分歧 | 转 `to-approval` skill 立审批档，进待拍板桶 | — |
+| 缺陷 | 暴露需求级分歧 | 转 `to-approval` skill 立审批档——传缺陷所属图的 effort slug（`/to-approval <effort-slug>`），档落该图 `approval/` 并带 `effort:` 声明 | — |
 | 测例 | 实施图缺 `qa/cases.md`、被测票缺 `qa_cases` 标记，或票全 done 但 `qa_accepted` 未齐 | 缺测例先按 `to-qa-testcases` skill 基于该图实施票生成；已有测例按 `run-qa-testcases` skill 跑该图：全绿给被测票写 `qa_accepted`；有缺陷立 DEF-NN 进修复环 | 图面测例齐备；票面 `qa_accepted: true` |
 | 台账 | `可启动` 且启动条件已满足 | 按**恢复口径**转票（恢复到来源图立票，`- 状态:` 改 `已转票` 并留痕；原图 closed 则重开） | `已转票` |
 | 台账 | `可启动` 但启动条件未触发 | 不硬开工；能补启动条件就补，不能的保持等待态、简报列明 | 等待态（非终态） |
@@ -66,7 +66,7 @@ disable-model-invocation: true
 每轮收尾交付两样：
 
 - **Brief**（会话消息交付）：每个未终态 effort 一行（图型 / 距终点差什么 / 卡点 / 下一步）；每条非终态台账一行（挂账-NN 带号 / 状态词 / 启动条件是否触发）；每条未关闭缺陷一行（DEF-NN / 状态 / 卡点）；每份 `pending` 审批档一行（路径 / 卡点，只呈报不代办）；每份 `closed` 且无 `archived:` 标的审批档一行（「定案未成 spec」——漏 to-spec 的提醒在此呈报：该档结论滞留过程档、未 discharge 进长期权威，建议跑 to-spec 或按补充流程落票）；本轮每项推进一行（单据 + commit 或票号）。
-- **裁决单**（落盘 `.plan/待拍板-收口裁决单-round-<NNN>-<日期>.md`，状态头四字段、`status: pending`）：**确认组**（收图提名、对账弱证据项）与**拍板组**（循环内冒出的选型分叉），每行给选项与影响，支持逐行回批。
+- **裁决单**（落盘 `.plan/approval/待拍板-收口裁决单-round-<NNN>-<日期>.md`——2026-09-30 拍板「plan-loop，默认就放到 .plan/approval/」：裁决单是跨图收口产物、全局件，默认全局不逐轮判归属；旧落点 `.plan/` 根层已违例；状态头四字段、`status: pending`）：**确认组**（收图提名、对账弱证据项）与**拍板组**（循环内冒出的选型分叉），每行给选项与影响，支持逐行回批。
 
 裁决单的回批结论由下一轮落地（该立票的调 `to-tickets` skill）。`pending` 审批档的拍板归用户（走 `plan-approve` skill），拍板落出的新单据由下一轮盘点自然入账——循环不代办。
 

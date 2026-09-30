@@ -35,12 +35,20 @@ That birth is the problem this skill solves. An approval document written ad hoc
    date: YYYY-MM-DD
    status: pending
    origin: readability-rescue
+   effort: <effort-slug>   # in-effort approvals only — see step 7; global approvals omit it
    ---
    ```
 
    `origin` records what produced the document. Use `readability-rescue` when the human asked for something expanded, as here; `proactive` when the agent raised the decision unprompted; `review` or `retrospective` when it grew out of one of those. The field exists so the rescue rate is countable — a rising count is evidence that reporting upstream needs fixing, not that documents need writing faster.
 
-7. **Save where the subject lives: approvals generated inside an effort go INTO that effort — `.scratch/<effort-slug>/approval/待拍板-<slug>-<YYYY-MM-DD>.md`**（2026-09-29 拍板：grill-with-doc / wayfinder 生成的审批档入 effort 的独立 `approval/` 目录——随图归组展示、随 effort 归档）. `<slug>` names the subject in kebab-case, not the ticket id (never `.plan/W1.md` style). Only **global** approvals (cross-effort scope or no owning effort, e.g. governance rulings) go to `.plan/approval/`: `.plan/approval/待拍板-<slug>-<YYYY-MM-DD>.md` (2026-09-30 收拢拍板: global approvals moved from the `.plan/` root into a dedicated `approval/` subdir, same shape as the in-effort one). The plan view scopes an in-effort approval to that map's 待拍板 tab. Old-layout `.plan/<effort>/待拍板-*.md` files were migrated to the `.plan/` root (2026-09-29) and again into `.plan/approval/` (2026-09-30) — never write at either. `.plan/` / `.scratch/` are committed to version control; they are the project's shared planning memory. Create the directory if needed and tell the human the path.
+7. **Take the destination as an argument — `<effort-slug | global>`, always passed, never inferred**（2026-09-30 拍板 A）：
+
+   - `/to-approval <effort-slug> [主题]` → save to **`.scratch/<effort-slug>/approval/待拍板-<slug>-<YYYY-MM-DD>.md`** — approvals generated inside an effort go INTO that effort（随图归组展示、随 effort 归档）. `<slug>` names the subject in kebab-case, not the ticket id (never `.plan/W1.md` style).
+   - `/to-approval global [主题]` → save to **`.plan/approval/待拍板-<slug>-<YYYY-MM-DD>.md`** — only cross-effort / no-effort rulings (e.g. governance) live here as global items（2026-09-30 收拢拍板：全局审批档驻独立 `approval/` 子目录）.
+   - **Called with no argument**（人工或明文调用均同）→ do NOT infer from context silently: ask the human which effort — or global — owns this ruling, offering the session's effort as the recommended default. `disable-model-invocation` only prevents spontaneous loading; plaintext invocations (plan-loop, subagent prompts) reach this skill the same way, so the destination must be an explicit input in both cases.
+   - **Declare the destination in the frontmatter**: an in-effort approval adds `effort: <effort-slug>` to its frontmatter — plan-lint check [10] verifies the declaration against the physical location; a global approval carries **no** `effort:` field (`.plan/approval/` is the declaration).
+
+   The plan view scopes an in-effort approval to that map's 待拍板 tab. Old-layout `.plan/<effort>/待拍板-*.md` files were migrated to the `.plan/` root (2026-09-29) and again into `.plan/approval/` (2026-09-30) — never write at either. `.plan/` / `.scratch/` are committed to version control; they are the project's shared planning memory. Create the directory if needed and tell the human the path.
 
 8. **Open it in the sidebar.** The document exists to be read now; a path alone makes the human go fetch it.
 

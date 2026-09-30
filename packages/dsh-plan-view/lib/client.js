@@ -786,7 +786,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			};
 		}
 		const shortSession = (id) => id.replace(/^session-/, "").slice(0, 8);
-		const EXPLORE_PROMPT = (t) => `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档。`;
+		const EXPLORE_PROMPT = (t) => `继续推演这张工单：${t.path ?? t.file}\n\n先读票面原文与它引用的文档，然后继续未决项的推演；需要人拍板的结论，用 to-approval 落成待拍板文档——调用时传本图 effort slug（${effortSlugOf(t)}）作落点参数，档落该图 approval/ 并带 effort: 声明（2026-09-30 拍板 A：默认 effort，全局必须显式）。`;
+		const effortSlugOf = (t) => t.effort && t.effort !== ROOT_GROUP ? t.effort.split("/").pop() ?? "" : "（本票无图归属，请先向用户确认落点 effort 或 global）";
 		const ADVANCE_PROMPT = (t) => `推进这张工单：${t.path ?? t.file}\n\n按票面实施；完成后按 plan-protocol 回写票面状态（status 与落地注）。`;
 		function sessionsOf(ctx) {
 			try {
