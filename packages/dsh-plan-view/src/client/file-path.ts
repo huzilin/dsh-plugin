@@ -46,3 +46,22 @@ export function displayPath(path: string, cwd: string | undefined): string {
   if (normalized === root) return '.'
   return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : normalized
 }
+
+/**
+ * 票面 `assets:` 引用是否指向这个资产文件（推演产物三视图归组用，票 21）。
+ * 票面按契约写 repo-relative（`.scratch/<slug>/assets/x.md`，实测也有缺 `.scratch/`
+ * 前缀、带 `./`、写裸文件名的形态），收集到的是绝对路径——归一成相对 cwd 比较
+ * 相等，再兜底 `assets/` 之后的尾段比对（裸文件名跨 effort 撞名属票作者自担的歧义）。
+ * @param absPath - 收集到的资产文件绝对路径。
+ * @param ref - 票面 `assets:` 数组里的一条引用，按写入原形。
+ * @param cwd - 会话工作目录；未知则退化为整串比对。
+ */
+export function sameAssetRef(absPath: string, ref: string, cwd: string | undefined): boolean {
+  const r = ref.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
+  if (r === '') return false
+  const abs = absPath.replace(/\\/g, '/')
+  if (r === abs || r === displayPath(abs, cwd)) return true
+  const tail = abs.split('/assets/').pop()
+  const rTail = r.split('/assets/').pop()
+  return tail !== undefined && rTail === tail
+}

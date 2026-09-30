@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fileAddress, displayPath } from '../src/client/file-path.ts'
+import { fileAddress, displayPath, sameAssetRef } from '../src/client/file-path.ts'
 
 const SID = 'session-6f3a1c2e-0000-4000-8000-abcdefabcdef'
 const CWD = '/Users/me/workdir/dsh-plugin'
@@ -54,4 +54,21 @@ test('displayPath keeps a path that merely shares a prefix with the workspace', 
 test('displayPath without a workspace keeps the path as-is', () => {
   assert.equal(displayPath(`${CWD}/x.md`, undefined), `${CWD}/x.md`)
   assert.equal(displayPath(`${CWD}/x.md`, ''), `${CWD}/x.md`)
+})
+
+// ─── sameAssetRef（票 21：推演产物三视图的 assets: 字段归组）─────────────────
+
+test('sameAssetRef matches repo-relative, prefix-less, dotted and bare-name refs', () => {
+  const abs = `${CWD}/.scratch/workflows/assets/round-001-20260924.md`
+  assert.equal(sameAssetRef(abs, '.scratch/workflows/assets/round-001-20260924.md', CWD), true)
+  assert.equal(sameAssetRef(abs, 'workflows/assets/round-001-20260924.md', CWD), true)
+  assert.equal(sameAssetRef(abs, './round-001-20260924.md', CWD), true)
+  assert.equal(sameAssetRef(abs, 'round-001-20260924.md', CWD), true)
+  assert.equal(sameAssetRef(abs, abs, CWD), true)
+  assert.equal(sameAssetRef(abs, 'other-round.md', CWD), false)
+  assert.equal(sameAssetRef(abs, '', CWD), false)
+  // cwd 未知时退化为整串比对；缺前缀 ref 靠 assets/ 尾段兜底（尽力而为，
+  // 跨 effort 撞名属票作者自担的歧义——视图场景 cwd 恒已知）。
+  assert.equal(sameAssetRef(abs, abs, undefined), true)
+  assert.equal(sameAssetRef(abs, 'workflows/assets/round-001-20260924.md', undefined), true)
 })

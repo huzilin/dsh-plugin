@@ -25,14 +25,16 @@ async function fixture() {
   await w('.scratch/wayfinder/map.md', '# map\n')
   await w('.scratch/wayfinder/issues/01-a.md', '---\ntype: task\n---\n# 01')
   await w('.scratch/wayfinder/qa/DEF-1.md', '---\ntype: qa-defect\n---\n# DEF')
-  await w('.scratch/wayfinder/assets/note.md', '调研资源，不是票')
+  await w('.scratch/wayfinder/assets/note.md', '推演产物（票 21 起收集，按票面 assets: 字段关联）')
   await w('.scratch/wayfinder/readme.md', '陪伴文档不收')
   await w('.scratch/spec-only/spec.md', '# spec\n')
   await w('.scratch/spec-only/tickets/01-impl.md', '# 01')
   await w('.scratch/spec-only/fengping/x.md', '契约外孤岛不收')
-  // .plan：审批档形状收、违例形状不收、全局 ledger/qa 收。
-  await w('.plan/待拍板-x-20260930.md', '---\nstatus: pending\n---\n')
-  await w('.plan/已拍板-y-20260929.md')
+  // .plan：审批档正本落 approval/（2026-09-30 收拢拍板）、根层前缀形状仅存量
+  // 兼容、违例形状不收、全局 ledger/qa 收。
+  await w('.plan/approval/待拍板-a-20260930.md', '---\nstatus: pending\n---\n')
+  await w('.plan/approval/已拍板-b-20260929.md')
+  await w('.plan/待拍板-x-20260930.md', '---\nstatus: pending\n---\n') // 存量兼容仍收
   await w('.plan/复盘-z.md', '违例形状不收')
   await w('.plan/ledger/L1.md')
   await w('.plan/qa/cases-sop.md')
@@ -45,6 +47,7 @@ async function fixture() {
   await w('.archive/rounds/2026-09-01-r1/map.md', '# old map\n')
   await w('.archive/rounds/2026-09-01-r1/old-effort/map.md') // effort 判据：子目录含 map/spec
   await w('.archive/rounds/2026-09-01-r1/old-effort/issues/01-old.md')
+  await w('.archive/rounds/2026-09-01-r1/old-effort/assets/old-note.md') // 轮内成员：assets 随轮归档
   await w('.archive/rounds/not-a-round/x.md')
   await w('.archive/README.md', '| round-id | 主题 |\n|:--|:--|\n| `2026-09-01-r1` | 首轮 |\n')
   await w('CONTEXT.md', '# 词汇表\n')
@@ -64,18 +67,21 @@ test('snapshot collects tracker root + efforts per the read contract', async () 
   const specOnly = snap.efforts.find((e) => e.dir.endsWith('spec-only'))
   assert.equal(specOnly.mapRaw, '')
   assert.equal(specOnly.specRaw, '# spec\n')
-  // 白名单：issues/qa/tickets 收；assets/fengping 不收；NON_TICKET（readme）不收。
+  // 白名单：issues/qa/tickets/assets 收（assets 票 21 起收集）；fengping 不收；
+  // NON_TICKET（readme）不收。
   const n = namesOf(snap)
   assert.ok(n.includes('issues/01-a.md'))
   assert.ok(n.includes('qa/DEF-1.md'))
   assert.ok(n.includes('tickets/01-impl.md'))
-  assert.ok(!n.some((x) => x.includes('assets/')))
+  assert.ok(n.includes('assets/note.md'))
   assert.ok(!n.some((x) => x.includes('fengping/')))
   assert.ok(!n.some((x) => x === 'root/readme.md'))
-  // tracker 根层全收；.plan 根层 PLAN_ROOT_ALLOW 过滤（复盘- 不收）。
+  // tracker 根层全收；.plan 根层 PLAN_ROOT_ALLOW 过滤（复盘- 不收，前缀形状
+  // 存量兼容仍收）；approval/ 正本落点收进（2026-09-30 收拢拍板）。
   assert.ok(n.includes('root/map-own.md'))
   assert.ok(n.includes('root/待拍板-x-20260930.md'))
-  assert.ok(n.includes('root/已拍板-y-20260929.md'))
+  assert.ok(n.includes('approval/待拍板-a-20260930.md'))
+  assert.ok(n.includes('approval/已拍板-b-20260929.md'))
   assert.ok(!n.includes('root/复盘-z.md'))
   // 全局 ledger/qa + docs/adr（形状外 not-an-adr.md 不收）。
   assert.ok(n.includes('ledger/L1.md'))
@@ -97,10 +103,12 @@ test('round mode loads the archived round as a single tracker root', async () =>
   assert.equal(snap.efforts.length, 2)
   assert.ok(snap.efforts.some((e) => e.dir.endsWith('2026-09-01-r1')))
   assert.ok(snap.efforts.some((e) => e.dir.endsWith('old-effort')))
-  // 现行 effort 不出现在轮快照里；轮内票面收进；ADR 是知识层非轮成员，不进轮视图。
+  // 现行 effort 不出现在轮快照里；轮内票面与 assets 收进（assets 是轮内成员，
+  // 与 ADR 的现行面-only 相反——知识层非轮成员）。
   assert.ok(!snap.files.some((f) => f.name === '01-a.md'))
   assert.ok(snap.files.some((f) => f.name === '01-old.md'))
   assert.ok(!snap.files.some((f) => f.group === 'adr'))
+  assert.ok(snap.files.some((f) => f.group === 'assets' && f.name === 'old-note.md'))
   assert.equal(snap.efforts.find((e) => e.dir.endsWith('2026-09-01-r1')).mapRaw, '# old map\n')
 })
 

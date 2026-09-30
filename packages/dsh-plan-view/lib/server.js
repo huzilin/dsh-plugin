@@ -2,18 +2,20 @@
  * dsh-plan-view — host-side Cordis entry: the plan view's own data plane.
  *
  * 本插件此前 CLIENT-only（读文件走 better-sidebar 的 /sidebar/api 通用路由，
- * 每调用 ~100ms 且完全串行，见 .plan/待拍板-planview加载性能-20260930.md）。
+ * 每调用 ~100ms 且完全串行，见 .plan/approval/待拍板-planview加载性能-20260930.md）。
  * 票 19（2026-09-30 拍板「完全解耦」）后：数据面改走本文件挂的两条专用路由，
  * 进程内直读 fs，一次请求返回全部数据；better-sidebar 依赖清零。
  *
  * 读取契约从客户端随迁（与 plan-lint 双源一致，改动须同步两边）：
  *   - effort 判据（2026-09-29 拍板）：子目录含 map.md = wayfinder 图；无 map
  *     但含 spec.md = spec-only 实施图——同算 effort。
- *   - 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六）：issues/（存量
- *     tickets/ 兼容）+ approval|qa|ledger 图内单据目录 + impl|impl-fe 存量只读。
- *     assets/ 是调研资源不是票；契约外目录是视图不可见孤岛（plan-lint 检查[8]）。
- *   - `.plan` 侧根层展示白名单（2026-09-30 票 18）：只收审批档形状
- *     （待拍板- 与 已拍板- 前缀），与 plan-lint 检查[9] 同判据。
+ *   - 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六；assets 为同日票 21
+ *     三视图拍板扩面）：issues/（存量 tickets/ 兼容）+ approval|qa|ledger 图内
+ *     单据目录 + impl|impl-fe 存量只读 + assets/（推演产物，按票面 `assets:`
+ *     字段关联展示，不当票计型）。契约外目录是视图不可见孤岛（plan-lint 检查[8]）。
+ *   - `.plan` 侧审批档收集（2026-09-30 收拢拍板）：正本落点 = `.plan/approval/`
+ *     子目录（全局件审批成员目录化）；根层 `待拍板-/已拍板-` 前缀仅存量兼容
+ *     （未迁移仓可见性不回退），plan-lint 检查[9] 已按新落点报根层违例。
  *   - `docs/adr/` 全局展示层（2026-09-30 拍板「docs/adr 纳入视图全局层」）：
  *     知识层原地自维护、不入治理目录，视图只读展示——只收 `NNNN-<slug>.md`
  *     形状（ADR-FORMAT.md 契约），group='adr'；现行面（round=null）才有，
@@ -33,10 +35,13 @@ export const inject = ['webServer', 'sessions']
 
 // ─── 读取契约常量（客户端 PlanView.tsx 的同款判据，双源一致）──────────────────
 
-// 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六）。
-export const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa', 'ledger', 'impl', 'impl-fe'])
+// 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六；assets 为同日三视图拍板扩面）。
+// assets/ 是推演产物不是票：收集仅为按票面 `assets:` 字段关联展示（票 21），
+// 客户端分流不进票面、不计工单数。
+export const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa', 'ledger', 'assets', 'impl', 'impl-fe'])
 
-// `.plan` 侧根层展示白名单（2026-09-30 票 18，plan-lint 检查[9] 同判据）。
+// `.plan` 根层审批档形状（2026-09-30 票 18 引入）：收拢拍板后新落点 =
+// `.plan/approval/`，根层仅存量兼容（未迁移仓审批档不从视图消失）。
 export const PLAN_ROOT_ALLOW = /^(?:待拍板|已拍板)-/
 
 // ADR 文件形状（ADR-FORMAT.md 契约：docs/adr/NNNN-<slug>.md）；形状外不收。
@@ -125,8 +130,8 @@ async function collectRoot(planDir, effortScan) {
     if (!effortScan && !PLAN_ROOT_ALLOW.test(f.name)) continue
     files.push({ file: f, from: ROOT_GROUP, group: ROOT_GROUP })
   }
-  // 全局台账（2026-09-21 拍板一账一文件）与根层 qa/（无图归属测例/缺陷）。
-  for (const name of ['ledger', 'qa']) {
+  // 全局单据子目录（2026-09-30 收拢拍板起含 approval/）：审批档 + 台账 + qa。
+  for (const name of ['approval', 'ledger', 'qa']) {
     if (!rootTree.some((e) => e.isDir && e.name === name)) continue
     const t = await listDir(join(planDir, name))
     for (const f of (t ?? []).filter((e) => !e.isDir && isMd(e.name))) {

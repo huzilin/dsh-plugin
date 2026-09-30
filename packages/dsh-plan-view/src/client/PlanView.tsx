@@ -1,6 +1,6 @@
 /**
  * Plan view v2: reads the governance roots (.scratch/ — all efforts, tracker
- * layout + .plan/ — global only: root approvals & global qa/ledger, never an
+ * layout + .plan/ — global only: approval/ & global qa/ledger, never an
  * effort), derives ticket status per the TRACKER-MARKDOWN
  * contract, and renders the tabbed surface:
  *   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
@@ -15,7 +15,7 @@ import {
   type SessionScope, type SessionSummary, type Snapshot,
 } from './api'
 import { deliverDraft, isBridged } from './input-bridge'
-import { fileAddress, displayPath } from './file-path'
+import { fileAddress, displayPath, sameAssetRef } from './file-path'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ type TicketStatus = 'done' | 'out_of_scope' | 'claimed' | 'open'
 interface ParsedTicket {
   id: string; file: string; title: string; type: string | undefined
   blockedBy: string[]; done: boolean; outOfScope: boolean; claimedBy: string | undefined
+  assets: string[]           // frontmatter `assets: [path]` — 推演产物链接（三视图归组，票 21）
   status: string | undefined  // frontmatter `status` — the portable state field
   date: string | undefined    // frontmatter `date` — used for "how long has this been pending"
   origin: string | undefined  // frontmatter `origin` — why an approval doc exists
@@ -63,6 +64,7 @@ function deriveTicketStatus(file: string, raw: string): ParsedTicket {
     file, title: titleMatch?.[1]?.replace(/`[^`]*`/g, '')?.trim() ?? file,
     type: fm.type,
     blockedBy: parseBlockedBy(fm.blocked_by),
+    assets: parseAssetRefs(fm.assets),
     done: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
     status: fm.status, date: fm.date, origin: fm.origin,
     session: fm.session, originSession: fm['origin_session'], body,
@@ -125,6 +127,14 @@ function normalizeRef(raw: string): string {
 
 function parseBlockedBy(value: string | undefined): string[] {
   return (value ?? '').replace(/[\[\]]/g, '').split(',').map(normalizeRef).filter(Boolean)
+}
+
+// 票面 `assets:` 字段（TRACKER-MARKDOWN:41 可选 `[<repo-relative path>]`）：
+// 官方获取契约 = 资产存仓、经此字段链接、不贴进正文。解析**保留路径原形**
+//（与 blocked_by 的票 id 归一不同——资产是文件路径不是票 id），匹配交给
+// file-path 的 sameAssetRef（票 21 三视图归组）。
+function parseAssetRefs(value: string | undefined): string[] {
+  return (value ?? '').replace(/[\[\]]/g, '').split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
 }
 
 // Resolve a normalised ref against the ids actually present. Bare numbers must
@@ -477,11 +487,6 @@ function ticketDisplayMeta(t: ParsedTicket): { label: string; icon: string; colo
   return KIND_META[k]
 }
 
-/** Whether the ticket is one of the wayfinder speculation types (research/prototype/grilling). */
-function isSpecTicket(t: ParsedTicket): boolean {
-  return SPECULATION_TYPES.has((t.type ?? '').trim().toLowerCase())
-}
-
 // ─── Map kinds: 推演图 vs 实施图 ─────────────────────────────────────────────
 //
 // 一个 effort 是推演图（wayfinder：票型 research/grilling/prototype，终点=决策
@@ -593,6 +598,7 @@ const ROOT_GROUP = '\u0000root'
 interface PlanData {
   tickets: ParsedTicket[]      // every markdown file found, with its kind resolved
   adrs: ParsedTicket[]         // docs/adr knowledge layer（ADR 全局页数据源，2026-09-30 拍板）
+  assetFiles: ParsedTicket[]   // assets/ 推演产物（票 21 三视图归组数据源，不当票）
   effortDir: string
   mapRaw: string | null
   efforts: { dir: string; mapRaw: string; specRaw?: string }[]  // every effort (map.md, or spec.md as a spec-only effort)
@@ -607,16 +613,17 @@ function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
 function assemblePlanData(snap: Snapshot): PlanData {
   const parsed = snap.files
     .map(f => ({ ...deriveTicketStatus(f.name, f.content), path: f.path, effort: f.from, group: f.group }))
-  // ADR 先于票面分流（group 'adr'）：否则无 type、有 status 的 ADR 会被
-  // ticketKind 兜底计成工单，四处工单计数全部虚高。
+  // ADR/资产先于票面分流（group 'adr'/'assets'）：否则无 type、有 status 的 ADR
+  // 会被 ticketKind 兜底计成工单，四处工单计数全部虚高；资产同理且不该当票展示。
   const adrs = parsed.filter(t => t.group === 'adr')
+  const assetFiles = parsed.filter(t => t.group === 'assets')
   const tickets = parsed
-    .filter(t => t.group !== 'adr')
+    .filter(t => t.group !== 'adr' && t.group !== 'assets')
     .filter(t => t.group !== 'qa' || ticketKind(t) === 'defect' || t.file === 'cases.md')
   const efforts = snap.efforts.map(e => ({ dir: e.dir, mapRaw: e.mapRaw, specRaw: e.specRaw ?? undefined }))
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
-  return { tickets, adrs, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
+  return { tickets, adrs, assetFiles, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
 // ─── Shared detail modal + action layer ──────────────────────────────────────
@@ -1347,39 +1354,50 @@ function inEffort(t: ParsedTicket, dir: string): boolean {
 // 点击复制恢复命令（zcode --resume），不做 DSH 跳转。
 const isDshSession = (id: string): boolean => id.startsWith('session-')
 
-// ─── 推演票专页（2026-09-29 票 12）──────────────────────────────────────────
+// ─── 推演产物三视图（2026-09-30 拍板③，取代票 12 的「🔍 推演票」聚合页）──────
 //
-// research / prototype / grilling 的子页。路线页 Table 变体（ViewC）默认只显示
-// open/claimed——收口后的推演图（novel 的 15 张全是 done）在那里默认不可见，
-// 本页全量列出，行点开详情；徽标与卡片同款（ticketDisplayMeta）。
-function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
+// 每个票型一个视图，仅选中推演图（mapKind==='speculation'）显示：该型推演票
+// 全量列出（含已收口——路线页 Table 变体默认只显 open/claimed），行内展示其
+// frontmatter `assets:` 字段命中的产物文件。归组走官方获取契约（资产存仓、
+// 经字段链接、不贴正文）；未被任何票引用的资产文件是契约外孤岛，不进视图。
+function SpeculationTypeView({ kind, tickets, assetFiles, cwd, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+  kind: string; tickets: ParsedTicket[]; assetFiles: ParsedTicket[]; cwd: string | undefined; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean
+}) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
-  const rows = useMemo(() => tickets.filter(isSpecTicket), [tickets])
+  const rows = useMemo(() => tickets.filter(t => (t.type ?? '').trim().toLowerCase() === kind), [tickets, kind])
   if (rows.length === 0) {
     return (
       <div style={{ padding: 24, fontSize: 12.5, color: TEXT_FAINT }}>
-        当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter <code style={{ fontSize: 11, background: HEADER_BG, border: `1px solid ${BORDER}`, borderRadius: 4, padding: '1px 5px' }}>type</code> 区分。
+        当前范围没有 {SPECULATION_TICKET_META[kind]?.label ?? kind}——它们由 wayfinder 推演产出，票 frontmatter <code style={{ fontSize: 11, background: HEADER_BG, border: `1px solid ${BORDER}`, borderRadius: 4, padding: '1px 5px' }}>type</code> 区分，产物经 <code style={{ fontSize: 11, background: HEADER_BG, border: `1px solid ${BORDER}`, borderRadius: 4, padding: '1px 5px' }}>assets:</code> 字段链接。
       </div>
     )
   }
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: '10px 14px' }}>
       <div style={{ fontSize: 11, color: TEXT_FAINT, marginBottom: 8 }}>
-        🔍 调研票 ＋ 🧩 原型票 ＋ 🔥 拷问票 全量清单（含已收口）；推演图（后三种组成）终点是决策清零。
+        {SPECULATION_TICKET_META[kind]?.icon} {SPECULATION_TICKET_META[kind]?.label} 全量清单（含已收口）；「产物」列 = 票 frontmatter assets: 字段命中的资产文件（存仓、经字段链接、不贴正文）。
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
         <tbody>
-          {rows.map(t => (
-            <tr key={t.path} style={{ cursor: 'pointer', borderBottom: `1px solid ${BORDER_LIGHT}` }} onClick={() => setFocus(t)}>
-              <td style={{ padding: '7px 10px', width: 1, whiteSpace: 'nowrap' }}>
-                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: `${ticketDisplayMeta(t).color}1e`, color: ticketDisplayMeta(t).color, border: `1px solid ${ticketDisplayMeta(t).color}44` }}>{ticketDisplayMeta(t).icon} {ticketDisplayMeta(t).label}</span>
-              </td>
-              <td style={{ padding: '7px 10px', color: TEXT }}>{t.title}</td>
-              <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT }}>{displayStatus(t)}</td>
-              <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT, fontSize: 11 }}>{t.effort && t.effort !== ROOT_GROUP ? t.effort.split('/').pop() : ''}</td>
-              <td style={{ padding: '7px 10px', maxWidth: 280 }}><FilePath ticket={t} scope={scope} ctx={ctx} /></td>
-            </tr>
-          ))}
+          {rows.map(t => {
+            const linked = t.assets.length === 0 ? [] : assetFiles.filter(a => a.path !== undefined && t.assets.some(ref => sameAssetRef(a.path as string, ref, cwd)))
+            return (
+              <tr key={t.path} style={{ cursor: 'pointer', borderBottom: `1px solid ${BORDER_LIGHT}` }} onClick={() => setFocus(t)}>
+                <td style={{ padding: '7px 10px', width: 1, whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: `${ticketDisplayMeta(t).color}1e`, color: ticketDisplayMeta(t).color, border: `1px solid ${ticketDisplayMeta(t).color}44` }}>{ticketDisplayMeta(t).icon} {ticketDisplayMeta(t).label}</span>
+                </td>
+                <td style={{ padding: '7px 10px', color: TEXT }}>{t.title}</td>
+                <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT }}>{displayStatus(t)}</td>
+                <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: TEXT_FAINT, fontSize: 11 }}>{t.effort && t.effort !== ROOT_GROUP ? t.effort.split('/').pop() : ''}</td>
+                <td style={{ padding: '7px 10px', maxWidth: 300 }}>
+                  {linked.length === 0
+                    ? <span style={{ color: TEXT_FAINT }}>—</span>
+                    : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>{linked.map(a => <FilePath key={a.path} ticket={a} scope={scope} ctx={ctx} />)}</div>}
+                </td>
+                <td style={{ padding: '7px 10px', maxWidth: 260 }}><FilePath ticket={t} scope={scope} ctx={ctx} /></td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
       {focus && <DetailModal ticket={focus} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} onClose={() => setFocus(null)} readOnly={readOnly} />}
@@ -1638,7 +1656,7 @@ type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'adr' | 'co
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
 // mapdoc/specdoc（2026-09-30 拍板）：推演图第 2 子页 = map.md 正文、实施图
 //（spec-only）第 2 子页 = spec.md 正文——按选中 effort 的文件有无互斥显示。
-	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
+	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'research' | 'prototype' | 'grilling'
 
 export function PlanView(props: { ctx: any; sessionId?: string }) {
   // cwd 不由外层预解析（sessionCwd 链随票 19 退役）：首帧 snapshot 的响应自带
@@ -1674,7 +1692,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
       const snap = await snapshot(sessionId, round ?? undefined)
       setCwd(prev => (prev === snap.cwd ? prev : snap.cwd))
       const r = assemblePlanData(snap)
-      if (r.efforts.length === 0 && r.tickets.length === 0 && r.adrs.length === 0) { setError('empty'); setLoading(false); return }
+      if (r.efforts.length === 0 && r.tickets.length === 0 && r.adrs.length === 0 && r.assetFiles.length === 0) { setError('empty'); setLoading(false); return }
       setRounds(roundsOf(snap))
       setContextRaw(snap.contextRaw)
       setData(r)
@@ -1697,8 +1715,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])
 
   const all = data?.tickets ?? []
-  // ADR 全局页数据源（2026-09-30 拍板）：服务端 group 'adr' 分流，已不进票面。
+  // ADR 全局页 / 推演产物三视图数据源（各自分流，均已不进票面）。
   const adrs = data?.adrs ?? []
+  const assetFiles = data?.assetFiles ?? []
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
   const ledgers = useMemo(() => all.filter(t => classify(t) === 'ledger'), [all])
@@ -1733,7 +1752,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     [defects, effortIdx, selectedDir],
   )
   // 待拍板同语义随图切换（2026-09-21 拍板：筛选后看到的都是同一张图）；
-  // 根层松散待拍板（.plan 根层待拍板-*.md）与路线页松散票同语义保持可见。
+  // 全局审批档（.plan/approval/，2026-09-30 收拢拍板起为正本落点，inEffort 对
+  // ROOT_GROUP 恒真）与路线页松散票同语义保持可见。
   const mapApprovals = useMemo(
     () => (effortIdx < 0 ? approvals : approvals.filter(t => selectedDir !== undefined && inEffort(t, selectedDir))),
     [approvals, effortIdx, selectedDir],
@@ -1810,6 +1830,11 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     return n + parseDefectEntries(f.body).filter(d => !DEFECT_CLOSED.has(defectStateWord(d.state))).length
   }, 0)
   const pendingApprovals = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'approval' && isPending(t)).length
+  // 三票型视图计数（2026-09-30 拍板③）：该型推演票全量（含收口）——
+  // 退役的「🔍 推演票」聚合页语义由三个型视图分摊，可见性零丢失。
+  const specCount = (type: string) => mapTickets.filter(t => (t.type ?? '').trim().toLowerCase() === type).length
+  // 选中图的型别：三个票型视图只对推演图显示（拍板「仅 wayfinder 的 map 可见」）。
+  const selKind = effortIdx >= 0 && selectedDir !== undefined ? mapKind(selectedDir, mapOwnTickets) : undefined
 
   // 第一行 tab（2026-09-30 拍板拆分与追加）：测例/缺陷各自成 tab 且聚合
   // （各 effort qa/ + .plan/qa/ 全局件）；【ADR】居台账后（知识层相邻，2026-09-30
@@ -1884,16 +1909,21 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
                 ? [['mapdoc', '🗺️ map', 0] as [MapSub, string, number]]
                 : selEffort.specRaw ? [['specdoc', '📄 spec', 0] as [MapSub, string, number]] : []),
               // 「🎫 工单」子页已移除（2026-09-30 拍板②）：票列表归宿＝路线子页
-              // 三变体（Table 变体即原工单表），推演票仍有下方专页全量列出。
+              // 三变体（Table 变体即原工单表）；推演票另见三票型视图（仅推演图）。
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
               ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
               ['cases', '🧪 测例', mapCases.reduce((n, f) => n + (f.body.match(/^\|\s*[A-Z]-?\d+/gm)?.length ?? 0), 0)],
               // 串联计数 = 实际入画的连通节点数（孤岛被折叠，不计入），与画布一致
               ['chain', '🧪 串联', buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length],
-              // 推演票专页计数 = 当前范围 research/prototype/grilling 票总数（含 done——
-              // 收口推演图的票在路线页 Table 变体默认过滤里不可见，这里就是给它们一个全量页）
-              ['speculation', '🔍 推演票', mapTickets.filter(isSpecTicket).length],
+              // 三票型视图（2026-09-30 拍板③，取代退役的「🔍 推演票」聚合页）：
+              // 仅选中推演图时插入——实施图/spec-only 与「全部地图」态不显示（拍板
+              // 「仅 wayfinder 的 map 可见」）；每型全量（含收口票）＋assets: 关联产物。
+              ...(selKind === 'speculation' ? ([
+                ['research', '🔍 调研', specCount('research')],
+                ['prototype', '🧩 原型', specCount('prototype')],
+                ['grilling', '🔥 拷问', specCount('grilling')],
+              ] as [MapSub, string, number][]) : []),
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
                 {label}{n > 0 && <span style={{ marginLeft: 5, fontSize: 11, color: mapSub === id ? ACCENT_SOFT : '#777' }}>{n}</span>}
@@ -1925,7 +1955,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={mapCases} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} ctx={ctx} readOnly={readOnly} />}
-          {mapSub === 'speculation' && <SpeculationView tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'research' && <SpeculationTypeView kind="research" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'prototype' && <SpeculationTypeView kind="prototype" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'grilling' && <SpeculationTypeView kind="grilling" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
       )}
       {top === 'cases' && (
@@ -2086,7 +2118,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
           &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md<br />
           &nbsp;&nbsp;approval/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内审批档（待拍板-*.md，grill / wayfinder 生成）</span><br />
-          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局件目录：根层审批档（待拍板-*.md）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——三件即封闭清单，清单外新子目录由 plan-lint 拦</span>
+          .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局件目录：approval/（全局审批档，2026-09-30 收拢拍板）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——三件即封闭清单，清单外新子目录由 plan-lint 拦</span>
         </div>
         <P>
           <strong style={{ color: TEXT }}>为什么必须一票一文件</strong>：把多张票写进同一个文件（如 <Code>tickets.md</Code>），
@@ -2109,7 +2141,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
             <Code>prototype</Code>＝原型票（🧩 做粗糙实物给讨论反应）；
             <Code>grilling</Code>＝拷问票（🔥 逐题拍板）。
             推演图（后三种组成）终点是<strong style={{ color: TEXT }}>决策清零</strong>，实施图（task）终点是<strong style={{ color: TEXT }}>落码验收</strong>；
-            卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（路线页 Table 变体默认只显 open/claimed，收口票看这里）。
+            卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；路线页 Table 变体默认只显 open/claimed，收口票看这里）。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />

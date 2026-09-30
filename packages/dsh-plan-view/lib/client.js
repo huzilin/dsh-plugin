@@ -190,6 +190,24 @@ window.__ModuleLoader__.load({
 			if (normalized === root) return ".";
 			return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : normalized;
 		}
+		/**
+		* 票面 `assets:` 引用是否指向这个资产文件（推演产物三视图归组用，票 21）。
+		* 票面按契约写 repo-relative（`.scratch/<slug>/assets/x.md`，实测也有缺 `.scratch/`
+		* 前缀、带 `./`、写裸文件名的形态），收集到的是绝对路径——归一成相对 cwd 比较
+		* 相等，再兜底 `assets/` 之后的尾段比对（裸文件名跨 effort 撞名属票作者自担的歧义）。
+		* @param absPath - 收集到的资产文件绝对路径。
+		* @param ref - 票面 `assets:` 数组里的一条引用，按写入原形。
+		* @param cwd - 会话工作目录；未知则退化为整串比对。
+		*/
+		function sameAssetRef(absPath, ref, cwd) {
+			const r = ref.replace(/\\/g, "/").replace(/^(?:\.\/)+/, "");
+			if (r === "") return false;
+			const abs = absPath.replace(/\\/g, "/");
+			if (r === abs || r === displayPath(abs, cwd)) return true;
+			const tail = abs.split("/assets/").pop();
+			const rTail = r.split("/assets/").pop();
+			return tail !== void 0 && rTail === tail;
+		}
 		//#endregion
 		//#region src/client/PlanView.tsx
 		/**
@@ -230,6 +248,7 @@ window.__ModuleLoader__.load({
 				title: titleMatch?.[1]?.replace(/`[^`]*`/g, "")?.trim() ?? file,
 				type: fm.type,
 				blockedBy: parseBlockedBy(fm.blocked_by),
+				assets: parseAssetRefs(fm.assets),
 				done: hasAnswer,
 				outOfScope: hasRuledOut,
 				claimedBy: fm.claimed_by,
@@ -295,6 +314,9 @@ window.__ModuleLoader__.load({
 		}
 		function parseBlockedBy(value) {
 			return (value ?? "").replace(/[\[\]]/g, "").split(",").map(normalizeRef).filter(Boolean);
+		}
+		function parseAssetRefs(value) {
+			return (value ?? "").replace(/[\[\]]/g, "").split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
 		}
 		function resolveRef(ref, byId) {
 			if (byId.has(ref)) return ref;
@@ -653,10 +675,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return KIND_META[k];
 		}
-		/** Whether the ticket is one of the wayfinder speculation types (research/prototype/grilling). */
-		function isSpecTicket(t) {
-			return SPECULATION_TYPES.has((t.type ?? "").trim().toLowerCase());
-		}
 		const SPECULATION_TYPES = /* @__PURE__ */ new Set([
 			"research",
 			"grilling",
@@ -750,7 +768,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				group: f.group
 			}));
 			const adrs = parsed.filter((t) => t.group === "adr");
-			const tickets = parsed.filter((t) => t.group !== "adr").filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
+			const assetFiles = parsed.filter((t) => t.group === "assets");
+			const tickets = parsed.filter((t) => t.group !== "adr" && t.group !== "assets").filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
 			const efforts = snap.efforts.map((e) => ({
 				dir: e.dir,
 				mapRaw: e.mapRaw,
@@ -760,6 +779,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return {
 				tickets,
 				adrs,
+				assetFiles,
 				effortDir: primary?.dir ?? snap.cwd,
 				mapRaw: primary?.mapRaw ?? null,
 				efforts
@@ -2780,9 +2800,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return t.effort === dir || t.effort === ROOT_GROUP;
 		}
 		const isDshSession = (id) => id.startsWith("session-");
-		function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+		function SpeculationTypeView({ kind, tickets, assetFiles, cwd, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 			const [focus, setFocus] = (0, react.useState)(null);
-			const rows = (0, react.useMemo)(() => tickets.filter(isSpecTicket), [tickets]);
+			const rows = (0, react.useMemo)(() => tickets.filter((t) => (t.type ?? "").trim().toLowerCase() === kind), [tickets, kind]);
 			if (rows.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					padding: 24,
@@ -2790,7 +2810,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					color: TEXT_FAINT
 				},
 				children: [
-					"当前范围没有 research / prototype / grilling 推演票——它们由 wayfinder 推演图产出，票 frontmatter ",
+					"当前范围没有 ",
+					SPECULATION_TICKET_META[kind]?.label ?? kind,
+					"——它们由 wayfinder 推演产出，票 frontmatter ",
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
 						style: {
 							fontSize: 11,
@@ -2801,7 +2823,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						},
 						children: "type"
 					}),
-					" 区分。"
+					" 区分，产物经 ",
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+						style: {
+							fontSize: 11,
+							background: HEADER_BG,
+							border: `1px solid ${BORDER}`,
+							borderRadius: 4,
+							padding: "1px 5px"
+						},
+						children: "assets:"
+					}),
+					" 字段链接。"
 				]
 			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -2811,13 +2844,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					padding: "10px 14px"
 				},
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							fontSize: 11,
 							color: TEXT_FAINT,
 							marginBottom: 8
 						},
-						children: "🔍 调研票 ＋ 🧩 原型票 ＋ 🔥 拷问票 全量清单（含已收口）；推演图（后三种组成）终点是决策清零。"
+						children: [
+							SPECULATION_TICKET_META[kind]?.icon,
+							" ",
+							SPECULATION_TICKET_META[kind]?.label,
+							" 全量清单（含已收口）；「产物」列 = 票 frontmatter assets: 字段命中的资产文件（存仓、经字段链接、不贴正文）。"
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("table", {
 						style: {
@@ -2825,72 +2863,96 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							borderCollapse: "collapse",
 							fontSize: 12.5
 						},
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("tbody", { children: rows.map((t) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", {
-							style: {
-								cursor: "pointer",
-								borderBottom: `1px solid ${BORDER_LIGHT}`
-							},
-							onClick: () => setFocus(t),
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-									style: {
-										padding: "7px 10px",
-										width: 1,
-										whiteSpace: "nowrap"
-									},
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("tbody", { children: rows.map((t) => {
+							const linked = t.assets.length === 0 ? [] : assetFiles.filter((a) => a.path !== void 0 && t.assets.some((ref) => sameAssetRef(a.path, ref, cwd)));
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("tr", {
+								style: {
+									cursor: "pointer",
+									borderBottom: `1px solid ${BORDER_LIGHT}`
+								},
+								onClick: () => setFocus(t),
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
 										style: {
-											fontSize: 10,
-											padding: "1px 6px",
-											borderRadius: 999,
-											background: `${ticketDisplayMeta(t).color}1e`,
-											color: ticketDisplayMeta(t).color,
-											border: `1px solid ${ticketDisplayMeta(t).color}44`
+											padding: "7px 10px",
+											width: 1,
+											whiteSpace: "nowrap"
 										},
-										children: [
-											ticketDisplayMeta(t).icon,
-											" ",
-											ticketDisplayMeta(t).label
-										]
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											style: {
+												fontSize: 10,
+												padding: "1px 6px",
+												borderRadius: 999,
+												background: `${ticketDisplayMeta(t).color}1e`,
+												color: ticketDisplayMeta(t).color,
+												border: `1px solid ${ticketDisplayMeta(t).color}44`
+											},
+											children: [
+												ticketDisplayMeta(t).icon,
+												" ",
+												ticketDisplayMeta(t).label
+											]
+										})
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+										style: {
+											padding: "7px 10px",
+											color: TEXT
+										},
+										children: t.title
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+										style: {
+											padding: "7px 10px",
+											whiteSpace: "nowrap",
+											color: TEXT_FAINT
+										},
+										children: displayStatus(t)
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+										style: {
+											padding: "7px 10px",
+											whiteSpace: "nowrap",
+											color: TEXT_FAINT,
+											fontSize: 11
+										},
+										children: t.effort && t.effort !== ROOT_GROUP ? t.effort.split("/").pop() : ""
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+										style: {
+											padding: "7px 10px",
+											maxWidth: 300
+										},
+										children: linked.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: { color: TEXT_FAINT },
+											children: "—"
+										}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											style: {
+												display: "flex",
+												flexWrap: "wrap",
+												gap: 4
+											},
+											children: linked.map((a) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+												ticket: a,
+												scope,
+												ctx
+											}, a.path))
+										})
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
+										style: {
+											padding: "7px 10px",
+											maxWidth: 260
+										},
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+											ticket: t,
+											scope,
+											ctx
+										})
 									})
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-									style: {
-										padding: "7px 10px",
-										color: TEXT
-									},
-									children: t.title
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-									style: {
-										padding: "7px 10px",
-										whiteSpace: "nowrap",
-										color: TEXT_FAINT
-									},
-									children: displayStatus(t)
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-									style: {
-										padding: "7px 10px",
-										whiteSpace: "nowrap",
-										color: TEXT_FAINT,
-										fontSize: 11
-									},
-									children: t.effort && t.effort !== ROOT_GROUP ? t.effort.split("/").pop() : ""
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("td", {
-									style: {
-										padding: "7px 10px",
-										maxWidth: 280
-									},
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
-										ticket: t,
-										scope,
-										ctx
-									})
-								})
-							]
-						}, t.path)) })
+								]
+							}, t.path);
+						}) })
 					}),
 					focus && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DetailModal, {
 						ticket: focus,
@@ -3486,7 +3548,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					const snap = await snapshot(sessionId, round ?? void 0);
 					setCwd((prev) => prev === snap.cwd ? prev : snap.cwd);
 					const r = assemblePlanData(snap);
-					if (r.efforts.length === 0 && r.tickets.length === 0 && r.adrs.length === 0) {
+					if (r.efforts.length === 0 && r.tickets.length === 0 && r.adrs.length === 0 && r.assetFiles.length === 0) {
 						setError("empty");
 						setLoading(false);
 						return;
@@ -3519,6 +3581,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}, [load, loadSessions]);
 			const all = data?.tickets ?? [];
 			const adrs = data?.adrs ?? [];
+			const assetFiles = data?.assetFiles ?? [];
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
@@ -3650,6 +3713,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				return n + parseDefectEntries(f.body).filter((d) => !DEFECT_CLOSED.has(defectStateWord(d.state))).length;
 			}, 0);
 			const pendingApprovals = (list) => list.filter((t) => ticketKind(t) === "approval" && isPending(t)).length;
+			const specCount = (type) => mapTickets.filter((t) => (t.type ?? "").trim().toLowerCase() === type).length;
+			const selKind = effortIdx >= 0 && selectedDir !== void 0 ? mapKind(selectedDir, mapOwnTickets) : void 0;
 			const tabs = [
 				{
 					id: "overview",
@@ -3842,11 +3907,23 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									"🧪 串联",
 									buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length
 								],
-								[
-									"speculation",
-									"🔍 推演票",
-									mapTickets.filter(isSpecTicket).length
-								]
+								...selKind === "speculation" ? [
+									[
+										"research",
+										"🔍 调研",
+										specCount("research")
+									],
+									[
+										"prototype",
+										"🧩 原型",
+										specCount("prototype")
+									],
+									[
+										"grilling",
+										"🔥 拷问",
+										specCount("grilling")
+									]
+								] : []
 							].map(([id, label, n]) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",
 								style: { ...mapTab(mapSub === id) },
@@ -3978,8 +4055,35 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							ctx,
 							readOnly
 						}),
-						mapSub === "speculation" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SpeculationView, {
+						mapSub === "research" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SpeculationTypeView, {
+							kind: "research",
 							tickets: mapTickets,
+							assetFiles,
+							cwd,
+							planDir,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
+						}),
+						mapSub === "prototype" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SpeculationTypeView, {
+							kind: "prototype",
+							tickets: mapTickets,
+							assetFiles,
+							cwd,
+							planDir,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
+						}),
+						mapSub === "grilling" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SpeculationTypeView, {
+							kind: "grilling",
+							tickets: mapTickets,
+							assetFiles,
+							cwd,
 							planDir,
 							scope,
 							ctx,
@@ -4515,7 +4619,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											style: { color: TEXT },
 											children: "落码验收"
 										}),
-										"； 卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（路线页 Table 变体默认只显 open/claimed，收口票看这里）。"
+										"； 卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；路线页 Table 变体默认只显 open/claimed，收口票看这里）。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
