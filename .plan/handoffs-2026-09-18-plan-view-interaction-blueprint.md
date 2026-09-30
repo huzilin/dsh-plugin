@@ -7,7 +7,7 @@ origin: retrospective
 
 # Handoff：计划视图交互蓝图（grill-with-docs 全流程）
 
-> 本轮把"计划视图四页（地图/工单/待拍板/总览）如何与 dsh session 联动"从设想推进到了**设计已决、待实现**的状态。本文只交代上下文、决策、未决与下一步聚焦；完整设计见 `.plan/待拍板-计划视图交互蓝图-20260918.md`，不要重复造。
+> 本轮把"计划视图四页（地图/工单/待拍板/总览）如何与 dsh session 联动"从设想推进到了**设计已决、待实现**的状态。本文只交代上下文、决策、未决与下一步聚焦；完整设计见 `.plan/approval/待拍板-计划视图交互蓝图-20260918.md`，不要重复造。
 
 ## 一、背景与已完成的上下文
 
@@ -45,8 +45,8 @@ origin: retrospective
 
 ## 六、相关产物索引
 
-- 设计正本：`.plan/待拍板-计划视图交互蓝图-20260918.md`（已 `closed`，含〇节地基核实 v2 + 第四节 B/C/D/E 已决 + 第六节实现契约）
-- 流程协议：`.plan/待拍板-流程协议化与plan-archive-20260918.md`（已 `closed`，两条流程 + 四交付物裁定）
+- 设计正本：`.plan/approval/待拍板-计划视图交互蓝图-20260918.md`（已 `closed`，含〇节地基核实 v2 + 第四节 B/C/D/E 已决 + 第六节实现契约）
+- 流程协议：`.plan/approval/待拍板-流程协议化与plan-archive-20260918.md`（已 `closed`，两条流程 + 四交付物裁定）
 - 插件源码：`/Users/huzilin/workdir/dsh-plugin/packages/dsh-plan-view/`（PlanView.tsx / src/client/api.ts / src/client/index.tsx）
 - 调研知识库：`novel/.agents/skills/dsh-knowledge/chapters/ch02-agent-loop-events.md`、`ch03-session-system.md`、`patterns.md`
 - 已交付 skill：`dsh-plugin/.../skills/plan-protocol/`、`plan-archive/`（均已 copy 至 `~/.dsh/.agent-presets/full/skills/mp-plan-*`）

@@ -7,7 +7,7 @@ origin: proactive
 
 # 需求文档：全局件治理（effort: global-items）
 
-> 决策来源：`.plan/待拍板-全局件概念与全局目录-20260929.md`（2026-09-29 五项拍板全 A，已 closed）。本档承载该批的用户故事、验收与测法、范围外——长期保留；spec（`.scratch/global-items/spec.md`）是一次性实施文档，归宿行指向本档。
+> 决策来源：`.plan/approval/待拍板-全局件概念与全局目录-20260929.md`（2026-09-29 五项拍板全 A，已 closed；2026-09-30 收拢拍板后审批档驻 `.plan/approval/`）。本档承载该批的用户故事、验收与测法、范围外——长期保留；spec（`.scratch/global-items/spec.md`）是一次性实施文档，归宿行指向本档。
 
 ## Problem（用户面对的问题）
 
@@ -15,13 +15,13 @@ plan 生态的「全局性落点」（审批档、无图归属缺陷/测例、�
 
 ## Solution（方案形态）
 
-把「全局件」立为协议正本里的命名概念：封闭三件套（`.plan/` 根层审批档、`.plan/qa/`、`.plan/ledger/`），定义、判据豁免（内含 map.md 不触发 effort 迁移令）、归档口径（常驻不随轮、全局台账不入轮归档清账）全部落 plan-protocol 一处；plan-lint 以 `.plan` 根层白名单机械守门；安装脚本目标跟随 DSH 现行目录；计划视图文案与协议术语统一。
+把「全局件」立为协议正本里的命名概念：封闭三件套（`.plan/approval/` 审批档——2026-09-30 收拢拍板由根层散放目录化、`.plan/qa/`、`.plan/ledger/`），定义、判据豁免（内含 map.md 不触发 effort 迁移令）、归档口径（常驻不随轮、全局台账不入轮归档清账）全部落 plan-protocol 一处；plan-lint 以 `.plan` 根层白名单机械守门；安装脚本目标跟随 DSH 现行目录；计划视图文案与协议术语统一。
 
 ## User Stories（用户故事）
 
 1. As 跨仓 plan 会话，I want 「全局件」在协议正本有一处定义，so that 新仓库的全局落点不用每仓重新推断一遍。
 2. As 目录迁移批会话，I want 全局件目录豁免 effort 判据，so that 内含 map.md 的全局 qa 目录不再触发迁移冲突（novel 双重身份从推断转正解）。
-3. As 仓库维护者，I want plan-lint 对 `.plan` 根层做白名单检查，so that 清单外子目录（如曾经的 `.plan/research/`）当场暴露而不是等下批迁移人工发现。
+3. As 仓库维护者，I want plan-lint 对 `.plan` 做封闭清单检查，so that 清单外子目录（如曾经的 `.plan/research/`）当场暴露而不是等下批迁移人工发现（2026-09-30 收拢拍板起根层 `.md` 一并按违例报）。
 4. As 归档会话，I want 全局台账不进入轮归档前置判据的清账范围，so that 长期「在挂」的全局债务不阻塞任何轮归档。
 5. As DSH 用户，I want install-skills 装到 DSH 现行 skills 目录（`~/.dsh/skills`），so that 安装即生效、不再死投递。
 6. As 计划视图用户，I want 页面文案与协议术语一致（「全局件」），so that 界面自解释、不用跨文档对词。

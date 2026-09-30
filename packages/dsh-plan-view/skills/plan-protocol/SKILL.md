@@ -88,21 +88,21 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **目录布局总则（2026-09-28 目录迁移令，tracker 类回归原版 local 布局）**：**tracker 类对象（spec / map / issues 票）落 `.scratch/<feature-slug>/`**；**审批文档（拍板）留 `.plan/`**（原版 grilling 本就落 `.plan/`，迁移令不改其语义）。其余按「官方有 / 官方无」分流：
   - 官方有的（`spec.md` / `map.md` / `issues/NN-<slug>.md`）→ `.scratch/<feature-slug>/`；
   - 官方没有、**与 effort 挂钩**的（qa / ledger / assets）→ `.scratch/<feature-slug>/qa|ledger|assets/`（轮内成员，随 effort 整轮归档）；
-  - 官方没有、**全局性**的（属「全局件」封闭清单，定义见下文「全局件」条）：审批档留 `.plan/`；全局缺陷与回测测例、全局挂账台账常驻 `.plan/qa|ledger/`（2026-09-29 拍板：归档 = effort 全消后的轮归档，全局件不设独立归档时机）；调研 / 复盘文档 → `docs/research/`（挂文档树，四字段头照旧）——**全局场景但非全局件**，不落 `.plan/`；
+  - 官方没有、**全局性**的（属「全局件」封闭清单，定义见下文「全局件」条）：审批档留 `.plan/approval/`（2026-09-30 收拢拍板）；全局缺陷与回测测例、全局挂账台账常驻 `.plan/qa|ledger/`（2026-09-29 拍板：归档 = effort 全消后的轮归档，全局件不设独立归档时机）；调研 / 复盘文档 → `docs/research/`（挂文档树，四字段头照旧）——**全局场景但非全局件**，不落 `.plan/`；
   - 一次性杂项（交接 handoff / 审计 audits）→ `.tmp/handoffs/`、`.tmp/audits/`（出仓出检索面；有留存价值转 `.archive/` 或 `.plan/`，不默认驻留）——同为全局场景、非全局件。
   - **`.plan/` 下无 effort（2026-09-29 二次拍板，取代同日「存量旧布局可读」兼容）**：effort 的唯一合法落点是 `.scratch/<slug>/`——`.plan/` 的子目录一律不构成 effort，**无论是否含 `map.md`**（视图对 `.plan` 关 effort 扫描；`.plan/` 下识别出 map/spec 即数据违例，由 plan-lint 报、迁移票迁 `.scratch/`，视图与工具不再迁就旧布局）。「存量迁移撤出施工范围」（2026-09-29 早间裁定）就此反转：存量 `.plan/<effort>/` 视为违例数据，迁完即合规。
-- **全局件（2026-09-29 拍板，封闭清单正本）**：**跨图 / 无 effort 归属、常驻 `.plan/` 不随轮归档**的 plan 生态单据。清单**封闭**为三件：
-  1. **全局性审批档**：`.plan/` 根层 `待拍板-*` / `已拍板-*`（落点细则见「审批文档归属」条）；
+- **全局件（2026-09-29 拍板，封闭清单正本；审批成员 2026-09-30 收拢拍板目录化）**：**跨图 / 无 effort 归属、常驻 `.plan/` 不随轮归档**的 plan 生态单据。清单**封闭**为三件：
+  1. **全局性审批档**：`.plan/approval/待拍板-*` / `已拍板-*`（2026-09-30 收拢拍板：由 `.plan/` 根层散放收拢为独立 `approval/` 子目录，与 effort 内 `approval/` 同形；根层前缀形状仅存量兼容，新写一律入目录——落点细则见「审批文档归属」条）；
   2. **全局缺陷与回测测例**：`.plan/qa/DEF-*.md` + `.plan/qa/cases-<主题>.md`（无图归属件，见「缺陷条目」「测例文档」条）；
   3. **全局挂账台账**：`.plan/ledger/挂账-NN-<slug>.md`（见「挂账台账」条）。
-  - **封闭含义**：新全局场景入清单须修订本协议（经拍板），不得自行在 `.plan/` 下新落子目录；plan-lint 对 `.plan/` 根层做白名单守门（2026-09-29 拍板）。
+  - **封闭含义**：新全局场景入清单须修订本协议（经拍板），不得自行在 `.plan/` 下新落子目录；plan-lint 对 `.plan/` 做封闭清单守门（检查[6]：清单子目录 = `approval/ qa/ ledger/`；2026-09-29 拍板 + 2026-09-30 审批成员目录化）。
   - **全局 ≠ `.plan/`**：调研/复盘（`docs/research/`）与一次性交接/审计（`.tmp/`）同为全局场景，但**不是全局件**——各有归宿与生命周期（research 用 `status: active/closed`，不占 `.plan/`）。
-  - **判据归属（2026-09-29 二次拍板）**：全局件目录（`qa/`、`ledger/`）**不参与 effort 判据**——它们是全局件锚点不是图；目录内**不得内嵌 map.md/tickets/**（历史遗留内嵌图=违例数据，迁 `.scratch/<slug>/`，如 novel「全页面人工验收测线」图 2026-09-29 迁出）。`.plan/` 下任何子目录含 `map.md`/`spec.md` 均按违例报，视图不加载。写侧唯一合法 effort 落点仍为 `.scratch/<slug>/`（不变）。
+  - **判据归属（2026-09-29 二次拍板）**：全局件目录（`approval/`、`qa/`、`ledger/`）**不参与 effort 判据**——它们是全局件锚点不是图；目录内**不得内嵌 map.md/tickets/**（历史遗留内嵌图=违例数据，迁 `.scratch/<slug>/`，如 novel「全页面人工验收测线」图 2026-09-29 迁出）。`.plan/` 下任何子目录含 `map.md`/`spec.md` 均按违例报，视图不加载。写侧唯一合法 effort 落点仍为 `.scratch/<slug>/`（不变）。
   - **生命周期**：全局件常驻、**非轮成员**、不随轮归档（与 §四「归档时机」互为正反表述：随轮走的只是图内 qa/ledger）；全局台账**不进入**归档前置判据③的清账范围（判据③只清图内台账）——全局挂账长期「在挂」不阻塞任何轮归档，其清账由「agent 扫描启动纪律」独立驱动。
 - **一票一文件**：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`。**禁止**把多票写进一个 `tickets.md`／`issues.md`——按文件读取的一方会把合并文件当成**一张票**，里面所有票丢失。
 - **目录契约守门（plan-lint 检查[8][9] · 2026-09-30 拍板，plan-lint-gate 票 16；判据正本 = 各仓 `docs/research/梳理-plan目录写入矩阵-20260930.md` 两层 tree）**：
   - **检查[8] effort 目录白名单**：effort（`.scratch/<slug>/` 含 map.md 或 spec.md）的直接子目录封闭清单 = `issues / assets / approval / qa / ledger` ＋ 存量只读兼容 `tickets / impl / impl-fe`（历史路径不得清理）；清单外自建子目录报 `effort-dir-whitelist`——视图按契约不收集，产物按写入矩阵归 `assets/` 等合法落点。
-  - **检查[9] `.plan` 根层文件形状**：根层 `.md` 只允许审批档形状 `待拍板-*` / `已拍板-*`（README 层级说明档豁免）；清单外文件报 `plan-root-shape`，按写入矩阵分流 `docs/research/`、`docs/requirements/`、`.tmp/`、effort `assets/`。子目录白名单归检查[6]管。
+  - **检查[9] `.plan` 根层文件形状**：全局审批档正本落点 = `.plan/approval/`（2026-09-30 收拢拍板），根层 `.md` 一律违例（README 层级说明档豁免），报 `plan-root-shape`——审批档入 `approval/`，其余按写入矩阵分流 `docs/research/`、`docs/requirements/`、`.tmp/`、effort `assets/`。子目录白名单归检查[6]管。
 - **frontmatter 是权威**：票里 `status` / `type` / `blocked_by` 以 frontmatter 为准，不读正文表格。
 - **`blocked_by` 格式（两形态共用的唯一格式，2026-09-27 拍板统一）**：YAML 流式序列，取值**裸写、不加引号**——
   - `blocked_by: []`：无前置（**唯一合法空值**；不得写 `[无]`、`none`、留空）
@@ -137,7 +137,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **状态头四字段**（待拍板 / spec / map 等文档）：`type` / `date` / `status` / `origin`。
   - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
   - `origin`：产生原因（`readability-rescue` / `proactive` / `review` / `retrospective`）。
-- **审批文档归属（两级，2026-09-29 拍板）**：**grill-with-doc / wayfinder 生成**的审批档落**所属 effort** 的 `.scratch/<effort-slug>/approval/待拍板-<slug>-<date>.md`（独立 `approval/` 目录——随图归组展示、随 effort 归档）；**全局性审批**（跨图 / 无 effort 归属，如治理类拍板）落 **`.plan/` 根层**同名形状（全局件之一，见「全局件」条）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量兼容：09-29 迁移提根层至 `.plan/` 根的档原地只读兼容（历史锚点，不强制回迁）；旧布局 `.plan/<effort>/待拍板-*` 已随存量迁移提根，不再有此形态（视图对 `.plan` 关 effort 扫描后此类档自然归根层组）。
+- **审批文档归属（两级，2026-09-29 拍板；全局成员 2026-09-30 收拢拍板）**：**grill-with-doc / wayfinder 生成**的审批档落**所属 effort** 的 `.scratch/<effort-slug>/approval/待拍板-<slug>-<date>.md`（独立 `approval/` 目录——随图归组展示、随 effort 归档）；**全局性审批**（跨图 / 无 effort 归属，如治理类拍板）落 **`.plan/approval/`**（2026-09-30 收拢拍板：由 `.plan/` 根层散放收拢为同名独立子目录，与 effort 内 `approval/` 同形；全局件之一，见「全局件」条）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量兼容：09-29 迁移提根层至 `.plan/` 根的档已于 09-30 收拢进 `.plan/approval/`（本仓实证）；根层 `待拍板-*`/`已拍板-*` 前缀形状仅存量兼容读取（plan-lint 检查[9] 对根层报违例驱动迁移），旧布局 `.plan/<effort>/待拍板-*` 不再有（视图对 `.plan` 关 effort 扫描后此类档入全局 approval/ 组）。
 - **effort 标志**：`.scratch/` 下目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `issues/` 目录不被读取（2026-09-29 议题①裁定：map.md = 文件、effort = 目录、判据 = 目录含 map.md，判据不变、目录根从 `.plan/` 改 `.scratch/`）。**2026-09-29 拍板扩展**：目录无 `map.md` 但含 `spec.md` = **spec-only 实施图**，同被视图加载（to-spec/to-tickets 直出的 effort，无路线 Destination，工单/审批子页照常）；视图加载与 plan-lint 检查[2] 的判据同步为「含 map.md **或** spec.md」，且**只在 `.scratch/`（与归档轮目录）生效**——`.plan/` 下不加载任何 effort，细则见「全局件」条。
 - **非治理目录**：一次性交接 / 审计产物落 `.tmp/handoffs/`、`.tmp/audits/`（2026-09-28 拍板 6b）——不属 plan 生态，视图不加载、`plan-lint` 不扫（`.tmp/` 在仓根，本就在两个治理目录之外）；存量 `.plan/handoffs/`（历史轮快照）只读兼容，plan-lint 豁免（不查缺 map / 状态头 / 同票双档）。
 - **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`，终点=落码验收）。落地工单 `type` 一律写 `task`——**唯一合法值**（2026-09-27 拍板：`impl` 不支持、不识别）。
@@ -223,7 +223,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | 测例集 / 执行记录 | `.scratch/<slug>/qa/cases.md` / `test.md` | 无 frontmatter——固定名 + H1 形状识别；测例按编号 grep 直达，执行状态记 test.md 按编号逐条（末轮为准） |
 | 缺陷 | 图内 `.scratch/<slug>/qa/`、全局 `.plan/qa/` | frontmatter `status` + 正文 `- 状态:` 行双写（双轨维持）；终态=已关闭 |
 | 台账 | 全局 `.plan/ledger/`、图内 `.scratch/<slug>/ledger/` | frontmatter `status` + 正文 `- 状态:` 行（已销/已转票=终态）；运行态由 `- 阻塞:` 依赖票派生（阻塞中/可启动） |
-| 全局件（概念，2026-09-29 拍板） | `.plan/` 根层审批档 + `.plan/qa/` + `.plan/ledger/` | 封闭三件套（定义与豁免见 §三「全局件」条）；各成员状态获取同其单据类型（审批档/缺陷/台账行）；常驻不随轮归档，豁免 effort 判据 |
+| 全局件（概念，2026-09-29 拍板） | `.plan/approval/` 审批档 + `.plan/qa/` + `.plan/ledger/` | 封闭三件套（定义与豁免见 §三「全局件」条；审批成员 2026-09-30 收拢拍板由根层散放目录化）；各成员状态获取同其单据类型（审批档/缺陷/台账行）；常驻不随轮归档，豁免 effort 判据 |
 | research 笔记 | `.scratch/<slug>/assets/` | 无状态；经票 frontmatter `assets:` 数组获取 |
 | 归档轮 | `.archive/rounds/<round-id>/` | 已出检索面；获取 = 显式考古（`.archive/README.md` 轮次索引） |
 
@@ -258,7 +258,7 @@ origin: proactive
 
 - `.scratch/<feature-slug>/`：`map.md`（有它才是 effort，才会被视图加载）+ `issues/NN-<slug>.md`（一票一文件）+ `spec.md`
 - `.scratch/<slug>/qa|ledger|assets/`：图内测例/缺陷/台账/调研笔记（随 effort 归档）
-- `.plan/` 只放**全局件**（封闭三件套，正本见全局 skill `plan-protocol`「全局件」条）：根层 `待拍板-*`/`已拍板-*` 审批文档、`.plan/qa/` 无图归属缺陷与回测测例、`.plan/ledger/` 全局挂账台账；清单外新目录不得落 `.plan/`（plan-lint 根层白名单守门）
+- `.plan/` 只放**全局件**（封闭三件套，正本见全局 skill `plan-protocol`「全局件」条）：`.plan/approval/` 全局审批文档（2026-09-30 收拢拍板，根层形状仅存量兼容）、`.plan/qa/` 无图归属缺陷与回测测例、`.plan/ledger/` 全局挂账台账；清单外新目录不得落 `.plan/`（plan-lint 检查[6]守门）
 - `docs/research/`：调研/复盘文档；`docs/requirements/`：需求文档（文件名含 effort slug）
 - `.tmp/`：一次性交接/审计（出检索面）；`.archive/`：整轮归档（由 plan-archive 迁入）
 

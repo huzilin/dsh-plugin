@@ -9,7 +9,7 @@ origin: retrospective
 
 > **【已结案 2026-09-20】** 三张票全部实施完毕并回写（01/02/03 均 status: done），票 03 通过页面预期验收（P-1/P-2/反向断言）与独立代码评审（可合入；1 条 P2 已修+实测，6 条 P3 备案）。执行记录见 `.plan/qa-skill-merge/map.md` Decisions 节与各票落地记录。留用户的开口：①新开会话验证 skill 列表（run-qa-testcases 出现、test-design-gate/test-protocol 消失）；②全部改动未 commit，待显式指令；③plan-protocol 源仓 L76 与安装态在本轮之前已分叉的一行待裁决（票 02 落地记录有备案）。以下为交接原文，供追溯。
 
-> 本轮把「测试技能族四个收成两个 + 缺陷台账进 plan 视图」从一句疑问推进到**设计已决、工单已立、待实现**。本文只交代上下文、裁定、风险与下一步；**完整方案见 `.plan/待拍板-测试技能族合并为两skill-20260920.md`（已 closed，十一项裁定全定），不要重复造**。
+> 本轮把「测试技能族四个收成两个 + 缺陷台账进 plan 视图」从一句疑问推进到**设计已决、工单已立、待实现**。本文只交代上下文、裁定、风险与下一步；**完整方案见 `.plan/approval/待拍板-测试技能族合并为两skill-20260920.md`（已 closed，十一项裁定全定），不要重复造**。
 
 ## 一、这一轮在做什么
 
@@ -76,7 +76,7 @@ origin: retrospective
 
 ## 七、相关产物索引
 
-- **方案正本**：`.plan/待拍板-测试技能族合并为两skill-20260920.md`（closed，十一项裁定 + 全部实测证据 + 改动点行号）
+- **方案正本**：`.plan/approval/待拍板-测试技能族合并为两skill-20260920.md`（closed，十一项裁定 + 全部实测证据 + 改动点行号）
 - **工单地图**：`.plan/qa-skill-merge/map.md` + `tickets/01~03`
 - **待改 skill**：`~/.dsh/.agent-presets/full/skills/{to-qa-testcases,test-design-gate,test-protocol}/`（ZCode 侧软链：`~/.zcode/skills/<同名>`）
 - **待改插件**：`/Users/huzilin/workdir/dsh-plugin/packages/dsh-plan-view/`（`src/client/PlanView.tsx` 为主）
