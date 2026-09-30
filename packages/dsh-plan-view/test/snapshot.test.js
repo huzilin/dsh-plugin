@@ -36,6 +36,10 @@ async function fixture() {
   await w('.plan/复盘-z.md', '违例形状不收')
   await w('.plan/ledger/L1.md')
   await w('.plan/qa/cases-sop.md')
+  // docs/adr：NNNN- 形状收、形状外不收（2026-09-30 拍板：ADR 纳入视图全局层）。
+  await w('docs/adr/0007-adr-storage.md', '---\nid: "0007"\nstatus: accepted\ndate: 2026-09-30\n---\n# ADR-0007: 存储定型\n')
+  await w('docs/adr/0012-replaced.md', '---\nstatus: superseded by ADR-0007\n---\n# ADR-0012: 已被取代\n')
+  await w('docs/adr/not-an-adr.md', '形状外不收')
   // 归档轮 + CONTEXT。轮根布局镜像当时 .scratch（effort 子目录 + 轮根自身 map.md
   // 则只收轮根层 md——与客户端原版 hasMapHere 行为一致：根自身不跑票面子目录收集）。
   await w('.archive/rounds/2026-09-01-r1/map.md', '# old map\n')
@@ -73,9 +77,12 @@ test('snapshot collects tracker root + efforts per the read contract', async () 
   assert.ok(n.includes('root/待拍板-x-20260930.md'))
   assert.ok(n.includes('root/已拍板-y-20260929.md'))
   assert.ok(!n.includes('root/复盘-z.md'))
-  // 全局 ledger/qa。
+  // 全局 ledger/qa + docs/adr（形状外 not-an-adr.md 不收）。
   assert.ok(n.includes('ledger/L1.md'))
   assert.ok(n.includes('qa/cases-sop.md'))
+  assert.ok(n.includes('adr/0007-adr-storage.md'))
+  assert.ok(n.includes('adr/0012-replaced.md'))
+  assert.ok(!n.some((x) => x.startsWith('adr/') && x.includes('not-an-adr')))
   // 内容随行。
   assert.equal(snap.files.find((f) => f.name === '01-a.md').content, '---\ntype: task\n---\n# 01')
   // rounds（新轮在前）+ readme 索引 + CONTEXT。
@@ -90,9 +97,10 @@ test('round mode loads the archived round as a single tracker root', async () =>
   assert.equal(snap.efforts.length, 2)
   assert.ok(snap.efforts.some((e) => e.dir.endsWith('2026-09-01-r1')))
   assert.ok(snap.efforts.some((e) => e.dir.endsWith('old-effort')))
-  // 现行 effort 不出现在轮快照里；轮内票面收进。
+  // 现行 effort 不出现在轮快照里；轮内票面收进；ADR 是知识层非轮成员，不进轮视图。
   assert.ok(!snap.files.some((f) => f.name === '01-a.md'))
   assert.ok(snap.files.some((f) => f.name === '01-old.md'))
+  assert.ok(!snap.files.some((f) => f.group === 'adr'))
   assert.equal(snap.efforts.find((e) => e.dir.endsWith('2026-09-01-r1')).mapRaw, '# old map\n')
 })
 

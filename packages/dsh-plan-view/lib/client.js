@@ -198,7 +198,7 @@ window.__ModuleLoader__.load({
 		* effort), derives ticket status per the TRACKER-MARKDOWN
 		* contract, and renders the tabbed surface:
 		*   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
-		*   缺陷 · 台账 · CONTEXT · 说明（2026-09-30 读取契约拍版）
+		*   缺陷 · 台账 · ADR · CONTEXT · 说明（2026-09-30 读取契约拍版）
 		*
 		* All views share a unified dark theme and markdown-rendered detail panels.
 		* Self-contained: uses its own api module, inline styles, zero CSS deps.
@@ -244,14 +244,14 @@ window.__ModuleLoader__.load({
 				qaAccepted: fm.qa_accepted === "true"
 			};
 		}
-		const DONE_STATUS = new Set([
+		const DONE_STATUS = /* @__PURE__ */ new Set([
 			"done",
 			"closed",
 			"complete",
 			"completed",
 			"shipped"
 		]);
-		const OUT_STATUS = new Set([
+		const OUT_STATUS = /* @__PURE__ */ new Set([
 			"abandoned",
 			"rejected",
 			"wontfix",
@@ -260,7 +260,7 @@ window.__ModuleLoader__.load({
 			"canceled",
 			"superseded"
 		]);
-		const CLAIMED_STATUS = new Set([
+		const CLAIMED_STATUS = /* @__PURE__ */ new Set([
 			"doing",
 			"in_progress",
 			"in-progress",
@@ -576,7 +576,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				children: shown
 			});
 		}
-		const TICKET_TYPES = new Set([
+		const TICKET_TYPES = /* @__PURE__ */ new Set([
 			"task",
 			"research",
 			"prototype",
@@ -657,12 +657,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		function isSpecTicket(t) {
 			return SPECULATION_TYPES.has((t.type ?? "").trim().toLowerCase());
 		}
-		const SPECULATION_TYPES = new Set([
+		const SPECULATION_TYPES = /* @__PURE__ */ new Set([
 			"research",
 			"grilling",
 			"prototype"
 		]);
-		const IMPL_TYPES = new Set(["task"]);
+		const IMPL_TYPES = /* @__PURE__ */ new Set(["task"]);
 		function mapKind(dir, tickets) {
 			let speculation = false, impl = false;
 			for (const t of tickets) {
@@ -740,15 +740,17 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		}
 		/**
 		* snapshot（一次请求的全量数据）→ PlanData：契约解析（frontmatter/状态/kind/qa
-		* whitelist 过滤）留在客户端不动，只把「遍历+读取」换成了服务端一次返回。
+		* 白名单过滤）留在客户端不动，只把「遍历+读取」换成了服务端一次返回。
 		*/
 		function assemblePlanData(snap) {
-			const tickets = snap.files.map((f) => ({
+			const parsed = snap.files.map((f) => ({
 				...deriveTicketStatus(f.name, f.content),
 				path: f.path,
 				effort: f.from,
 				group: f.group
-			})).filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
+			}));
+			const adrs = parsed.filter((t) => t.group === "adr");
+			const tickets = parsed.filter((t) => t.group !== "adr").filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
 			const efforts = snap.efforts.map((e) => ({
 				dir: e.dir,
 				mapRaw: e.mapRaw,
@@ -757,6 +759,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 			return {
 				tickets,
+				adrs,
 				effortDir: primary?.dir ?? snap.cwd,
 				mapRaw: primary?.mapRaw ?? null,
 				efforts
@@ -944,15 +947,17 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			});
 			const actions = [];
 			if (!readOnly) {
-				if (kind === "ticket") if (ticket.session !== void 0 && rebind) {
-					actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
-					actions.push(btn("取消", () => {
-						setRebind(false);
-						setMsg(null);
-					}, "cancel", "#666"));
-				} else {
-					if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
-					actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+				if (kind === "ticket") {
+					if (ticket.session !== void 0 && rebind) {
+						actions.push(btn("新建 session 并重新绑定", () => void createAndBind(ADVANCE_PROMPT(ticket)), "create", "#f7ad31"));
+						actions.push(btn("取消", () => {
+							setRebind(false);
+							setMsg(null);
+						}, "cancel", "#666"));
+					} else {
+						if (ticket.session === void 0) actions.push(btn("🧭 开始推演", () => void dispatchTicket("explore"), "explore"));
+						actions.push(btn("▶ 推进", () => void dispatchTicket("advance"), "advance"));
+					}
 				}
 				if (kind === "approval" && pending) actions.push(btn("✅ 拍板（预填 /plan-approve）", () => void settle(), "settle", "#4ed17e"));
 			}
@@ -1662,7 +1667,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				return tickets.some((t) => !t.type) ? [...named, NO_TYPE] : named;
 			}, [tickets]);
 			const [typeSet, setTypeSet] = (0, react.useState)(() => new Set(Object.keys(TYPE_THEME)));
-			const [kindSet, setKindSet] = (0, react.useState)(() => new Set([
+			const [kindSet, setKindSet] = (0, react.useState)(() => /* @__PURE__ */ new Set([
 				"ticket",
 				"approval",
 				"note"
@@ -1951,7 +1956,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										setQuery("");
 										setStatusSet(new Set(OUTSTANDING));
 										setTypeSet(new Set(allTypes));
-										setKindSet(new Set([
+										setKindSet(/* @__PURE__ */ new Set([
 											"ticket",
 											"approval",
 											"note"
@@ -2236,9 +2241,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
-		const NODE_W = 176, STEP_X = 200, NODE_H = 66;
-		const RUNG_TOP = 140, RUNG_STEP = 110;
-		const START_Y = 36, END_GAP = 110, CAP_H = 30, CAP_W = 100;
+		const NODE_W = 176;
+		const STEP_X = 200;
+		const NODE_H = 66;
+		const RUNG_TOP = 140;
+		const RUNG_STEP = 110;
+		const START_Y = 36;
+		const END_GAP = 110;
+		const CAP_H = 30;
+		const CAP_W = 100;
 		const START = "\0start";
 		const END = "\0end";
 		function layoutGraph(tickets) {
@@ -2291,7 +2302,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const W = side.length > 0 ? Math.max(W_MAIN, W_MAIN + sideGap + (maxSideRow - 1) * STEP_X + NODE_W + 40) : W_MAIN;
 			const pos = /* @__PURE__ */ new Map();
 			layers.forEach((o, li) => {
-				const left = (W_MAIN - (o.length * STEP_X - 24)) / 2;
+				const lw = o.length * STEP_X - 24;
+				const left = (W_MAIN - lw) / 2;
 				o.forEach((t, i) => {
 					const x = left + i * STEP_X;
 					pos.set(t.id, {
@@ -3474,7 +3486,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					const snap = await snapshot(sessionId, round ?? void 0);
 					setCwd((prev) => prev === snap.cwd ? prev : snap.cwd);
 					const r = assemblePlanData(snap);
-					if (r.efforts.length === 0 && r.tickets.length === 0) {
+					if (r.efforts.length === 0 && r.tickets.length === 0 && r.adrs.length === 0) {
 						setError("empty");
 						setLoading(false);
 						return;
@@ -3506,6 +3518,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				loadSessions();
 			}, [load, loadSessions]);
 			const all = data?.tickets ?? [];
+			const adrs = data?.adrs ?? [];
 			const routeTickets = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ticket"), [all]);
 			const approvals = (0, react.useMemo)(() => all.filter((t) => classify(t) === "approval"), [all]);
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
@@ -3664,6 +3677,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					count: openLedgerCount(globalLedgers)
 				},
 				{
+					id: "adr",
+					label: "🏛️ ADR",
+					count: adrs.length
+				},
+				{
 					id: "context",
 					label: "📐 CONTEXT",
 					count: 0
@@ -3800,11 +3818,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									0
 								]] : [],
 								[
-									"tickets",
-									"🎫 工单",
-									openTickets(mapTickets)
-								],
-								[
 									"approvals",
 									"⏳ 待拍板",
 									pendingApprovals(mapApprovals)
@@ -3922,15 +3935,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							},
 							dangerouslySetInnerHTML: { __html: md(selEffort.specRaw) }
 						}),
-						mapSub === "tickets" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewC, {
-							tickets: mapTickets,
-							planDir,
-							scope,
-							ctx,
-							sessions,
-							onChanged,
-							readOnly
-						}),
 						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
 							approvals: mapApprovals,
 							scope,
@@ -4047,6 +4051,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							},
 							children: "暂无缺陷文档（`type: qa-defect` 一缺陷一文件，加头 = 被看见）。"
 						})]
+					}),
+					top === "adr" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AdrView, {
+						adrs,
+						scope,
+						ctx
 					}),
 					top === "context" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
@@ -4189,7 +4198,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(H, { children: "这个页面是什么" }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(P, { children: [
-							"第一行页签（2026-09-30 拍板）：总览 / 地图 / 测例 / 缺陷 / 台账 / CONTEXT / 说明。测例与缺陷各自成页并",
+							"第一行页签（2026-09-30 拍板）：总览 / 地图 / 测例 / 缺陷 / 台账 / ADR / CONTEXT / 说明。测例与缺陷各自成页并",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
 								style: { color: TEXT },
 								children: "聚合全局"
@@ -4198,7 +4207,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "qa/" }),
 							" ＋ ",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".plan/qa/" }),
-							"）； 【CONTEXT】渲染仓根 ",
+							"）； 【ADR】渲染仓根 ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "docs/adr/" }),
+							"（架构决策记录，知识层只读展示，2026-09-30 拍板）； 【CONTEXT】渲染仓根 ",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "CONTEXT.md" }),
 							"（词汇表/领域正本）。地图页内：推演图第 2 子页为【map】 （map.md 正文）、实施图（spec-only）第 2 子页为【spec】（spec.md 正文）。 各页显示的是两个治理目录下的 markdown：tracker 类（spec / map / issues 票）在 ",
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".scratch/" }),
@@ -4504,7 +4515,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											style: { color: TEXT },
 											children: "落码验收"
 										}),
-										"； 卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（工单表默认只显 open/claimed，收口票看这里）。"
+										"； 卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（路线页 Table 变体默认只显 open/claimed，收口票看这里）。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -4549,7 +4560,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											children: "历史遗留的 impl/ 、impl-fe/ 目录？"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
-										"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🎫 工单」子页，不再单独成页； 收尾时会清理并入 ",
+										"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页； 收尾时会清理并入 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "tickets/" }),
 										"。"
 									]
@@ -5204,7 +5215,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}
 			return [];
 		}
-		const DEFECT_CLOSED = new Set([
+		const DEFECT_CLOSED = /* @__PURE__ */ new Set([
 			"已关闭",
 			"关闭",
 			"挂起"
@@ -5984,8 +5995,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									const sx = a.x + NODE_W, sy = a.y + NODE_H / 2;
 									const ex = b.x, ey = b.y + NODE_H / 2;
 									const slotX = ex - 18;
+									const d = ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`;
 									return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-										d: ey === sy ? `M ${sx} ${sy} L ${ex} ${ey}` : `M ${sx} ${sy} L ${slotX} ${sy} L ${slotX} ${ey} L ${ex} ${ey}`,
+										d,
 										fill: "none",
 										stroke: on ? st.color : "rgba(255,255,255,.16)",
 										strokeWidth: on ? 2.2 : 1.4,
@@ -6201,6 +6213,134 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						dangerouslySetInnerHTML: { __html: md(c.body) }
 					})]
 				}, `${c.effort}/${c.file}`))]
+			});
+		}
+		const ADR_STATUS_META = {
+			proposed: {
+				label: "proposed",
+				color: "#f7ad31"
+			},
+			accepted: {
+				label: "accepted",
+				color: "#4ed17e"
+			},
+			deprecated: {
+				label: "deprecated",
+				color: "#f2555a"
+			},
+			superseded: {
+				label: "superseded",
+				color: "#f2555a"
+			}
+		};
+		function AdrView({ adrs, scope, ctx }) {
+			const sorted = (0, react.useMemo)(() => [...adrs].sort((a, b) => a.id.localeCompare(b.id)), [adrs]);
+			if (sorted.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					display: "flex",
+					flexDirection: "column",
+					alignItems: "center",
+					justifyContent: "center",
+					color: TEXT_FAINT,
+					padding: 24,
+					textAlign: "center"
+				},
+				children: [
+					"本仓仓根暂无 ",
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: "docs/adr/" }),
+					"。",
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							fontSize: 12,
+							color: TEXT_FAINT
+						},
+						children: "架构决策记录落 `docs/adr/NNNN-<slug>.md`（格式正本 domain-modeling/ADR-FORMAT.md），落第一份后本页自动呈现。"
+					})
+				]
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					overflowY: "auto",
+					padding: 12,
+					display: "flex",
+					flexDirection: "column",
+					gap: 12
+				},
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: MD_CSS }), sorted.map((a) => {
+					const s = ADR_STATUS_META[statusWord(a)];
+					const num = a.id.match(/^(\d{4})/)?.[1] ?? a.id;
+					const title = a.title.replace(/^(?:ADR[-:\s]*)?\d{4}[-:\s]+/, "") || a.title;
+					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							border: `1px solid ${BORDER}`,
+							borderRadius: 10,
+							background: CARD,
+							overflow: "hidden"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								padding: "10px 14px",
+								borderBottom: `1px solid ${BORDER}`,
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								background: HEADER_BG,
+								flexWrap: "wrap"
+							},
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: {
+										fontFamily: "ui-monospace,Menlo,monospace",
+										fontSize: 12,
+										fontWeight: 700,
+										color: ACCENT_SOFT
+									},
+									children: ["ADR-", num]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: {
+										fontSize: 13,
+										fontWeight: 700,
+										color: TEXT
+									},
+									children: title
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: {
+										fontSize: 11,
+										padding: "2px 8px",
+										borderRadius: 999,
+										border: `1px solid ${s ? `${s.color}55` : "#555"}`,
+										color: s ? s.color : "#999"
+									},
+									children: s ? s.label : "未标"
+								}),
+								a.date && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: {
+										fontSize: 11,
+										color: TEXT_FAINT
+									},
+									children: a.date
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+									ticket: a,
+									scope,
+									ctx
+								})
+							]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								padding: "10px 14px 14px",
+								fontSize: 13,
+								color: TEXT_DIM
+							},
+							dangerouslySetInnerHTML: { __html: md(a.body) }
+						})]
+					}, a.path ?? a.file);
+				})]
 			});
 		}
 		//#endregion

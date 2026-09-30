@@ -14,6 +14,10 @@
  *     assets/ 是调研资源不是票；契约外目录是视图不可见孤岛（plan-lint 检查[8]）。
  *   - `.plan` 侧根层展示白名单（2026-09-30 票 18）：只收审批档形状
  *     （待拍板- 与 已拍板- 前缀），与 plan-lint 检查[9] 同判据。
+ *   - `docs/adr/` 全局展示层（2026-09-30 拍板「docs/adr 纳入视图全局层」）：
+ *     知识层原地自维护、不入治理目录，视图只读展示——只收 `NNNN-<slug>.md`
+ *     形状（ADR-FORMAT.md 契约），group='adr'；现行面（round=null）才有，
+ *     历史轮快照不含（ADR 非轮成员）。
  *   - `.plan` 根下没有任何 effort（2026-09-29 拍板）：effortScan=false。
  *
  * Node half 仍不 import 任何 react / 浏览器模块。
@@ -34,6 +38,9 @@ export const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa',
 
 // `.plan` 侧根层展示白名单（2026-09-30 票 18，plan-lint 检查[9] 同判据）。
 export const PLAN_ROOT_ALLOW = /^(?:待拍板|已拍板)-/
+
+// ADR 文件形状（ADR-FORMAT.md 契约：docs/adr/NNNN-<slug>.md）；形状外不收。
+const ADR_FILE = /^\d{4}-/
 
 // Effort 陪伴文档不是票（map/spec/readme 描述 effort 本身）。
 const NON_TICKET = /^(map|spec|tech-spec|fe-v1-spec|readme)\.md$/i
@@ -149,6 +156,15 @@ export async function collectSnapshot(cwd, round = null) {
     : [{ dir: join(cwd, '.archive', 'rounds', round), effortScan: true }]
 
   const parts = (await Promise.all(roots.map((r) => collectRoot(r.dir, r.effortScan)))).filter((p) => p !== null)
+  // ADR 全局展示层（2026-09-30 拍板）：现行面才有——历史轮是 .scratch 快照，
+  // ADR 属知识层非轮成员，混进轮视图会把「当时」与「现在」搅在一起。
+  if (round === null) {
+    const adrTree = await listDir(join(cwd, 'docs', 'adr'))
+    const adrFiles = (adrTree ?? [])
+      .filter((e) => !e.isDir && isMd(e.name) && ADR_FILE.test(e.name))
+      .map((f) => ({ file: f, from: ROOT_GROUP, group: 'adr' }))
+    parts.push({ efforts: [], files: adrFiles })
+  }
   const seen = new Set()
   const files = []
   for (const p of parts) {

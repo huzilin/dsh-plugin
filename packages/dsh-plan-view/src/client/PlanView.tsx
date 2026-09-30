@@ -4,7 +4,7 @@
  * effort), derives ticket status per the TRACKER-MARKDOWN
  * contract, and renders the tabbed surface:
  *   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
- *   缺陷 · 台账 · CONTEXT · 说明（2026-09-30 读取契约拍版）
+ *   缺陷 · 台账 · ADR · CONTEXT · 说明（2026-09-30 读取契约拍版）
  *
  * All views share a unified dark theme and markdown-rendered detail panels.
  * Self-contained: uses its own api module, inline styles, zero CSS deps.
@@ -582,15 +582,17 @@ const ROOT_GROUP = '\u0000root'
 //
 // The tab shows the different things that happen to share a directory:
 //   路线 (route)     — the wayfinder map: an effort's destination and its DAG
-//   工单 (tickets)   — work waiting to be done
+//                      （2026-09-30 拍板：工单子页并入路线，Table 变体即原工单表）
 //   待拍板 (approvals) — decisions waiting on the human
 //   台账 (ledger)    — standing debts across maps (挂账台账)
 //   缺陷 (defects)   — test-found bugs, scoped to one map (缺陷台账)
+//   ADR (adr)        — architecture decisions, docs/adr/ 知识层只读展示
 // They are collected together, then split by kind, so each view is one filter
 // over the same data rather than three loaders that can disagree.
 
 interface PlanData {
   tickets: ParsedTicket[]      // every markdown file found, with its kind resolved
+  adrs: ParsedTicket[]         // docs/adr knowledge layer（ADR 全局页数据源，2026-09-30 拍板）
   effortDir: string
   mapRaw: string | null
   efforts: { dir: string; mapRaw: string; specRaw?: string }[]  // every effort (map.md, or spec.md as a spec-only effort)
@@ -600,16 +602,21 @@ function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
 
 /**
  * snapshot（一次请求的全量数据）→ PlanData：契约解析（frontmatter/状态/kind/qa
- * whitelist 过滤）留在客户端不动，只把「遍历+读取」换成了服务端一次返回。
+ * 白名单过滤）留在客户端不动，只把「遍历+读取」换成了服务端一次返回。
  */
 function assemblePlanData(snap: Snapshot): PlanData {
-  const tickets = snap.files
+  const parsed = snap.files
     .map(f => ({ ...deriveTicketStatus(f.name, f.content), path: f.path, effort: f.from, group: f.group }))
+  // ADR 先于票面分流（group 'adr'）：否则无 type、有 status 的 ADR 会被
+  // ticketKind 兜底计成工单，四处工单计数全部虚高。
+  const adrs = parsed.filter(t => t.group === 'adr')
+  const tickets = parsed
+    .filter(t => t.group !== 'adr')
     .filter(t => t.group !== 'qa' || ticketKind(t) === 'defect' || t.file === 'cases.md')
   const efforts = snap.efforts.map(e => ({ dir: e.dir, mapRaw: e.mapRaw, specRaw: e.specRaw ?? undefined }))
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
-  return { tickets, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
+  return { tickets, adrs, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
 // ─── Shared detail modal + action layer ──────────────────────────────────────
@@ -1342,7 +1349,7 @@ const isDshSession = (id: string): boolean => id.startsWith('session-')
 
 // ─── 推演票专页（2026-09-29 票 12）──────────────────────────────────────────
 //
-// research / prototype / grilling 的子页。工单表（ViewC）默认只显示
+// research / prototype / grilling 的子页。路线页 Table 变体（ViewC）默认只显示
 // open/claimed——收口后的推演图（novel 的 15 张全是 done）在那里默认不可见，
 // 本页全量列出，行点开详情；徽标与卡片同款（ticketDisplayMeta）。
 function SpeculationView({ tickets, planDir, scope, ctx, sessions, onChanged, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; readOnly?: boolean }) {
@@ -1626,12 +1633,12 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'context' | 'guide'
+type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'adr' | 'context' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
 // mapdoc/specdoc（2026-09-30 拍板）：推演图第 2 子页 = map.md 正文、实施图
 //（spec-only）第 2 子页 = spec.md 正文——按选中 effort 的文件有无互斥显示。
-	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'tickets' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
+	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'speculation'
 
 export function PlanView(props: { ctx: any; sessionId?: string }) {
   // cwd 不由外层预解析（sessionCwd 链随票 19 退役）：首帧 snapshot 的响应自带
@@ -1667,7 +1674,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
       const snap = await snapshot(sessionId, round ?? undefined)
       setCwd(prev => (prev === snap.cwd ? prev : snap.cwd))
       const r = assemblePlanData(snap)
-      if (r.efforts.length === 0 && r.tickets.length === 0) { setError('empty'); setLoading(false); return }
+      if (r.efforts.length === 0 && r.tickets.length === 0 && r.adrs.length === 0) { setError('empty'); setLoading(false); return }
       setRounds(roundsOf(snap))
       setContextRaw(snap.contextRaw)
       setData(r)
@@ -1690,6 +1697,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])
 
   const all = data?.tickets ?? []
+  // ADR 全局页数据源（2026-09-30 拍板）：服务端 group 'adr' 分流，已不进票面。
+  const adrs = data?.adrs ?? []
   const routeTickets = useMemo(() => all.filter(t => classify(t) === 'ticket'), [all])
   const approvals = useMemo(() => all.filter(t => classify(t) === 'approval'), [all])
   const ledgers = useMemo(() => all.filter(t => classify(t) === 'ledger'), [all])
@@ -1803,7 +1812,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   const pendingApprovals = (list: ParsedTicket[]) => list.filter(t => ticketKind(t) === 'approval' && isPending(t)).length
 
   // 第一行 tab（2026-09-30 拍板拆分与追加）：测例/缺陷各自成 tab 且聚合
-  // （各 effort qa/ + .plan/qa/ 全局件）；【CONTEXT】居第一行末位。
+  // （各 effort qa/ + .plan/qa/ 全局件）；【ADR】居台账后（知识层相邻，2026-09-30
+  // 拍板①，docs/adr 只读展示）；【CONTEXT】居第一行末位。
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
     // 地图 tab 计数用全局口径（mapOwnTickets），不随 chips 选中图跳变——
@@ -1812,6 +1822,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     { id: 'cases', label: '🧪 测例', count: cases.length },
     { id: 'defects', label: '🐞 缺陷', count: openDefectCount(defects) },
     { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
+    { id: 'adr', label: '🏛️ ADR', count: adrs.length },
     { id: 'context', label: '📐 CONTEXT', count: 0 },
     { id: 'guide', label: '📖 说明', count: 0 },
   ]
@@ -1872,7 +1883,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
               ...(selEffort === undefined ? [] : selEffort.mapRaw !== ''
                 ? [['mapdoc', '🗺️ map', 0] as [MapSub, string, number]]
                 : selEffort.specRaw ? [['specdoc', '📄 spec', 0] as [MapSub, string, number]] : []),
-              ['tickets', '🎫 工单', openTickets(mapTickets)],
+              // 「🎫 工单」子页已移除（2026-09-30 拍板②）：票列表归宿＝路线子页
+              // 三变体（Table 变体即原工单表），推演票仍有下方专页全量列出。
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
               ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
@@ -1880,7 +1892,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
               // 串联计数 = 实际入画的连通节点数（孤岛被折叠，不计入），与画布一致
               ['chain', '🧪 串联', buildChain(mapTickets, mapDefects, mapLedgers, mapCases).nodes.length],
               // 推演票专页计数 = 当前范围 research/prototype/grilling 票总数（含 done——
-              // 收口推演图的票在工单表默认过滤里不可见，这里就是给它们一个全量页）
+              // 收口推演图的票在路线页 Table 变体默认过滤里不可见，这里就是给它们一个全量页）
               ['speculation', '🔍 推演票', mapTickets.filter(isSpecTicket).length],
             ] as [MapSub, string, number][]).map(([id, label, n]) => (
               <button key={id} type="button" style={{ ...mapTab(mapSub === id) }} onClick={() => setMapSub(id)}>
@@ -1908,7 +1920,6 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {mapSub === 'specdoc' && selEffort !== undefined && !!selEffort.specRaw && (
             <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} dangerouslySetInnerHTML={{ __html: md(selEffort.specRaw as string) }} />
           )}
-          {mapSub === 'tickets' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
@@ -1937,6 +1948,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
             : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>暂无缺陷文档（`type: qa-defect` 一缺陷一文件，加头 = 被看见）。</div>}
         </div>
       )}
+      {top === 'adr' && <AdrView adrs={adrs} scope={scope} ctx={ctx} />}
       {top === 'context' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {contextRaw === null
@@ -1997,8 +2009,9 @@ function GuideView({ scope }: { scope: SessionScope }) {
 
         <H>这个页面是什么</H>
         <P>
-          第一行页签（2026-09-30 拍板）：总览 / 地图 / 测例 / 缺陷 / 台账 / CONTEXT / 说明。测例与缺陷各自成页并
+          第一行页签（2026-09-30 拍板）：总览 / 地图 / 测例 / 缺陷 / 台账 / ADR / CONTEXT / 说明。测例与缺陷各自成页并
           <strong style={{ color: TEXT }}>聚合全局</strong>（各 effort <Code>qa/</Code> ＋ <Code>.plan/qa/</Code>）；
+          【ADR】渲染仓根 <Code>docs/adr/</Code>（架构决策记录，知识层只读展示，2026-09-30 拍板）；
           【CONTEXT】渲染仓根 <Code>CONTEXT.md</Code>（词汇表/领域正本）。地图页内：推演图第 2 子页为【map】
           （map.md 正文）、实施图（spec-only）第 2 子页为【spec】（spec.md 正文）。
           各页显示的是两个治理目录下的 markdown：tracker 类（spec / map / issues 票）在 <Code>.scratch/</Code>，
@@ -2096,7 +2109,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
             <Code>prototype</Code>＝原型票（🧩 做粗糙实物给讨论反应）；
             <Code>grilling</Code>＝拷问票（🔥 逐题拍板）。
             推演图（后三种组成）终点是<strong style={{ color: TEXT }}>决策清零</strong>，实施图（task）终点是<strong style={{ color: TEXT }}>落码验收</strong>；
-            卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（工单表默认只显 open/claimed，收口票看这里）。
+            卡片上的彩色徽标即票型身份；地图子页「🔍 推演票」集中全量列出这三种票（路线页 Table 变体默认只显 open/claimed，收口票看这里）。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
@@ -2114,7 +2127,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
-            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🎫 工单」子页，不再单独成页；
+            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页；
             收尾时会清理并入 <Code>tickets/</Code>。
           </div>
         </div>
@@ -2896,6 +2909,55 @@ function CasesView({ cases, scope, ctx, readOnly }: { cases: ParsedTicket[]; sco
           <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(c.body) }} />
         </div>
       ))}
+    </div>
+  )
+}
+
+// ─── ADR view（2026-09-30 拍板①：docs/adr 纳入全局层展示）────────────────────
+//
+// ADR 是知识层（落点 docs/adr/NNNN-<slug>.md，格式正本 domain-modeling/
+// ADR-FORMAT.md），原地自维护、不入治理目录——本页只读展示，不参与派活。
+// Status 词表按 ADR-FORMAT；原版 Status 是 optional，缺省按「未标」呈现，
+// 不阻塞展示（09-28 必填化拍板是记录层口径，执行文本尚未收编）。
+
+const ADR_STATUS_META: Record<string, { label: string; color: string }> = {
+  proposed: { label: 'proposed', color: '#f7ad31' },
+  accepted: { label: 'accepted', color: '#4ed17e' },
+  deprecated: { label: 'deprecated', color: '#f2555a' },
+  superseded: { label: 'superseded', color: '#f2555a' },
+}
+
+function AdrView({ adrs, scope, ctx }: { adrs: ParsedTicket[]; scope: SessionScope; ctx: any }) {
+  const sorted = useMemo(() => [...adrs].sort((a, b) => a.id.localeCompare(b.id)), [adrs])
+  if (sorted.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, padding: 24, textAlign: 'center' }}>
+        本仓仓根暂无 <code>docs/adr/</code>。
+        <br />
+        <span style={{ fontSize: 12, color: TEXT_FAINT }}>{'架构决策记录落 `docs/adr/NNNN-<slug>.md`（格式正本 domain-modeling/ADR-FORMAT.md），落第一份后本页自动呈现。'}</span>
+      </div>
+    )
+  }
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <style>{MD_CSS}</style>
+      {sorted.map(a => {
+        const s = ADR_STATUS_META[statusWord(a)]
+        const num = a.id.match(/^(\d{4})/)?.[1] ?? a.id
+        const title = a.title.replace(/^(?:ADR[-:\s]*)?\d{4}[-:\s]+/, '') || a.title
+        return (
+          <div key={a.path ?? a.file} style={{ border: `1px solid ${BORDER}`, borderRadius: 10, background: CARD, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8, background: HEADER_BG, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: 'ui-monospace,Menlo,monospace', fontSize: 12, fontWeight: 700, color: ACCENT_SOFT }}>ADR-{num}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{title}</span>
+              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, border: `1px solid ${s ? `${s.color}55` : '#555'}`, color: s ? s.color : '#999' }}>{s ? s.label : '未标'}</span>
+              {a.date && <span style={{ fontSize: 11, color: TEXT_FAINT }}>{a.date}</span>}
+              <FilePath ticket={a} scope={scope} ctx={ctx} />
+            </div>
+            <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(a.body) }} />
+          </div>
+        )
+      })}
     </div>
   )
 }
