@@ -10,7 +10,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
-The issue tracker should have been provided to you. If `docs/agents/issue-tracker.md` is missing, tell the user to run `/setup-matt-pocock-skills`.
+Tickets and specs live where the `plan-protocol` skill says they do: `.scratch/<effort>/issues/<NN>-<slug>.md` per ticket, spec at `.scratch/<effort>/spec.md`. This repo does not use `docs/agents/` configuration files (the upstream `/setup-matt-pocock-skills` scaffold is not installed here — plan-protocol owns the locations it would configure). Review the Spec axis against the ticket and spec named by the changes under review; if the origin is unclear, ask the user which effort owns them.
 
 ## Process
 
