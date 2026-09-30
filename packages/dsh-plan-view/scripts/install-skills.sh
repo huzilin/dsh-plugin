@@ -76,6 +76,11 @@ for src in "$SKILLS_SRC"/*/; do
     implement)       skill_id="mp-implement" ;;
     implement-spec)  skill_id="mp-implement-spec" ;;
     to-spec)         skill_id="mp-to-spec" ;;
+    # research / wayfinder 的软链名带 mp- 前缀（zcode 侧软链 2026-09-29 06:19 建），
+    # 默认裸名会装出无人引用的孤儿副本（2026-09-30 实证：mp- 副本停在 09-28 旧版，
+    # 脚本每次更新的裸名副本无软链指向）——显式映射对齐软链名。
+    research)        skill_id="mp-research" ;;
+    wayfinder)       skill_id="mp-wayfinder" ;;
     # 票 08 收编（断链 L5）：implement 依赖 tdd/code-review、improve-codebase-architecture
     # 依赖 codebase-design；安装 id 沿用既有 mp-* 名（覆盖旧副本，软链与用户视图不变）
     tdd)             skill_id="mp-tdd" ;;
