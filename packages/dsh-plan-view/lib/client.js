@@ -3909,7 +3909,13 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					cursor: loading ? "default" : "pointer",
 					fontSize: 12
 				},
-				children: loading ? "…" : label
+				children: loading ? "…" : label === "⟳" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					style: {
+						fontSize: 18,
+						lineHeight: 1
+					},
+					children: "⟳"
+				}) : label
 			});
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
