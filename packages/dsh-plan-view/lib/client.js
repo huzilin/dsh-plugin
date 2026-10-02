@@ -762,26 +762,29 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return /superseded-by/i.test(head);
 		}
 		/**
-		* 一张图的完成度。返回 `pct` 与 `locked` 两个读数。
+		* 一张图的完成度。返回 `pct` 与锁区两个读数。
 		*
-		* 口径（2026-10-02 用户拍板）：
+		* 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加）：
 		*  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
 		*  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
 		*    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
 		*    变为 100%。推演图无 spec.md，不加项。
-		*  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**，并以 `locked` 标出「无法达到」。
+		*  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**；有测例但缺执行验收记录
+		*    （`qa/test.md`）⇒ **封顶 90%**。`lockPct`（20/10）标出「够不到的那一段」，
+		*    供进度条把右端画成黄色锁区（2026-10-03 用户拍板的展示要求）。
 		*
-		* `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（当前只有缺测例一种），
-		* 供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的正常一项，
-		* 属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
+		* `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（缺测例 / 缺测试文档
+		* 两种），供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的
+		* 正常一项，属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
 		*
 		* @param own     该图自有单据 + 根层松散件（与卡片其它计数同口径）
-		* @param dir     图目录（判断 qa/cases.md 与 spec.md 归属）
+		* @param dir     图目录（判断 qa/cases.md、qa/test.md 与 spec.md 归属）
 		* @param cases   全部测例文档（含 effort 归属字段）
+		* @param tests   全部执行验收记录（qa/test.md / test-*.md，含 effort 归属字段）
 		* @param kind    图型
 		* @param specRaw 该图 spec.md 正文；无 spec 传 undefined
 		*/
-		function effortProgress(own, dir, cases, kind, specRaw) {
+		function effortProgress(own, dir, cases, tests, kind, specRaw) {
 			const countable = own.filter((t) => {
 				const k = ticketKind(t);
 				if (k === "note" || k === "cases") return false;
@@ -795,14 +798,29 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const numer = settled + (specCounted && specArchived ? 1 : 0);
 			let pct = denom > 0 ? Math.round(numer / denom * 100) : 0;
 			const hasCases = cases.some((c) => c.effort === dir);
-			const locked = kind === "impl" && !hasCases;
-			if (locked) pct = Math.min(pct, 80);
+			const hasTest = tests.some((t) => t.effort === dir);
+			const lockPct = kind !== "impl" ? 0 : hasCases ? hasTest ? 0 : 10 : 20;
+			const lockKind = lockPct === 20 ? "cases" : lockPct === 10 ? "test" : void 0;
+			if (lockPct > 0) pct = Math.min(pct, 100 - lockPct);
 			return {
 				pct,
-				locked,
+				locked: lockPct > 0,
+				lockPct,
+				lockKind,
 				hasCases,
+				hasTest,
 				specCounted,
 				specArchived
+			};
+		}
+		/** 锁区的角标文案与悬停说明（总览卡片条与 Kanban 头部条共用，防两处漂移）。 */
+		function lockCopy(kind) {
+			return kind === "test" ? {
+				chip: "🔒 缺测试文档 10%",
+				title: "已有测例（qa/cases.md）但没有执行验收记录（qa/test.md）：测过没记录不算收口，上限锁在 90%"
+			} : {
+				chip: "🔒 缺测例 20%",
+				title: "缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%"
 			};
 		}
 		/** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -873,6 +891,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const adrs = parsed.filter((t) => t.group === "adr");
 			const assetFiles = parsed.filter((t) => t.group === "assets");
 			const tickets = parsed.filter((t) => t.group !== "adr" && t.group !== "assets").filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
+			const qaTests = parsed.filter((t) => t.group === "qa" && (t.file === "test.md" || /^test-/.test(t.file)));
 			const efforts = snap.efforts.map((e) => ({
 				dir: e.dir,
 				mapRaw: e.mapRaw,
@@ -881,6 +900,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 			return {
 				tickets,
+				qaTests,
 				adrs,
 				assetFiles,
 				effortDir: primary?.dir ?? snap.cwd,
@@ -1390,7 +1410,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				})
 			});
 		}
-		function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly }) {
+		function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly, lock }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const groups = (0, react.useMemo)(() => {
 				const g = {
@@ -1406,6 +1426,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const active = tickets.filter((t) => !t.outOfScope);
 			const done = tickets.filter((t) => t.done).length;
 			const pct = active.length > 0 ? Math.round(done / active.length * 100) : 0;
+			const lockTitle = lock !== void 0 ? lockCopy(lock.kind).title : "";
+			const shownPct = lock !== void 0 ? Math.min(pct, 100 - lock.pct) : pct;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
@@ -1526,31 +1548,61 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							alignItems: "center",
 							gap: 10
 						},
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							style: {
-								flex: 1,
-								height: 6,
-								borderRadius: 3,
-								background: CHIP_BG,
-								border: `1px solid ${BORDER}`,
-								overflow: "hidden"
-							},
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
-								height: "100%",
-								width: `${pct}%`,
-								borderRadius: 3,
-								background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
-							} })
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							style: {
-								fontSize: 12,
-								fontWeight: 700,
-								color: "#4ed17e",
-								minWidth: 36,
-								textAlign: "right"
-							},
-							children: [pct, "%"]
-						})]
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									flex: 1,
+									height: 6,
+									borderRadius: 3,
+									background: CHIP_BG,
+									border: `1px solid ${BORDER}`,
+									overflow: "hidden",
+									position: "relative"
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+									height: "100%",
+									width: `${shownPct}%`,
+									borderRadius: 3,
+									background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
+								} }), lock !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									title: lockTitle,
+									style: {
+										position: "absolute",
+										top: 0,
+										right: 0,
+										bottom: 0,
+										width: `${lock.pct}%`,
+										background: LOCKED,
+										cursor: "help"
+									}
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								style: {
+									fontSize: 12,
+									fontWeight: 700,
+									color: lock !== void 0 ? LOCKED : "#4ed17e",
+									minWidth: 36,
+									textAlign: "right"
+								},
+								children: [shownPct, "%"]
+							}),
+							lock !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								title: lockTitle,
+								style: {
+									fontSize: 10.5,
+									fontWeight: 700,
+									color: LOCKED,
+									background: `${LOCKED}1f`,
+									border: `1px solid ${LOCKED}66`,
+									borderRadius: 4,
+									padding: "1px 5px",
+									whiteSpace: "nowrap",
+									cursor: "help"
+								},
+								children: lockCopy(lock.kind).chip
+							})
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
@@ -3173,7 +3225,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				}, String(g.kind)))]
 			});
 		}
-		function OverviewView({ tickets, efforts, cases, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+		function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const byId = new Map(tickets.map((t) => [t.id, t]));
 			const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : void 0;
@@ -3325,8 +3377,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							children: g.items.map(({ e }) => {
 								const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
 								const kind = mapKind(e.dir, tickets);
-								const prog = effortProgress(own, e.dir, cases, kind, e.specRaw);
-								const { pct, locked } = prog;
+								const prog = effortProgress(own, e.dir, cases, tests, kind, e.specRaw);
+								const { pct, locked, lockPct, lockKind } = prog;
 								const unsettled = own.filter((t) => {
 									const k = ticketKind(t);
 									if (k === "note" || k === "cases") return false;
@@ -3372,19 +3424,31 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 												gap: 6
 											},
 											children: [
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 													style: {
 														flex: 1,
 														height: 5,
 														borderRadius: 3,
 														background: CHIP_BG,
-														overflow: "hidden"
+														overflow: "hidden",
+														position: "relative"
 													},
-													children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
 														height: "100%",
 														width: `${pct}%`,
 														background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
-													} })
+													} }), locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+														title: lockCopy(lockKind).title,
+														style: {
+															position: "absolute",
+															top: 0,
+															right: 0,
+															bottom: 0,
+															width: `${lockPct}%`,
+															background: LOCKED,
+															cursor: "help"
+														}
+													})]
 												}),
 												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 													style: {
@@ -3398,7 +3462,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 													children: [pct, "%"]
 												}),
 												locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													title: "缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%",
+													title: lockCopy(lockKind).title,
 													style: {
 														fontSize: 10.5,
 														fontWeight: 700,
@@ -3410,7 +3474,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 														whiteSpace: "nowrap",
 														cursor: "help"
 													},
-													children: "🔒 缺测例 20%"
+													children: lockCopy(lockKind).chip
 												})
 											]
 										}),
@@ -3792,6 +3856,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const ledgers = (0, react.useMemo)(() => all.filter((t) => classify(t) === "ledger"), [all]);
 			const defects = (0, react.useMemo)(() => all.filter((t) => classify(t) === "defect"), [all]);
 			const cases = (0, react.useMemo)(() => all.filter((t) => ticketKind(t) === "cases"), [all]);
+			const qaTests = (0, react.useMemo)(() => data?.qaTests ?? [], [data?.qaTests]);
 			const mapOwnTickets = routeTickets;
 			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
 			const mapTickets = (0, react.useMemo)(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
@@ -3942,6 +4007,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const pendingApprovals = (list) => list.filter((t) => ticketKind(t) === "approval" && isPending(t)).length;
 			const specCount = (type) => mapTickets.filter((t) => (t.type ?? "").trim().toLowerCase() === type).length;
 			const selKind = effortIdx >= 0 && selectedDir !== void 0 ? mapKind(selectedDir, mapOwnTickets) : void 0;
+			const selLock = (() => {
+				if (effortIdx < 0 || selectedDir === void 0 || selEffort === void 0) return void 0;
+				const p = effortProgress(mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), selectedDir, cases, qaTests, selKind, selEffort.specRaw);
+				return p.lockPct > 0 ? {
+					pct: p.lockPct,
+					kind: p.lockKind ?? "cases"
+				} : void 0;
+			})();
 			const tabs = [
 				{
 					id: "overview",
@@ -4251,7 +4324,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								sessions,
 								onChanged,
 								destination,
-								readOnly
+								readOnly,
+								lock: selLock
 							}),
 							variant === "D" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewD, {
 								tickets: mapTickets,
@@ -4471,6 +4545,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						tickets: all,
 						efforts: data.efforts,
 						cases,
+						tests: qaTests,
 						defects,
 						ledgers,
 						effortIdx,
@@ -4953,6 +5028,31 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											children: "落码验收"
 										}),
 										"； 卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；路线页 Table 变体默认只显 open/claimed，收口票看这里）。"
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: { margin: "10px 0" },
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+											style: { color: TEXT },
+											children: "进度条右端的黄色锁区是什么？"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+										"实施图的完成度有两道",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+											style: { color: TEXT },
+											children: "结构性上限"
+										}),
+										"（2026-10-02/10-03 拍板）： 没有 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "qa/cases.md" }),
+										"（测例）锁右端 20%、封顶 80%；有测例但没有 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "qa/test.md" }),
+										"（执行验收记录）锁右端 10%、封顶 90%。黄色段 = ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+											style: { color: TEXT },
+											children: "干了也够不到的那一段"
+										}),
+										"， 补齐缺件才解锁；推演图没有 qa 通道，不参与这条口径。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {

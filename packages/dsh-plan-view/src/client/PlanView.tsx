@@ -636,8 +636,10 @@ const MAP_KIND_META: Record<MapKind, { label: string; icon: string }> = {
 //      - qa-defect   → 已关闭：正文 `- 状态:` 为「已关闭」
 //    这样「图里还压着一堆待拍板/挂账/缺陷」时进度条不再显示成 100%。
 //
-// ② **实施图缺测例封顶 80%**：实施图（有 `type: task`）若无 `qa/cases.md`，
-//    完成度上限压到 80%——测例是实施图的验收前提，没测例的「全做完」不算真收口。
+// ② **实施图缺测例封顶 80%、有测例缺测试文档封顶 90%**（10% 档 2026-10-03 用户
+//    需求追加）：实施图（有 `type: task`）若无 `qa/cases.md`，完成度上限压到
+//    80%——测例是实施图的验收前提，没测例的「全做完」不算真收口；有测例但没有
+//    执行验收记录（`qa/test.md`），上限压到 90%——测了没记录同样不算收口。
 //    取**封顶**而非加权：语义直观（「没测例就别想满分」），且票数为 0 的空图不会
 //    因分母加虚拟项而算出诡异小数。
 
@@ -679,31 +681,34 @@ export function isSpecArchived(specRaw: string | undefined): boolean {
 }
 
 /**
- * 一张图的完成度。返回 `pct` 与 `locked` 两个读数。
+ * 一张图的完成度。返回 `pct` 与锁区两个读数。
  *
- * 口径（2026-10-02 用户拍板）：
+ * 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加）：
  *  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
  *  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
  *    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
  *    变为 100%。推演图无 spec.md，不加项。
- *  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**，并以 `locked` 标出「无法达到」。
+ *  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**；有测例但缺执行验收记录
+ *    （`qa/test.md`）⇒ **封顶 90%**。`lockPct`（20/10）标出「够不到的那一段」，
+ *    供进度条把右端画成黄色锁区（2026-10-03 用户拍板的展示要求）。
  *
- * `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（当前只有缺测例一种），
- * 供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的正常一项，
- * 属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
+ * `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（缺测例 / 缺测试文档
+ * 两种），供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的
+ * 正常一项，属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
  *
  * @param own     该图自有单据 + 根层松散件（与卡片其它计数同口径）
- * @param dir     图目录（判断 qa/cases.md 与 spec.md 归属）
+ * @param dir     图目录（判断 qa/cases.md、qa/test.md 与 spec.md 归属）
  * @param cases   全部测例文档（含 effort 归属字段）
+ * @param tests   全部执行验收记录（qa/test.md / test-*.md，含 effort 归属字段）
  * @param kind    图型
  * @param specRaw 该图 spec.md 正文；无 spec 传 undefined
  */
 export function effortProgress(
-  own: ParsedTicket[], dir: string, cases: ParsedTicket[], kind: MapKind | undefined, specRaw: string | undefined,
-): { pct: number; locked: boolean; hasCases: boolean; specCounted: boolean; specArchived: boolean } {
+  own: ParsedTicket[], dir: string, cases: ParsedTicket[], tests: ParsedTicket[], kind: MapKind | undefined, specRaw: string | undefined,
+): { pct: number; locked: boolean; lockPct: number; lockKind: 'cases' | 'test' | undefined; hasCases: boolean; hasTest: boolean; specCounted: boolean; specArchived: boolean } {
   const countable = own.filter(t => {
     const k = ticketKind(t)
-    // note（说明/杂项）不是单据；cases 单独作封顶条件、不进分母。
+    // note（说明/杂项）不是单据；cases/test 单独作封顶条件、不进分母。
     if (k === 'note' || k === 'cases') return false
     // 出局票从分母剔除（与旧口径一致）：整票判出局 = 这件事不做了，不是没做完。
     if (k === 'ticket' && t.outOfScope) return false
@@ -717,16 +722,28 @@ export function effortProgress(
   const numer = settled + (specCounted && specArchived ? 1 : 0)
   let pct = denom > 0 ? Math.round((numer / denom) * 100) : 0
   const hasCases = cases.some(c => c.effort === dir)
-  const locked = kind === 'impl' && !hasCases
-  if (locked) pct = Math.min(pct, 80)
-  return { pct, locked, hasCases, specCounted, specArchived }
+  const hasTest = tests.some(t => t.effort === dir)
+  // 锁区两档互斥，取「缺得最深的那个前提」：缺测例时必然也没有测试文档，
+  // 但那只是同一缺口更深的一档，锁大的 20 不叠加；有测例缺测试文档锁 10。
+  // 仅实施图——推演图没有 qa 通道，终点是决策清零，不参与测例口径。
+  const lockPct = kind !== 'impl' ? 0 : hasCases ? (hasTest ? 0 : 10) : 20
+  const lockKind = lockPct === 20 ? 'cases' as const : lockPct === 10 ? 'test' as const : undefined
+  if (lockPct > 0) pct = Math.min(pct, 100 - lockPct)
+  return { pct, locked: lockPct > 0, lockPct, lockKind, hasCases, hasTest, specCounted, specArchived }
 }
 
 /** 兼容旧签名：只要百分比读数时用（测试与少量调用点）。 */
 export function effortPct(
-  own: ParsedTicket[], dir: string, cases: ParsedTicket[], kind: MapKind | undefined, specRaw?: string,
+  own: ParsedTicket[], dir: string, cases: ParsedTicket[], tests: ParsedTicket[], kind: MapKind | undefined, specRaw?: string,
 ): number {
-  return effortProgress(own, dir, cases, kind, specRaw).pct
+  return effortProgress(own, dir, cases, tests, kind, specRaw).pct
+}
+
+/** 锁区的角标文案与悬停说明（总览卡片条与 Kanban 头部条共用，防两处漂移）。 */
+function lockCopy(kind: 'cases' | 'test' | undefined): { chip: string; title: string } {
+  return kind === 'test'
+    ? { chip: '🔒 缺测试文档 10%', title: '已有测例（qa/cases.md）但没有执行验收记录（qa/test.md）：测过没记录不算收口，上限锁在 90%' }
+    : { chip: '🔒 缺测例 20%', title: '缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%' }
 }
 
 /** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -806,6 +823,7 @@ const ROOT_GROUP = '\u0000root'
 
 interface PlanData {
   tickets: ParsedTicket[]      // every markdown file found, with its kind resolved
+  qaTests: ParsedTicket[]      // qa/test.md（执行验收记录）：不当票（2026-09-20 拍板），只作「测过没」存在性——进度锁 10% 档判据
   adrs: ParsedTicket[]         // docs/adr knowledge layer（ADR 全局页数据源，2026-09-30 拍板）
   assetFiles: ParsedTicket[]   // assets/ 推演产物（票 21 三视图归组数据源，不当票）
   effortDir: string
@@ -829,10 +847,13 @@ function assemblePlanData(snap: Snapshot): PlanData {
   const tickets = parsed
     .filter(t => t.group !== 'adr' && t.group !== 'assets')
     .filter(t => t.group !== 'qa' || ticketKind(t) === 'defect' || t.file === 'cases.md')
+  // 执行验收记录在进票面前截走（同 cases.md 的「不当票」拍板，2026-09-20）：
+  // 文件名与 cases 契约对称（test.md / test-*.md），只留存在性给进度锁判据。
+  const qaTests = parsed.filter(t => t.group === 'qa' && (t.file === 'test.md' || /^test-/.test(t.file)))
   const efforts = snap.efforts.map(e => ({ dir: e.dir, mapRaw: e.mapRaw, specRaw: e.specRaw ?? undefined }))
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
-  return { tickets, adrs, assetFiles, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
+  return { tickets, qaTests, adrs, assetFiles, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
 }
 
 // ─── Shared detail modal + action layer ──────────────────────────────────────
@@ -1112,7 +1133,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 
 // ─── Variant A: Kanban ───────────────────────────────────────────────────────
 
-function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null; readOnly?: boolean }) {
+function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly, lock }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null; readOnly?: boolean; lock?: { pct: number; kind: 'cases' | 'test' } }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const groups = useMemo(() => {
     const g: Record<TicketStatus, ParsedTicket[]> = { done: [], out_of_scope: [], claimed: [], open: [] }
@@ -1127,6 +1148,11 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
   const active = tickets.filter(t => !t.outOfScope)
   const done = tickets.filter(t => t.done).length
   const pct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
+  // 锁区（2026-10-03 用户拍板）：单图态由 PlanView 传入该图的锁档（缺测例 20 /
+  // 缺测试文档 10）；本条自己的百分比（done/active）也要被锁档压住并画黄区，
+  // 否则数字越过黄区、条宽与数字互相矛盾。「全部地图」态是聚合视图，无单一锁。
+  const lockTitle = lock !== undefined ? lockCopy(lock.kind).title : ''
+  const shownPct = lock !== undefined ? Math.min(pct, 100 - lock.pct) : pct
   // minHeight:0：Kanban 列体（下方 overflowY:auto）要在受限高度里才能滚，
   // 列方向 flex 的自动最小高度会把本根撑到内容高、被上层裁掉（同根节点）。
   return (
@@ -1152,10 +1178,16 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
       )}
       {destination && <div style={{ margin: '8px 16px 0', padding: '8px 12px', borderRadius: 8, background: HEADER_BG, border: `1px solid ${BORDER}`, color: '#aaa', fontSize: 13 }}>{destination}</div>}
       <div style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${pct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+        <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden', position: 'relative' }}>
+          <div style={{ height: '100%', width: `${shownPct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+          {lock !== undefined && (
+            <div title={lockTitle} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: `${lock.pct}%`, background: LOCKED, cursor: 'help' }} />
+          )}
         </div>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#4ed17e', minWidth: 36, textAlign: 'right' }}>{pct}%</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: lock !== undefined ? LOCKED : '#4ed17e', minWidth: 36, textAlign: 'right' }}>{shownPct}%</span>
+        {lock !== undefined && (
+          <span title={lockTitle} style={{ fontSize: 10.5, fontWeight: 700, color: LOCKED, background: `${LOCKED}1f`, border: `1px solid ${LOCKED}66`, borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', cursor: 'help' }}>{lockCopy(lock.kind).chip}</span>
+        )}
       </div>
       <div style={{ flex: 1, display: 'flex', gap: 10, padding: '12px 16px', overflowX: 'auto' }}>
         {STATUS_ORDER.filter(s => groups[s].length > 0).map(s => (
@@ -1672,10 +1704,11 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
   )
 }
 
-function OverviewView({ tickets, efforts, cases, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
   efforts: { dir: string; mapRaw: string; specRaw?: string }[]
   cases: ParsedTicket[]
+  tests: ParsedTicket[]
   defects: ParsedTicket[]
   ledgers: ParsedTicket[]
   effortIdx: number
@@ -1772,8 +1805,8 @@ function OverviewView({ tickets, efforts, cases, defects, ledgers, effortIdx, se
               {g.items.map(({ e }) => {
                 const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
                 const kind = mapKind(e.dir, tickets)
-                const prog = effortProgress(own, e.dir, cases, kind, e.specRaw)
-                const { pct, locked } = prog
+                const prog = effortProgress(own, e.dir, cases, tests, kind, e.specRaw)
+                const { pct, locked, lockPct, lockKind } = prog
                 // 「在途」与新口径同源：四类单据中尚未结案的项数（不与 pct 各算一套，
                 // 否则又会出现「100% · 3 项在途」这种自相矛盾的卡片）。
                 const unsettled = own.filter(t => {
@@ -1787,21 +1820,27 @@ function OverviewView({ tickets, efforts, cases, defects, ledgers, effortIdx, se
                   <div key={e.dir} style={{ flex: '1 1 220px', minWidth: 220, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, borderTop: `3px solid ${color}` }}>
                     <div style={{ fontSize: 11, color: TEXT_FAINT, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.dir.split('/').pop()}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color, margin: '3px 0 6px' }}>{stage}</div>
-                    {/* 进度条 + 右侧读数（2026-10-02 用户需求①）：缺口锁死时在进度
-                        右边显示 🔒 与「缺测例 20%」——20% 是**够不到的那一段**，
-                        深黄色（#b8860b）区别于「在途」的橙黄，且带锁形标识。
-                        放在条右侧而非下方文案里，是为了让「上限被锁」在扫视进度
-                        条时立刻可见，不用去读小字。 */}
+                    {/* 进度条 + 右侧读数（2026-10-02 用户需求①；展示形态 2026-10-03
+                        用户拍板）：锁死时①条内右端画黄色锁区（宽 = lockPct%，深黄
+                        #b8860b，区别于「在途」的橙黄）——锁定是**条上的可见区段**，
+                        不是只有小字；②右边显示 🔒 角标与「缺测例 20% / 缺测试文档
+                        10%」。放在条右侧而非下方文案里，是为了让「上限被锁」在扫视
+                        进度条时立刻可见，不用去读小字。 */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ flex: 1, height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
+                      <div style={{ flex: 1, height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden', position: 'relative' }}>
                         <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+                        {/* 锁区叠在填充之上（绝对定位靠右）：填充已被封顶、原则上进不来，
+                            叠放保证即使条宽取整溢出也不视觉越界。 */}
+                        {locked && (
+                          <div title={lockCopy(lockKind).title} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: `${lockPct}%`, background: LOCKED, cursor: 'help' }} />
+                        )}
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 700, color: locked ? LOCKED : '#4ed17e', minWidth: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
                       {locked && (
                         <span
-                          title="缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%"
+                          title={lockCopy(lockKind).title}
                           style={{ fontSize: 10.5, fontWeight: 700, color: LOCKED, background: `${LOCKED}1f`, border: `1px solid ${LOCKED}66`, borderRadius: 4, padding: '1px 4px', whiteSpace: 'nowrap', cursor: 'help' }}
-                        >🔒 缺测例 20%</span>
+                        >{lockCopy(lockKind).chip}</span>
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>
@@ -2024,6 +2063,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // 测例设计文档（qa/cases.md，一图一份）：单列在地图「🧪 测例」子页，
   // 并作为测例节点进入串联画布（按「票 NN」引用挂到被测票下）。
   const cases = useMemo(() => all.filter(t => ticketKind(t) === 'cases'), [all])
+  // 执行验收记录（qa/test.md）：不进票面，只作进度锁 10% 档的存在性判据（2026-10-03）。
+  const qaTests = useMemo(() => data?.qaTests ?? [], [data?.qaTests])
   // 根层 qa/（无图归属）：SOP 回测、整页回测等测例 + 独立缺陷，进第一层「测例&缺陷」tab
   // 全局层测例/缺陷（.plan/qa/）自 2026-09-30 拍板起并入第一行【测例】【缺陷】
   // 两个 tab 的聚合数据源（cases/defects 全量），不再单独过滤成页。
@@ -2146,6 +2187,14 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   const specCount = (type: string) => mapTickets.filter(t => (t.type ?? '').trim().toLowerCase() === type).length
   // 选中图的型别：三个票型视图只对推演图显示（拍板「仅 wayfinder 的 map 可见」）。
   const selKind = effortIdx >= 0 && selectedDir !== undefined ? mapKind(selectedDir, mapOwnTickets) : undefined
+  // 选中图的锁档（2026-10-03 用户拍板）：复用 effortProgress 的锁口径（单一真相源），
+  // 只取锁区不取它的 pct——Kanban 头部条的分母仍是自己的 done/active。
+  const selLock = (() => {
+    if (effortIdx < 0 || selectedDir === undefined || selEffort === undefined) return undefined
+    const own = mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)
+    const p = effortProgress(own, selectedDir, cases, qaTests, selKind, selEffort.specRaw)
+    return p.lockPct > 0 ? { pct: p.lockPct, kind: p.lockKind ?? 'cases' } : undefined
+  })()
 
   // 第一行 tab（2026-09-30 拍板拆分与追加）：测例/缺陷各自成 tab 且聚合
   // （各 effort qa/ + .plan/qa/ 全局件）；【ADR】居台账后（知识层相邻，2026-09-30
@@ -2276,7 +2325,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
                 <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
                 <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
               </div>
-              {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} />}
+              {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} lock={selLock} />}
               {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
               {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
             </>
@@ -2336,7 +2385,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
       )}
       {top === 'guide' && <GuideView scope={scope} />}
       {top === 'ledger' && <LedgerView ledgers={globalLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} cases={cases} defects={defects} ledgers={ledgers} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} cases={cases} tests={qaTests} defects={defects} ledgers={ledgers} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
 }
@@ -2499,6 +2548,13 @@ function GuideView({ scope }: { scope: SessionScope }) {
             <Code>grilling</Code>＝拷问票（🔥 逐题拍板）。
             推演图（后三种组成）终点是<strong style={{ color: TEXT }}>决策清零</strong>，实施图（task）终点是<strong style={{ color: TEXT }}>落码验收</strong>；
             卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；路线页 Table 变体默认只显 open/claimed，收口票看这里）。
+          </div>
+          <div style={{ margin: '10px 0' }}>
+            <strong style={{ color: TEXT }}>进度条右端的黄色锁区是什么？</strong><br />
+            实施图的完成度有两道<strong style={{ color: TEXT }}>结构性上限</strong>（2026-10-02/10-03 拍板）：
+            没有 <Code>qa/cases.md</Code>（测例）锁右端 20%、封顶 80%；有测例但没有 <Code>qa/test.md</Code>
+            （执行验收记录）锁右端 10%、封顶 90%。黄色段 = <strong style={{ color: TEXT }}>干了也够不到的那一段</strong>，
+            补齐缺件才解锁；推演图没有 qa 通道，不参与这条口径。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />

@@ -6,6 +6,8 @@
  *        套用」）：ticket=正文 ## Answer 带正文；approval=不再 pending；ledger=
  *        已销/已转票；qa-defect=已关闭。
  * 变更② 实施图缺 `qa/cases.md` → 完成度**封顶 80%**（用户选定「封顶」而非加权）。
+ * 变更③（2026-10-03 用户需求）有测例但缺执行验收记录 `qa/test.md` → **封顶 90%**，
+ *        `lockPct/lockKind` 标出锁档（20=cases / 10=test），两档互斥取深。
  *
  * 另钉住票态推导已切到**唯一真相源**（plan-protocol §三 推导形态）：只看正文
  * 收束节，不再读 frontmatter `status` 别名词表（done/closed/complete/… 已删）。
@@ -55,7 +57,7 @@ async function loadImpl() {
     'ticketKind', 'isSettled', 'isSpecArchived', 'effortProgress',
     // 2026-10-02 载体迁移新增：票的 status 现从正文读取，解析链需要这两个。
     'bodyField']) code += grab(n) + '\n'
-  code += 'return { effortPct: (o,d,c,k,s) => effortProgress(o,d,c,k,s).pct, effortProgress, displayStatus, ticketKind, hasSection, isSpecArchived, bodyField }'
+  code += 'return { effortPct: (o,d,c,t,k,s) => effortProgress(o,d,c,t,k,s).pct, effortProgress, displayStatus, ticketKind, hasSection, isSpecArchived, bodyField }'
   return new Function(code)()
 }
 
@@ -96,7 +98,8 @@ const pctOf = async (files) => {
   const M = await loadImpl()
   const { dir, tickets } = await fixture(files)
   const cases = tickets.filter(t => /cases\.md$/.test(t.file))
-  return M.effortPct(tickets, dir, cases, 'impl')
+  const tests = tickets.filter(t => /^test(-.*)?\.md$/.test(t.file))
+  return M.effortPct(tickets, dir, cases, tests, 'impl')
 }
 
 test('all four document types count toward the denominator', async () => {
@@ -141,13 +144,21 @@ test('implementation map without qa/cases.md caps at 80%', async () => {
     ['.scratch/alpha/tickets/02-b.md', ANSWER],
   ])
   assert.equal(capped, 80, '实施图缺测例：全做完也只有 80%')
-  // 有 cases.md 则放开
-  const full = await pctOf([
+  // 有 cases.md 但没有执行验收记录（test.md）→ 放开一半，封顶 90（2026-10-03 需求）
+  const halfOpen = await pctOf([
     ['.scratch/alpha/tickets/01-a.md', ANSWER],
     ['.scratch/alpha/tickets/02-b.md', ANSWER],
     ['.scratch/alpha/qa/cases.md', '# cases\n\n| A-1 | x |\n'],
   ])
-  assert.equal(full, 100, '有 cases.md 时应达 100%')
+  assert.equal(halfOpen, 90, '有测例缺测试文档：封顶 90')
+  // cases.md 与 test.md 齐了才放开到 100%
+  const full = await pctOf([
+    ['.scratch/alpha/tickets/01-a.md', ANSWER],
+    ['.scratch/alpha/tickets/02-b.md', ANSWER],
+    ['.scratch/alpha/qa/cases.md', '# cases\n\n| A-1 | x |\n'],
+    ['.scratch/alpha/qa/test.md', '# test\n\n验收结论：通过\n'],
+  ])
+  assert.equal(full, 100, '测例与执行验收记录齐备时应达 100%')
 })
 
 test('closure is read first: a closing section outranks the Status line', async () => {
@@ -197,7 +208,8 @@ test('implementation map counts spec.md as one slot until it is archived', async
   })
   const ANS = T('# t\n\n## Answer\n\nx')
   const cases = [{ effort: 'D' }]
-  const p = (n, spec) => M.effortProgress(Array.from({ length: n }, () => ANS), 'D', cases, 'impl', spec).pct
+  const tests = [{ effort: 'D' }]
+  const p = (n, spec) => M.effortProgress(Array.from({ length: n }, () => ANS), 'D', cases, tests, 'impl', spec).pct
 
   // 票全做完但 spec 未归档 → 差一项，到不了 100%
   assert.equal(p(4, SPEC_OPEN), 80, '4 票全完 + spec 未归档 = 4/5')
@@ -206,7 +218,7 @@ test('implementation map counts spec.md as one slot until it is archived', async
   // 没有 spec.md 时不占名额（spec-only 之外的图、或未写 spec 的图）
   assert.equal(p(2, undefined), 100, '无 spec 文件则不占名额')
   // 推演图不计 spec（推演图本就没有 spec.md）
-  const spec = M.effortProgress([ANS, ANS], 'D', cases, 'speculation', SPEC_OPEN)
+  const spec = M.effortProgress([ANS, ANS], 'D', cases, tests, 'speculation', SPEC_OPEN)
   assert.equal(spec.pct, 100, '推演图不计 spec')
   assert.equal(spec.specCounted, false, '推演图 specCounted 应为 false')
 })
@@ -230,20 +242,37 @@ test('locked flag marks a structural ceiling that cannot be reached', async () =
     claimedBy: undefined, outOfScope: false, effort: 'D', blockedBy: [], assets: [],
   })
   const ANS = T('# t\n\n## Answer\n\nx')
-  // 缺测例 → locked，且封顶 80%
-  const noCases = M.effortProgress([ANS, ANS], 'D', [], 'impl', SPEC_ARCHIVED)
+  // 缺测例 → 锁 20 档（lockKind 'cases'），且封顶 80%
+  const noCases = M.effortProgress([ANS, ANS], 'D', [], [], 'impl', SPEC_ARCHIVED)
   assert.equal(noCases.locked, true, '缺测例应置 locked')
+  assert.equal(noCases.lockPct, 20, '缺测例锁右 20%')
+  assert.equal(noCases.lockKind, 'cases', '缺测例档位标识为 cases')
   assert.equal(noCases.pct, 80, '缺测例封顶 80')
-  // 有测例 → 不 locked
-  const withCases = M.effortProgress([ANS, ANS], 'D', [{ effort: 'D' }], 'impl', SPEC_ARCHIVED)
-  assert.equal(withCases.locked, false, '有测例不应 locked')
-  assert.equal(withCases.pct, 100)
+  // 有测例缺测试文档 → 锁 10 档（lockKind 'test'），封顶 90%（2026-10-03 需求）
+  const noTest = M.effortProgress([ANS, ANS], 'D', [{ effort: 'D' }], [], 'impl', SPEC_ARCHIVED)
+  assert.equal(noTest.locked, true, '有测例缺测试文档也应 locked')
+  assert.equal(noTest.lockPct, 10, '缺测试文档锁右 10%')
+  assert.equal(noTest.lockKind, 'test', '缺测试文档档位标识为 test')
+  assert.equal(noTest.pct, 90, '缺测试文档封顶 90')
+  // 两档不叠加：缺测例的图即便同时缺测试文档也只锁 20
+  const both = M.effortProgress([ANS, ANS], 'D', [], [], 'impl', SPEC_ARCHIVED)
+  assert.equal(both.lockPct, 20, '两档互斥，取深的那档')
+  // 测例与测试文档齐备 → 不 locked
+  const withBoth = M.effortProgress([ANS, ANS], 'D', [{ effort: 'D' }], [{ effort: 'D' }], 'impl', SPEC_ARCHIVED)
+  assert.equal(withBoth.locked, false, '测例与测试文档齐备不应 locked')
+  assert.equal(withBoth.pct, 100)
   // 推演图不参与测例口径
-  assert.equal(M.effortProgress([ANS], 'D', [], 'speculation', undefined).locked, false, '推演图不置 locked')
+  const spec = M.effortProgress([ANS], 'D', [], [], 'speculation', undefined)
+  assert.equal(spec.locked, false, '推演图不置 locked')
+  assert.equal(spec.lockPct, 0, '推演图锁区为 0')
   // 当前进度低于上限时，locked 仍应为 true——它标的是「结构性缺口存在」，
   // 而非「此刻被截断」；后者会让标识在半途忽然消失，读作问题已解决。
   // 1 done + 1 open 且 spec 已归档 ⇒ 分子 1(done)+1(spec) / 分母 2+1 = 67%。
-  const low = M.effortProgress([ANS, T('# t\n\n正文')], 'D', [], 'impl', SPEC_ARCHIVED)
+  const low = M.effortProgress([ANS, T('# t\n\n正文')], 'D', [], [], 'impl', SPEC_ARCHIVED)
   assert.equal(low.pct, 67, '已归档的 spec 也计入分子，故是 2/3 而非 1/2')
   assert.equal(low.locked, true, '进度低于上限也要标出结构性缺口')
+  // 10% 档同理：进度 67% 低于 90 上限时锁区仍要标出
+  const lowTest = M.effortProgress([ANS, T('# t\n\n正文')], 'D', [{ effort: 'D' }], [], 'impl', SPEC_ARCHIVED)
+  assert.equal(lowTest.pct, 67, '进度 2/3 低于 90% 封顶，数值不被改写')
+  assert.equal(lowTest.locked, true, '低于上限同样标出缺测试文档的结构性缺口')
 })
