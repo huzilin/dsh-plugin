@@ -2133,9 +2133,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
       aria-label="刷新"
       style={{ padding: '5px 10px', border: `1px solid ${BORDER}`, borderRadius: 6, background: 'transparent', color: loading ? '#555' : '#aaa', cursor: loading ? 'default' : 'pointer', fontSize: 12 }}
     >
-      {/* ⟳ 字形在 12px 下几乎不可读（2026-10-03 用户反馈）：纯符号档放大到 18px；
-          loading 的 … 与错误页的文字档维持 12px，按钮不因符号变胖。 */}
-      {loading ? '…' : label === '⟳' ? <span style={{ fontSize: 18, lineHeight: 1 }}>⟳</span> : label}
+      {/* ⟳ 字形在 12px 下几乎不可读（2026-10-03 用户反馈）：纯符号档放大——18px 仍嫌小，
+          同日再放大一圈到 22px；loading 的 … 与错误页的文字档维持 12px，按钮不因符号变胖。 */}
+      {loading ? '…' : label === '⟳' ? <span style={{ fontSize: 22, lineHeight: 1 }}>⟳</span> : label}
     </button>
   )
 

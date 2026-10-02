@@ -3911,7 +3911,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				},
 				children: loading ? "…" : label === "⟳" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 					style: {
-						fontSize: 18,
+						fontSize: 22,
 						lineHeight: 1
 					},
 					children: "⟳"
