@@ -16,7 +16,7 @@ Once done, use /code-review to review the work.
 
 **Update the ticket when the work lands.** If this work came from a ticket under `.scratch/` (the only legal effort location), the ticket is not finished until its file says so — do this in the same pass as the commit, never "later", because later is a session that never comes:
 
-- set its `status` to `done`
+- set its `**Status:**` line to `resolved`
 - tick the acceptance boxes the work satisfies, leaving unticked any box you did not actually demonstrate
 - append a one-line landing note naming the commit and anything still open
 

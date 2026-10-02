@@ -22,7 +22,7 @@ The map is the canonical artifact. Its tickets hang off it, one per ticket.
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
-**Where the map, its tickets, blocking, claims, and frontier queries physically live is adapter-specific.** Consult the adapter for this repo before writing anything. Absent one, default to the local-markdown adapter: [`TRACKER-MARKDOWN.md`](TRACKER-MARKDOWN.md), which stores the map under `.scratch/` and states its own shapes, invariants, and verification checklist.
+**Where the map, its tickets, blocking, claims, and frontier queries physically live is fixed for this repo: plain files under `.scratch/`.** Read [`TRACKER-MARKDOWN.md`](TRACKER-MARKDOWN.md) before writing anything — it is the contract for the storage shape, and it states its own layouts, invariants, and verification checklist. There is no other backend to consult and nothing to configure.
 
 Two rules keep the index honest, because a map that has drifted misleads every session that trusts it, and it does so silently:
 
@@ -31,7 +31,7 @@ Two rules keep the index honest, because a map that has drifted misleads every s
 
 ### The map body
 
-The whole map at low resolution, loaded once per session. Open tickets are **not** listed here — they are found by querying the adapter.
+The whole map at low resolution, loaded once per session. Open tickets are **not** listed here — they are found by scanning `issues/`.
 
 ```markdown
 ## Destination
@@ -44,9 +44,9 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ## Decisions so far
 
-<!-- the index — one line per done ticket: enough to judge relevance, then zoom the link for the detail the ticket holds -->
+<!-- the index — one line per resolved ticket: enough to judge relevance, then zoom the link for the detail the ticket holds -->
 
-- [<done ticket title>](<link>) — <one-line gist of the answer>
+- [<resolved ticket title>](<link>) — <one-line gist of the answer>
 
 ## Not yet specified
 
@@ -61,17 +61,17 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 A ticket's body is the question, sized to one fresh agent session.
 
-A session **claims** a ticket, **first**, before any work, so concurrent sessions skip it. How a claim is expressed, and how a dead session's stale claim is told apart from live work, is the adapter's business.
+A session **claims** a ticket, **first**, before any work, so a later session skips it. The claim is `claimed_by` plus `claimed_at` in the ticket's frontmatter — the timestamp is what tells a dead session's stale claim apart from live work.
 
-Blocking is a ticket's list of the tickets it waits on. A ticket is **unblocked** when every ticket it lists is `done`; the **frontier** is the open, unblocked, unclaimed tickets — the edge of the known. Prefer an adapter whose blocking is native, because it renders the frontier *visually* in the tracker's own interface, and the human sees what's takeable without opening the map.
+Blocking is a ticket's list of the tickets it waits on, written as `**Blocked by:**` near the top of its body. A ticket is **unblocked** when every ticket it lists is `resolved`; the **frontier** is the open, unblocked, unclaimed tickets — the edge of the known.
 
-`out_of_scope` is closed, and closed is not `done`: it satisfies no blocking edge. A ticket blocked by an out-of-scope ticket therefore never unblocks — one of the two is mis-scoped, and you should say which.
+`out_of_scope` satisfies no blocking edge and is not `resolved`. A ticket blocked by an out-of-scope ticket therefore never unblocks — one of the two is mis-scoped, and you should say which.
 
 The answer isn't part of the body as written — it is recorded on resolution. Assets created while resolving (research notes, prototype code) are saved in the repo and linked, not pasted in.
 
 ### Undermined decisions
 
-A `done` ticket sometimes rests on a premise that a later ticket destroys. Mark it and say what broke: record the ticket that broke it, and open its answer with a line saying so. The decision still stands — nobody has reopened it — but every session that reads the map can now see what it is standing on. A decision recorded as simply `done` reads as settled, and that is how a live problem gets laundered into a checkmark.
+A `resolved` ticket sometimes rests on a premise that a later ticket destroys. Mark it and say what broke: record the ticket that broke it, and open its answer with a line saying so. The decision still stands — nobody has reopened it — but every session that reads the map can now see what it is standing on. A decision recorded as simply resolved reads as settled, and that is how a live problem gets laundered into a checkmark.
 
 ## Ticket Types
 
@@ -103,7 +103,19 @@ Fog only ever gathers _toward_ the destination. The destination fixes the scope,
 
 Out-of-scope work never graduates — the frontier stops at the destination — so it returns only if the destination is redrawn, and then as a fresh effort, not a resumption.
 
-Ruling something out of scope is a scoping act, not a step on the route. When a ticket that already exists turns out to sit past the destination — mis-scoped in while charting, or exposed by a resolution — **close it** (a closed ticket is unambiguously off the frontier) and leave one line in the map's **Out of scope** section: the gist plus why it's out of scope, linking the closed ticket. Closing is written exactly where the adapter says it is: the local-markdown adapter appends a `## Ruled out` section with prose under it to the ticket body, and the frontmatter holds nothing but the fields the adapter fixes. A ticket is closed only in that shape — anywhere else it still sits on the frontier as open. It stays out of **Decisions so far**, which records the route actually walked — a scope boundary isn't a step on it. That is why `out_of_scope` is its own state and not a flavour of `done`: anything counting the decisions made would otherwise count a boundary as a step.
+Ruling something out of scope is a scoping act, not a step on the route. When a ticket that already exists turns out to sit past the destination — mis-scoped in while charting, or exposed by a resolution — **rule it out**: append a `## Ruled out` section **with prose under it** to the ticket body, and leave one line in the map's **Out of scope** section: the gist plus why it's out of scope, linking that ticket.
+
+**The prose is what closes it.** A ticket is `out_of_scope` only when `## Ruled out` has prose beneath it — the bare heading closes nothing, and a session that types the heading and dies has left the ticket exactly where it was. The `Status:` line on such a ticket is inert litter: closure is read first, so it can never hold the frontier. Leave it as it was rather than "tidying" it — writing a fourth value into `Status:` is how a ticket starts lying.
+
+A ticket carrying both `## Answer` and `## Ruled out` is malformed: a ticket is either a step on the route or a boundary of it, never both.
+
+**`out_of_scope` is not a flavour of `resolved`.** `resolved` means the route went through this ticket; `out_of_scope` means the ticket sits past the destination and the route deliberately does not. Three consequences, and the first is the one that gets mistaken for a bug:
+
+- **Only `resolved` satisfies a blocking edge.** A ticket blocked by an out-of-scope ticket therefore never unblocks. That is a signal, not a state to be tidied away: one of the two is mis-scoped, and you should say which.
+- **It stays out of Decisions so far**, which records the route actually walked — a scope boundary isn't a step on it.
+- **It is never counted as progress.** Anything measuring the effort counts the route, not the boundaries.
+
+A ruled-out ticket keeps its number and its file. Nothing is deleted: deleting one dangles every blocking edge that named it, in files no session has open.
 
 ## What stays prose
 
@@ -121,7 +133,7 @@ User invokes with a loose idea.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
 3. **Create the map**: Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
 4. **Create the tickets you can specify now** — then wire the blocking edges in a **second pass** (tickets need ids before they can reference each other). Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
-5. **Verify** against the adapter's checklist before committing.
+5. **Verify** against the checklist in [`TRACKER-MARKDOWN.md`](TRACKER-MARKDOWN.md) before committing.
 6. Stop — charting the map is one session's work; do not also resolve tickets.
 
 ### Work through the map
@@ -130,9 +142,9 @@ User invokes with a map. A ticket is **optional** — without one, you pick the 
 
 1. Load the **map** — the low-res view, not every ticket body.
 2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it** before any work.
-3. Resolve it — **zoom as needed**: read the full body of any related or done ticket on demand; invoke the skills the `## Notes` block names. If in doubt, grill (with `domain-modeling` applied).
+3. Resolve it — **zoom as needed**: read the full body of any related or resolved ticket on demand; invoke the skills the `## Notes` block names. If in doubt, grill (with `domain-modeling` applied).
 4. Record the resolution: write the answer, release the claim, and **append a context pointer** to the map's Decisions-so-far (gist + link).
-5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update those tickets or close them — consult the adapter before removing one. If it breaks the premise of a decision already made, mark that ticket undermined rather than quietly re-deciding it.
-6. **Verify** against the adapter's checklist before committing.
+5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update those tickets or rule them out — never delete a ticket file, because deleting one dangles every edge that named it. If it breaks the premise of a decision already made, mark that ticket undermined rather than quietly re-deciding it.
+6. **Verify** against the checklist in [`TRACKER-MARKDOWN.md`](TRACKER-MARKDOWN.md) before committing.
 
-Whether two sessions may work the map at once is the adapter's to say. A tracker that allocates ids atomically can permit it; a directory of files generally cannot.
+**Two sessions must not work the map at once.** Files in git cannot allocate ticket numbers atomically: two sessions reach for the same number, both commit, and git merges the collision cleanly — neither could see it coming, and the loser's blocking edges now name the wrong ticket. Serialise.

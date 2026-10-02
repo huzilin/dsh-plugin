@@ -35,7 +35,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 6. Once an **implementer subagent** completes, merge its work to the PR branch with a **merger subagent**. **Then update that ticket's file in the same step** — a merged ticket whose file still says `open` is indistinguishable from work that was never started:
 
-   - set its `status` to `done`
+   - set its `**Status:**` line to `resolved`
    - tick the acceptance boxes the merge demonstrably satisfies, leaving unticked any box not actually demonstrated
    - append a one-line landing note naming the merge commit and anything still open
 
@@ -47,7 +47,7 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 9. Mark the PR as ready for review.
 
-10. Clean up all **implementer subagent** worktrees. Before finishing, confirm every ticket's file reflects what happened — no ticket left `open` whose work is in the PR, and no acceptance box ticked on evidence you cannot point at. Then close the pass with plan-lint: run `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan` (pass whichever of the two exists; injected into this skill at install time from the plan skill family) — zero findings, or fix what it finds before reporting done.
+10. Clean up all **implementer subagent** worktrees. Before finishing, confirm every ticket's file reflects what happened — no ticket left `open`/`claimed` whose work is in the PR, and no acceptance box ticked on evidence you cannot point at. Then close the pass with plan-lint: run `bash <this skill's directory>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan` (pass whichever of the two exists; injected into this skill at install time from the plan skill family) — zero findings, or fix what it finds before reporting done.
 
 ## When this flow does not fit
 

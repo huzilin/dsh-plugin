@@ -8,7 +8,7 @@ Structure only what has exactly one correct value **and no other home**: type, e
 
 ## One session at a time
 
-This adapter **does not support concurrent sessions.** The skill permits them for trackers that can honour them; files in git cannot. Two sessions reach for the same ticket number, both commit, and git merges the collision cleanly — neither session could see it coming, and the loser's `blocked_by` edges now name the wrong ticket.
+This adapter **does not support concurrent sessions.** The skill permits them for trackers that can honour them; files in git cannot. Two sessions reach for the same ticket number, both commit, and git merges the collision cleanly — neither session could see it coming, and the loser's blocking edges now name the wrong ticket.
 
 Serialising also earns the delta check below: if nothing merges, the invariants hold by induction from the last commit, and a session need only verify what it changed.
 
@@ -34,7 +34,6 @@ The frontmatter holds the ticket's facts, and is the only place any of them is w
 ```markdown
 ---
 type: research | prototype | grilling | task
-blocked_by: [NN, NN]                 # [] when none — bare values, never quoted
 claimed_by: <session or agent id>    # set while a session holds the ticket
 claimed_at: <RFC 3339 timestamp>     # set alongside claimed_by
 undermined_by: [NN]                  # optional — see the skill
@@ -43,31 +42,41 @@ assets: [<repo-relative path>]       # optional
 
 # <Ticket title>
 
+**Blocked by:** <ticket ids, or "None — can start immediately">
+
+**Status:** open
+
 ## Question
 
 <the decision or investigation this ticket resolves>
 ```
 
+`**Blocked by:**` and `**Status:**` are **body lines near the top**, not frontmatter fields — a reader opens the file and sees both immediately. `Status:` takes `open` / `claimed` / `resolved`, one vocabulary shared with every other ticket type. Blocking edges take **bare ticket ids** (`Blocked by: 03, 04`); **never quote them** — the tool-side parser does not tolerate quotes, and one quoted id aborts the whole graph parse. `None` is the only way to say "no blockers".
+
+The frontmatter holds only what the body does not carry: `type`, the claim, and the optional `undermined_by` / `assets`.
+
 A closing section — `## Answer`, or `## Ruled out` — is appended on closure, not written up front. Assets are saved in the repo, linked from `assets:`, and not pasted in.
 
-### Status is derived, never stored
+### Closure is derived; the `Status:` line is for the live states
 
-There is no `status:` field, and the vocabulary it derives into is `plan-protocol`'s — that file is the format authority for ticket status, and this one does not keep a second copy of it. Every value a ticket's status could hold is already written in the ticket body, and a field would be a second copy — the kind that goes stale in one home and lies from the other.
+`resolved` and `out_of_scope` are **read from the body, never written into `Status:`** — closure is derivable, so storing a copy of it would give one fact two homes, one of which goes stale. The line only ever holds `open` or `claimed`.
 
-| Derived status | When |
+| Derived state | When |
 |---|---|
-| `done` | the body has an `## Answer` **with prose under it** |
-| `out_of_scope` | the body has a `## Ruled out` with prose under it |
-| `claimed` | neither, and `claimed_by` is set |
+| `out_of_scope` | the body has a `## Ruled out` **with prose under it** |
+| `resolved` | the body has an `## Answer` **with prose under it** |
+| `claimed` | neither closing section, and `claimed_by` is set |
 | `open` | none of the above |
 
-Closure is read **first**, so a `claimed_by` left behind on a closed ticket is inert litter rather than a broken invariant — it can never hold the frontier. The one state that must not exist is both closing sections at once: a ticket is either a step on the route or a boundary of it, never both.
+**Closure is read first**, which is why a `claimed_by` or a `Status:` line left behind on a closed ticket is inert litter rather than a broken invariant — it can never hold the frontier. **Never "tidy" such a ticket** by writing `resolved` or `out_of_scope` into its `Status:`: that is how a ticket starts lying, and it invites the next reader to treat a boundary as a step.
+
+The one state that must not exist is both closing sections at once: a ticket is either a step on the route or a boundary of it, never both.
 
 Writing the answer **is** the act of closing the ticket. There is no second edit to forget, so a finished ticket carrying no answer — and an answer sitting on an unfinished ticket — are unrepresentable rather than merely checked.
 
 It is the *prose*, not the heading, that closes the ticket. A session that types `## Answer` and then dies has closed nothing, and the ticket stays exactly where it was: still claimed, its claim going stale, its owner still nameable. Were the bare heading enough, that ticket would read as finished and its stale claim would look like harmless litter — a dead session laundered into a decision.
 
-**`done` and `out_of_scope` are not two flavours of "over".** `done` means the route went through this ticket; `out_of_scope` means the ticket sits past the destination and the route deliberately does not. Only `done` satisfies a blocking edge — a ticket blocked by an out-of-scope ticket never unblocks, and that is a signal that one of the two is mis-scoped, not a state to be tidied away. Collapsing the two would let a boundary silently count as a step.
+**`resolved` and `out_of_scope` are not two flavours of "over".** `resolved` means the route went through this ticket; `out_of_scope` means the ticket sits past the destination and the route deliberately does not. Only `resolved` satisfies a blocking edge — a ticket blocked by an out-of-scope ticket never unblocks, and that is a signal that one of the two is mis-scoped, not a state to be tidied away. Collapsing the two would let a boundary silently count as a step.
 
 ### Fenced code blocks are not structure
 
@@ -103,11 +112,11 @@ But these invariants held at the last commit, and one session touches few files.
 
 Checks 1, 2, 4 and 6 are a grep. Checks 3 and 5 need judgment, and no tool can supply it.
 
-1. **Edges.** Every `blocked_by` you wrote names a ticket that exists, and not itself. No cycle — the whole edge set is one grep over `issues/`.
+1. **Edges.** Every `Blocked by:` you wrote names a ticket that exists, and not itself. No cycle — the whole edge set is one grep over `issues/`.
 2. **Closure.** No ticket carries both an `## Answer` and a `## Ruled out`, and no closing heading is left empty.
 3. **The index.** The ticket you resolved appears exactly once in **Decisions so far**, and its gist says what its answer says. A ticket you ruled out appears once in **Out of scope**, and nowhere in Decisions-so-far.
 4. **Claims.** Any ticket still carrying `claimed_by` also carries `claimed_at`, and that claim is under 72 hours old.
-5. **Fog.** Every patch title names a question no live ticket holds, and every `<clears-with: NN>` names a ticket not yet `done` — a patch anchored to a done ticket should have graduated into a ticket, or been struck.
+5. **Fog.** Every patch title names a question no live ticket holds, and every `<clears-with: NN>` names a ticket not yet `resolved` — a patch anchored to a resolved ticket should have graduated into a ticket, or been struck.
 6. **Numbers.** Each ticket number is used once, and no ticket file was deleted.
 7. **Counts.** Progress is written down nowhere; it is derived. Grep the repo for a stated count before you commit one.
 

@@ -22,12 +22,13 @@ Plan 内容完成后会堆积：整轮走完的推演地图、票、spec、待�
 **一轮的物理成员**（归档前先列清单）：
 
 - effort 目录：`.scratch/<effort>/`（`map.md` + `issues/` + `spec.md` + `assets/` + 图内 `qa/`、`ledger/`）
-- 该轮已翻标的待拍板文档（`.plan/` 下带 `archived: <归宿>` 标记的 `待拍板-*.md` 散件——G1 判别器 = 标记本身；未翻标者留 `.plan/`，不搬）
+- 该轮已翻标的**图内**待拍板文档（该 effort 的 `.scratch/<effort>/approval/` 下、带 `archived: <归宿>` 标记者——G1 判别器 = 标记本身；未翻标者留下，不搬）
+- **全局审批档（`.plan/approval/` 下已翻 `archived:` 标记者）随该轮一并搬走**（2026-10-02 裁定：不为全局档单设归档时机，搭 effort 归档的车）。判别器同 G1 = **标记本身**——已翻标者搬，未翻标者留 `.plan/approval/` 继续等。全局档跨图、无轮归属，故只有「标记」能决定它何时走
 - 该轮的 handoff / 过程文档（现行落 `.tmp/handoffs/`，存量 `.plan/handoffs/` 只读兼容）
 
 **轮完成前置判据（G4，全满足才可搬）**：
 
-1. 轮内全部票终态（`done` / `out_of_scope`，plan-sync 对账完毕）且被测票 `qa_accepted` 齐；
+1. 轮内全部票终态（`resolved` / `out_of_scope`，plan-sync 对账完毕）且被测票 `qa_accepted` 齐；
 2. 轮内缺陷全部「已关闭」；
 3. 轮内台账条目全部「已销 / 已转票」；
 4. spec 已带 `superseded-by:` 注记或归宿行齐备（票 07 校验面）；审批档全 `closed` / `superseded-by:` / `abandoned` 或已翻 `archived:`。
@@ -48,7 +49,8 @@ Plan 内容完成后会堆积：整轮走完的推演地图、票、spec、待�
 
    ```
    git mv .scratch/<成员相对路径> .archive/rounds/<round-id>/<成员相对路径>
-   git mv .plan/<已翻标待拍板> .archive/rounds/<round-id>/<原相对路径>
+   git mv .scratch/<effort>/approval/<已翻标待拍板> .archive/rounds/<round-id>/<原相对路径>
+   git mv .plan/approval/<已翻标全局待拍板> .archive/rounds/<round-id>/approval/<原文件名>
    ```
 
    - `round-id` = `YYYY-MM-DD-<主题slug>`（取轮收尾日期 + effort 名或主要拍板主题）。
@@ -88,6 +90,8 @@ Plan 内容完成后会堆积：整轮走完的推演地图、票、spec、待�
 - **不删文件。** 一切走 `git mv` 进 `.archive/`；`.archive/` 内的过时结论只标不删。
 - **不散件归档。** 单个文档不单独搬家——它属于某轮，就等那轮一起走。文件搬移只发生在轮归档（`plan-approve` 只翻状态，不搬文件）。
 - **不代改轮外引用。** 巡检只登记；代改会掩盖写侧纪律违例（R2，2026-09-28 拍板）。
+- **不搬全局 qa/ledger。** `.plan/qa/`（无图归属缺陷与回测测例）与 `.plan/ledger/`（全局台账）**不是轮成员，永不随轮搬**（2026-10-02 裁定）。它们是常驻件、有自己的生命周期。
+- **但全局审批档例外——要搬。** `.plan/approval/` 下**已翻 `archived:` 标记**的全局档随该轮一并搬走（2026-10-02 裁定「归档 effort 时，同时把全局的 approval 合并到一期一起归档」）。判别器同 G1：**看标记，不看目录**——已翻标者搬，未翻标者留在 `.plan/approval/` 继续等。全局档跨图、无轮归属，标记是它唯一的"可以走了"信号；**不要**把未翻标的档一起卷走，那会把仍在用的提问埋进历史快照。
 
 ## `.archive/README.md` 模板（不存在时创建）
 

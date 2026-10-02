@@ -58,7 +58,7 @@ P-1 UI 呈现与 P-2 使用交互分两表落三态，逐条挂截图（落 `qa/
 
 > 落点：每条缺陷独立一个文件 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md`（编号全局唯一 `DEF-<effort-slug>-NN`，2026-09-28 拍板；存量 `DEF-NN` 短号等价兼容。无图归属缺陷落根层 `.plan/qa/`。原单文件 `defect.md` 多小节形态**只读兼容**——归档轮快照是旧形态，现行一律拆文件）。文件名 slug 取标题短语（去标点空格，≤14 字）。
 
-### 文件状态头（必须是真 frontmatter）
+### 文件头（真 frontmatter，**不含 `status`**）
 
 首行 `---` 开、闭合 `---`。**不写 ```yaml 围栏、不写引用块**——围栏/引用块插件读不到（实测三种旧写法全不合规）：
 
@@ -66,13 +66,13 @@ P-1 UI 呈现与 P-2 使用交互分两表落三态，逐条挂截图（落 `qa/
 ---
 type: qa-defect
 date: <YYYY-MM-DD>
-status: <五态之一>
 origin: <readability-rescue / proactive / review / retrospective>
 ---
 ```
 
 - `type` 固定 `qa-defect`（plan-protocol `type` 取值约定已登记）；
-- `status` 用 plan-protocol 既有五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`——**不新造词表**。条目内缺陷全关闭写 `closed`，仍有未关闭写 `active`；
+- **状态只在正文 `- 状态:` 行单写**（2026-10-02 拍板 Q11「按正文，单写」）：frontmatter **不再有 `status`**。此前「frontmatter 五态 ＋ 正文六词双写」的做法已废止——同一个问题不留两个载体，防止两处各说一套；
+- **`superseded-by:` 是可选保留字段**（frontmatter）：缺陷档被后续文档取代时写 `superseded-by: <path>`。它答的是「**文档被谁取代**」，与正文 `- 状态:` 答的「**缺陷修到哪了**」不是同一问题，故不构成双写；
 - `cases.md` 与 `test.md` **不加头**，不被 plan 视图识别（插件 qa 组按 `type: qa-defect` 白名单收文件）。
 
 ### 正文契约（插件解析依赖，字段行不得改形）

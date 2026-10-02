@@ -14,7 +14,7 @@ disable-model-invocation: false
 输入 = `to-qa-testcases` 产出的 `.scratch/<effort>/qa/cases.md`（effort 唯一落点即 `.scratch/`——`.plan/` 下无 effort，2026-09-29 拍板）与仓库 `qa/` 可执行资产（env_up/env_down、驱动脚本、诊断最小环）。本 skill 跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。产物落 `.scratch/<effort>/qa/test.md` + 一缺陷一文件的 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md` + `qa/screenshots/`（可执行脚本留仓库 `qa/`）。 无图归属的缺陷（SOP 回测 / 整页回测发现）落根层 `.plan/qa/DEF-*.md`，进 plan 第一层「测例&缺陷」tab。
 
 > **分工**：写用例/设计用例/建资产归 `to-qa-testcases`（它的 cases.md 章节名是本 skill 的取料口径，不自造小标题）；失败用例根因定位归 `diagnosing-bugs`（E 节契约交接）；业务意图最终确认归用户。
-> **标准权威说明**：test.md 章节骨架、DEF-NN 缺陷档的状态头/字段行/五节结构的**权威版本**在 `references/qa-records-skeleton.md`。老项目若有同名模板（qa-acceptance-template 等），以本骨架为准。
+> **标准权威说明**：test.md 章节骨架、DEF-NN 缺陷档的头/字段行/五节结构的**权威版本**在 `references/qa-records-skeleton.md`。老项目若有同名模板（qa-acceptance-template 等），以本骨架为准。
 
 ## 测试场景协议层（正本在本 skill references/，按任务特征必读）
 
@@ -39,12 +39,12 @@ disable-model-invocation: false
 
 3. **执行验收记录（test.md）**：结论先行（通过 / 有条件通过 / 不通过 + 一句话理由 + 遗留 P0/P1 数）；§3 呈现通道记录按 P 组两表分列落三态（不与协议结论混排）；§4 AC 逐条三态（通过 / 不通过 / 未覆盖，无缺项）；§5 回归指引（3~5 步操作卡 + 基线值）。
 
-4. **缺陷条目（一缺陷一文件，`DEF-NN-<slug>.md`）**：每条缺陷独立一个文件，按骨架补**真 frontmatter 状态头**（`type: qa-defect` + 四字段，围栏/引用块=插件读不到），正文 `# DEF-NN 标题` + 字段行（严重度/类型/Assignee/状态/关联用例/发现源/测试设计缺口），A~E 五节登记，**E 节「最小复现入口」必填**（一条命令 + 环境变量 + 预期红信号，见「交接契约」；fe 缺陷的命令 = `npx playwright test -g <用例编号>`，协议通道缺陷仍走原驱动脚本）；登记**发现源**（QA 轮 / 用户）与**测试设计缺口**——用户渠道缺陷必填缺哪个源/维度/通道，缺口**当轮**补进 cases.md 并按案例库格式追加 `to-qa-testcases/references/case-library.md`；详情文本写「票 NN」「挂账-NN」即可被串联视图挂链。
+4. **缺陷条目（一缺陷一文件，`DEF-NN-<slug>.md`）**：每条缺陷独立一个文件，按骨架补**真 frontmatter 头**（`type: qa-defect` ＋ `date`/`origin` 三字段，**无 `status`**——状态写正文 `- 状态:` 行；围栏/引用块=插件读不到），正文 `# DEF-NN 标题` + 字段行（严重度/类型/Assignee/状态/关联用例/发现源/测试设计缺口），A~E 五节登记，**E 节「最小复现入口」必填**（一条命令 + 环境变量 + 预期红信号，见「交接契约」；fe 缺陷的命令 = `npx playwright test -g <用例编号>`，协议通道缺陷仍走原驱动脚本）；登记**发现源**（QA 轮 / 用户）与**测试设计缺口**——用户渠道缺陷必填缺哪个源/维度/通道，缺口**当轮**补进 cases.md 并按案例库格式追加 `to-qa-testcases/references/case-library.md`；详情文本写「票 NN」「挂账-NN」即可被串联视图挂链。
 
-5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；项目有评审/推进工具链时按其路由把缺陷推到 resolve/confirm/reopen。
+5. **返工闭环**：缺陷按**类型**（`rd` / `fe` / `arch` / `docs`）派发 → 修复动作交 `diagnosing-bugs`（按 E 节契约，修复后只回写 C 节）→ **本 skill 负责复测的是 `- 发现源:` 为「QA 轮」的自动化缺陷**（用户来源缺陷由 `diagnosing-bugs` 自行尝试自动复测，跑不通即标 `待复测` 交人工——2026-10-02 裁定，故本步只接自动化来源）→ **用第 1 步资产复测**（不手工重验）——复测 = 同一条命令（单缺陷 `npx playwright test -g <用例编号>`，整轮跑 `qa/run-e2e.sh`）；复测识别**不新增机制**：自然语言触发语 + 条目状态「待复测」+ 多轮以末轮为准 → 复测 PASS 登记关闭人/日期（状态附注如「已关闭（复测 PASS）」）→ 更新回归基线；项目有评审/推进工具链时按其路由把缺陷推到 resolve/confirm/reopen。
 6. **票面测试标记回写**：本轮测例全部执行完 → 给被测票 frontmatter 写 `qa_tested: true`；验收通过（AC 全过 + 该票无未关闭缺陷）→ 写 `qa_accepted: true`。三标记与 `qa_cases`（to-qa-testcases 写）一起在票卡/详情徽标展示。
 
-7. **落盘 + 自检**：test.md / DEF 缺陷档 / screenshots/ 落 `.scratch/<effort>/qa/` → 按本 skill「自检」逐条过 → **收尾跑 plan-lint**（脚本随本 skill 安装：`bash <本 skill 目录>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan`，传实际存在的目录；0 发现或当轮修复才收口）→ 按项目产物登记惯例登记 test.md / 缺陷台账 / 资产 link → 台账全部关闭时把 frontmatter `status` 翻 `closed`（仍有未关闭保持 `active`）→ 提评/推进。
+7. **落盘 + 自检**：test.md / DEF 缺陷档 / screenshots/ 落 `.scratch/<effort>/qa/` → 按本 skill「自检」逐条过 → **收尾跑 plan-lint**（脚本随本 skill 安装：`bash <本 skill 目录>/scripts/plan-lint.sh <repo>/.scratch <repo>/.plan`，传实际存在的目录；0 发现或当轮修复才收口）→ 按项目产物登记惯例登记 test.md / 缺陷台账 / 资产 link → 台账全部关闭时把**正文 `**Status:**`** 行翻 `closed`（仍有未关闭保持 `active`；2026-10-02 起状态写正文行，frontmatter 不再有 `status`）→ 提评/推进。
 
 ## 两种调用（自然语言触发语，非 CLI 参数）
 
@@ -55,6 +55,8 @@ disable-model-invocation: false
 
 - **full 总账**：跨图 PASS/FAIL/SKIP 汇总 + 回归判定（对照各图基线，FAIL>0 即回归），落 `.plan/qa/full-regression-<YYYYMMDD>.md`（plan 根层，无 `map.md` 不成 effort、不进视图）；
 - **full 分账**：各图结果写回各自 `qa/test.md`，新缺陷各建 `qa/DEF-NN-<slug>.md`；
+- **全局回测测例（无图归属，`.plan/qa/cases-<主题>.md`）也要跑**：它们由 `to-qa-testcases` 按 SOP 回测 / 整页回测产出，挂不到任何工单或图，**不在任何 `map.md` 之下，故 `full` 扫 `map.md` 时天然扫不到**。执行方式同单图——按 `cases-<主题>.md` 的编号取用例、跑驱动、结果记在**同目录的**`.plan/qa/`（回测总账），新缺陷落 `.plan/qa/DEF-*.md`；这批结果同样并入「full 总账」的跨图汇总。用户显式点名某个主题时只跑该主题。
+- **无图归属的缺陷**（`.plan/qa/DEF-*.md`）与图内缺陷同规格登记，差异只在落点——退回 `diagnosing-bugs` 时按 E 节复现命令派发，不按路径。
 - **默认含 `status: closed` 的图**（代码仍在生产，全量回归就是查回退）；用户说「只跑 active / 只跑进行中」时跳过 closed 图（`active-only` 开关）。
 
 ## 交接契约（DEF-NN 缺陷档 → diagnosing-bugs）
@@ -82,7 +84,7 @@ disable-model-invocation: false
 - [ ] （blocker）执行侧等待全部条件探测：后台跑批留 PID/完成信号，秒级间隔 + 次数上限轮询收割（上限耗尽 = FAIL 附最后观测值），无 `sleep 定值` 后收割/出结论
 - [ ] （blocker）每条缺陷文件（`DEF-NN-*.md`）E 节「最小复现入口」齐备且末次运行为红
 - [ ] （major）被测票 frontmatter 已回写 `qa_tested` / `qa_accepted`（验收通过时）
-- [ ] （blocker）每条缺陷文件（`DEF-NN-*.md`）头为真 frontmatter（`---` 包裹、`type: qa-defect` + 状态头四字段）；字段行为骨架逐行列表格式（`- 状态:` 行首），首词属六词、允许附注；不得内联合并
+- [ ] （blocker）每条缺陷文件（`DEF-NN-*.md`）头为真 frontmatter（`---` 包裹、`type: qa-defect` ＋ `date`/`origin`，**不含 `status`**）；字段行为骨架逐行列表格式（`- 状态:` 行首），首词属六词、允许附注；不得内联合并
 - [ ] （blocker）收尾已跑 plan-lint（随本 skill 安装的 `scripts/plan-lint.sh <repo>/.scratch <repo>/.plan`，传实际存在的目录），0 发现或已当轮修复
 - [ ] （major）用户渠道缺陷均有「测试设计缺口」回写并已补进 cases.md
 - [ ] （major）未通过项均有 `DEF-NN-*.md` 条目，无悬空失败；SKIP 均附因
@@ -93,4 +95,4 @@ disable-model-invocation: false
 - 不写用例、不改用例设计（用户渠道缺口回写补进 cases.md 是登记纪律，不是重新设计）；测例集构建归 `to-qa-testcases`。
 - 不定位根因、不修 bug（`diagnosing-bugs`）；本 skill 只保证缺陷条目让诊断零重建。
 - 不替代用户验收：用户验收节点保留，本 skill 目标是把「呈现/语义类」问题在用户验收前消化掉。
-- plan-lint 查 `qa/` 缺陷档的围栏与状态头（DEF- 前缀无围栏、缺四字段均报）；正文字段行形状 lint 不查，仍靠本自检与人工复核兜。
+- plan-lint 查 `qa/` 缺陷档的围栏与头形状（DEF- 前缀无围栏、缺 `type`/`date`/`origin` 均报；**不再查 frontmatter `status`**）；正文字段行形状 lint 不查，仍靠本自检与人工复核兜。

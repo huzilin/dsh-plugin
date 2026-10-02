@@ -127,6 +127,24 @@ If a correct seam exists:
 4. Watch it pass.
 5. Re-run the Phase 1 feedback loop against the original (un-minimised) scenario.
 
+## Where defect files live (both scopes)
+
+A defect file is not necessarily under an effort. **Two legal locations, and this skill does not have to hunt for either** — the ticket reaches you by its `## E` minimal-reproduction command, not by path:
+
+- **图内（有图归属）**：`.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md` — the defect belongs to a ticket / map.
+- **全局（无图归属）**：`.plan/qa/DEF-*.md` — from an SOP back-test or a whole-page sweep that cannot be pinned to a ticket.
+
+Both carry the same shape. If a defect also needs a ledger entry, the ledger has the same two scopes (`.plan/ledger/` global, `.scratch/<effort>/ledger/` in-map) — see `plan-protocol`「挂账台账」.
+
+### Who re-tests, and how it closes — decided by `- 发现源:`
+
+You fix; **how the fix gets verified depends on where the defect came from**, because that decides whether an automated re-test exists to run. Read `- 发现源:` in the defect file:
+
+- **自动化来源（`- 发现源:` 为 QA 轮）** — the defect came out of an automated `run-qa-testcases` pass, so **there is a driving command and a case number already**. Fix it, write `## C`, set `- 状态: 待复测`, then **hand back to `run-qa-testcases` to re-run the same command** (`npx playwright test -g <用例编号>` for fe, or the case's own driver for a protocol-leg defect). Do **not** close it yourself: the whole value of the gate is that a *different* run of the *same* command turns green. You never lift that gate by asserting it — you only ever add evidence to `## C`.
+- **人工来源（`- 发现源:` 以「用户」开头）** — nobody has a driver for it yet, because nobody wrote a case for it. **Try to re-test automatically anyway**: the defect's `## E` minimum-reproduction command *is* an executable check, so re-run that and record the result in `## C`. If it goes green, the same automated evidence exists and the defect proceeds to close on it. **If it cannot be made automatic — the repro needs a human eye, a device, or data you cannot synthesise — then say so in `## C` and set `- 状态: 待复测`.** That is a complete answer, not a failure: `待复测` is exactly the mark that means "fixed, and a human still has to look". Never write `已关闭` on a human-source defect you could not verify — the status would then be a claim with no run behind it, which is the one thing this skill exists to prevent.
+
+Either way you **only ever write `## C`** — never `## A`/`## B`/`## E`, and never the file's frontmatter.
+
 ## Phase 6: Cleanup
 
 Required before declaring done:

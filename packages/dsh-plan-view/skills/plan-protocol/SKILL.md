@@ -50,7 +50,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
       └────────── 复测 = 同一条命令翻绿 ←────────────────┘
 ```
 
-**QA 流与两条流的分界**：QA 流挂在实施图（票型 `task`）之后——测例是票的验收面，不是新需求。缺陷档（`DEF-NN`，一缺陷一文件）本身就是返工依据，**不立拍板档**——这是与补充流程的关键分界：补充流程走 `to-approval` 是因为要拍板定论，测试测出的缺陷按类型（`rd` / `fe` / `arch` / `docs`）直接派发 `diagnosing-bugs`。修复完**回到 `run-qa-testcases` 复测**（同一条命令翻绿），缺陷关闭后票面 `qa_accepted` 才成立；缺陷暴露出需求级分歧时才转 `to-approval`。
+**QA 流与两条流的分界**：QA 流挂在实施图（票型 `task`）之后——测例是票的验收面，不是新需求。缺陷档（`DEF-NN`，一缺陷一文件）本身就是返工依据，**不立拍板档**——这是与补充流程的关键分界：补充流程走 `to-approval` 是因为要拍板定论，测试测出的缺陷按类型（`rd` / `fe` / `arch` / `docs`）直接派发 `diagnosing-bugs`。修复完**按 `- 发现源:` 分流复测**（2026-10-02 裁定）：**QA 轮来源**（自动化）回到 `run-qa-testcases` 复测，同一条命令翻绿后关闭；**用户来源**（人工）由 `diagnosing-bugs` 尝试用 E 节复现命令自动复测，跑得通即同路径关闭，**跑不通则如实标 `待复测`**（=「已修，待人验」的完整答案，不得谎写 `已关闭`）。缺陷关闭后票面 `qa_accepted` 才成立；缺陷暴露出需求级分歧时才转 `to-approval`。
 
 ---
 
@@ -60,7 +60,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 |:--|:--|:--|:--|:--|:--|
 | `grill` / `grilling` | 主流程 ① 输入端 | 用户想法 | `to-approval` | 把模糊决策拷问清楚、问题落文档 | 不写票、不拍板 |
 | `wayfinder` | 主流程 ① 输入端（推演地图） | 用户探索 | `to-approval` | `.scratch/<effort>/` 推演地图（map + issues/ + assets） | 不写 spec、不拍板 |
-| `to-approval` | ① 与 ② 之间 | grill / 发现的问题 / 裸 id | `plan-approve` | 待拍板文档（`status: pending` + 四字段头 + 原文照抄 + 四要件） | 不拍板、不手写票 |
+| `to-approval` | ① 与 ② 之间 | grill / 发现的问题 / 裸 id | `plan-approve` | 待拍板文档（正文 `**Status:** pending` ＋ 三字段头 + 原文照抄 + 四要件） | 不拍板、不手写票 |
 | `plan-approve` | ① 出口 | `to-approval` | 无（下游由影响域清单驱动） | 逐项核定、录结论、**登记影响域清单（含票项）**、推进文档状态（只翻状态、不搬文件、**不当场落票**——2026-09-28 拍板） | 不发明票格式、不散件归档、不当场调 `to-tickets` |
 | `to-spec` | ② 起点 | 决策定案 | `to-tickets` | `.scratch/<feature-slug>/spec.md`（整体写）；**写前读架构正本、写完更新架构正本** | 不拆票 |
 | `to-tickets` | ② 第二环（**票格式正本**） | spec / 待拍板文档 / 推演地图 | `implement*` | **一票一文件** `issues/<NN>-<slug>.md`（map 只由 wayfinder 建——2026-09-29 拍板「to-tickets 不自动补 map」，无 map 且无 spec 的目录不被视图加载，plan-lint 校验[2]守门；有 spec 即 spec-only 实施图照常加载） | 不写 spec、不实现、不建 map |
@@ -68,18 +68,18 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | `plan-sync` | ② 收尾（对账） | 已落地代码 | 无 | 把「看起来已完成、票面没翻」的票找回来、对账后回写 | 不凭人话翻状态、不写票 |
 | `to-qa-testcases` | QA 流（测例构建） | 实施图票（`task`） | `run-qa-testcases` | `qa/cases.md`（一图一份）+ 仓库 `qa/` 可执行资产；被测票写 `qa_cases: true` | 不跑用例、不记缺陷 |
 | `run-qa-testcases` | QA 流（执行 + 缺陷台账） | `to-qa-testcases` 产物 | `diagnosing-bugs`（有缺陷时）；复测回到本 skill | `test.md` + `DEF-NN-*.md` + 截图；票写 `qa_tested` / `qa_accepted`；收尾跑 plan-lint | 不修 bug、不定位根因 |
-| `diagnosing-bugs` | QA 返工环（根因定位 + 修复） | 缺陷档 E 节「最小复现入口」 | `run-qa-testcases`（复测关闭） | 根因 + 修复 + 回归位；**只回写 DEF 的 C 节**；收尾跑 plan-lint | 不翻缺陷状态机、不跑全量回归、不记缺陷 |
+| `diagnosing-bugs` | QA 返工环（根因定位 + 修复 + **按来源推动复测**） | 缺陷档 E 节「最小复现入口」 | 自动化来源 → `run-qa-testcases` 复测；人工来源 → 自身尝试自动复测，不行则标 `待复测` | 根因 + 修复 + 回归位；**只回写 DEF 的 C 节**；收尾跑 plan-lint | 不关自动化来源缺陷（复测归 run-qa-testcases）、不跑全量回归、不记缺陷、不改 A/B/E 节 |
 | `plan-archive` | ② 之后（整轮归档期） | 已走完的轮（全部成员） | 无 | 整轮归档（目录结构原样）+ sweep 轮外引用 + 标过时/废弃 | 不自动跑、不改代码、不散件归档 |
 | `plan-loop` | 循环编排层（跨三条流程） | 全部既有单据 | 轮内按动作表调度各环节 skill | 轮次推进 + Brief + 收口裁决单 | 不拍板、不发明单据格式、不代替 plan-archive 自动归档 |
 
 **交接契约（硬规则）**：
 
-1. **票的格式由 `to-tickets` 独占**——它是落地链的票格式正本 + 被 `plan-approve` 调用的生成器（wayfinder 图内的推演票不走 to-tickets，走 §三的同构 TRACKER-MARKDOWN 契约），输入必须是 spec / 待拍板文档 / 推演地图，不能是裸结论；调它时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件。**落票的时机是合法集合**，不限字面调用本 skill：①**定案拆票（清单驱动）**——plan-loop「决策已定案但工单未拆」行动行或实施会话按拍板档影响域清单票项（2026-09-28 拍板：`plan-approve` 不再当场调 `to-tickets`）；②挂账恢复转票（见 §三 挂账台账「恢复口径」）；③修复会话按拍板档立返工票。无论哪个时机落票，格式必须与 `to-tickets` 产出一致（一票一文件 + frontmatter `type` / `blocked_by` / `status`），plan-lint 兜底校验。
+1. **票的格式由 `to-tickets` 独占**——它是落地链的票格式正本 + 被 `plan-approve` 调用的生成器（wayfinder 图内的推演票不走 to-tickets，走 §三的同构 TRACKER-MARKDOWN 契约），输入必须是 spec / 待拍板文档 / 推演地图，不能是裸结论；调它时也要 override 其默认「合并 `tickets.md`」行为，改用一票一文件。**落票的时机是合法集合**，不限字面调用本 skill：①**定案拆票（清单驱动）**——plan-loop「决策已定案但工单未拆」行动行或实施会话按拍板档影响域清单票项（2026-09-28 拍板：`plan-approve` 不再当场调 `to-tickets`）；②挂账恢复转票（见 §三 挂账台账「恢复口径」）；③修复会话按拍板档立返工票。无论哪个时机落票，格式必须与 `to-tickets` 产出一致（一票一文件 + frontmatter `type` ＋ 正文 `**Status:**` / `**Blocked by:**`），plan-lint 兜底校验。
 2. **回写发生在两处，是同一件事的两种时机**：`implement*` 在每张票合并落地时**当场**翻状态；`plan-sync` 事后对账补齐。两者不是两套流程。
-3. **执行登记（多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——frontmatter 形态票写 `status: claimed` + `claimed_by: <agent 名>` + `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）；wayfinder 推导形态票写 `claimed_by` + `claimed_at`，不写 `status`（格式契约见 TRACKER-MARKDOWN）。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
+3. **执行登记（多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——**正文 `**Status:** claimed`** ＋ frontmatter `claimed_by: <agent 名>` / `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）；wayfinder 票另加 `claimed_at`（RFC 3339，用于判死会话残留），格式契约见 wayfinder `TRACKER-MARKDOWN.md`。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
 4. **`plan-approve` 是「决策 → 影响域清单」的结算点**（2026-09-28 拍板：摘除主动落票）：拍板结论是「做 X」时，必须在影响域清单登记票项（条目 → 归宿 + ☐），否则结论只是聊天记录，下次会话丢失；落票由清单驱动后置执行——plan-loop「决策已定案但工单未拆」行动行或实施会话按清单项调 `to-tickets`（格式独占不变）。挂账恢复转票与修复返工票是另外两个合法落票时机（见规则 1），不需要先有拍板文档在手——依据分别是台账「恢复口径」与拍板档结论。
 5. **架构正本（如 `docs/architecture.md`，项目自declare「全局架构唯一正本」者）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，也在末步更新。它不新建——已存在就维护。
-6. **QA 缺陷环不经过拍板**：缺陷档（`DEF-NN`）是返工依据，修复交 `diagnosing-bugs`（按 E 节「最小复现入口」契约，修复只回写 C 节），复测回 `run-qa-testcases` 用同一条命令翻绿；票面 `qa_cases` / `qa_tested` / `qa_accepted` 三标记由测试两 skill 写入，验收条件 = AC 全过 + 该票无未关闭缺陷；缺陷暴露需求级分歧时才转 `to-approval`。
+6. **QA 缺陷环不经过拍板**：缺陷档（`DEF-NN`）是返工依据，修复交 `diagnosing-bugs`（按 E 节「最小复现入口」契约，修复只回写 C 节），**复测按 `- 发现源:` 分流**（QA 轮来源回 `run-qa-testcases` 同命令翻绿；用户来源由 `diagnosing-bugs` 尝试自动复测，跑不通标 `待复测`——2026-10-02 裁定）；票面 `qa_cases` / `qa_tested` / `qa_accepted` 三标记由测试两 skill 写入，验收条件 = AC 全过 + 该票无未关闭缺陷；缺陷暴露需求级分歧时才转 `to-approval`。
 
 ---
 
@@ -88,28 +88,38 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **目录布局总则（2026-09-28 目录迁移令，tracker 类回归原版 local 布局）**：**tracker 类对象（spec / map / issues 票）落 `.scratch/<feature-slug>/`**；**审批文档（拍板）留 `.plan/`**（原版 grilling 本就落 `.plan/`，迁移令不改其语义）。其余按「官方有 / 官方无」分流：
   - 官方有的（`spec.md` / `map.md` / `issues/NN-<slug>.md`）→ `.scratch/<feature-slug>/`；
   - 官方没有、**与 effort 挂钩**的（qa / ledger / assets）→ `.scratch/<feature-slug>/qa|ledger|assets/`（轮内成员，随 effort 整轮归档）；
-  - 官方没有、**全局性**的（属「全局件」封闭清单，定义见下文「全局件」条）：审批档留 `.plan/approval/`（2026-09-30 收拢拍板）；全局缺陷与回测测例、全局挂账台账常驻 `.plan/qa|ledger/`（2026-09-29 拍板：归档 = effort 全消后的轮归档，全局件不设独立归档时机）；调研 / 复盘文档 → `docs/research/`（挂文档树，四字段头照旧）——**全局场景但非全局件**，不落 `.plan/`；
+  - 官方没有、**全局性**的（属「全局件」封闭清单，定义见下文「全局件」条）：审批档留 `.plan/approval/`（2026-09-30 收拢拍板）；全局缺陷与回测测例、全局挂账台账常驻 `.plan/qa|ledger/`（2026-09-29 拍板：归档 = effort 全消后的轮归档，不为它们单设归档时机）；**全局审批档与之不同——它搭 effort 归档的车**（2026-10-02 裁定：归档 effort 时把已翻 `archived:` 标的全局 approval 合并到一起归档）；调研 / 复盘文档 → `docs/research/`（挂文档树，三字段头 ＋ 正文 `**Status:**`）——**全局场景但非全局件**，不落 `.plan/`；
   - 一次性杂项（交接 handoff / 审计 audits）→ `.tmp/handoffs/`、`.tmp/audits/`（出仓出检索面；有留存价值转 `.archive/` 或 `.plan/`，不默认驻留）——同为全局场景、非全局件。
   - **`.plan/` 下无 effort（2026-09-29 二次拍板，取代同日「存量旧布局可读」兼容）**：effort 的唯一合法落点是 `.scratch/<slug>/`——`.plan/` 的子目录一律不构成 effort，**无论是否含 `map.md`**（视图对 `.plan` 关 effort 扫描；`.plan/` 下识别出 map/spec 即数据违例，由 plan-lint 报、迁移票迁 `.scratch/`，视图与工具不再迁就旧布局）。「存量迁移撤出施工范围」（2026-09-29 早间裁定）就此反转：存量 `.plan/<effort>/` 视为违例数据，迁完即合规。
-- **全局件（2026-09-29 拍板，封闭清单正本；审批成员 2026-09-30 收拢拍板目录化）**：**跨图 / 无 effort 归属、常驻 `.plan/` 不随轮归档**的 plan 生态单据。清单**封闭**为三件：
+- **全局件（2026-09-29 拍板，封闭清单正本；审批成员 2026-09-30 收拢拍板目录化；生命周期 2026-10-02 二分）**：**跨图 / 无 effort 归属、常驻 `.plan/`** 的 plan 生态单据。清单**封闭**为三件：
   1. **全局性审批档**：`.plan/approval/待拍板-*` / `已拍板-*`（2026-09-30 收拢拍板：由 `.plan/` 根层散放收拢为独立 `approval/` 子目录，与 effort 内 `approval/` 同形；根层前缀形状仅存量兼容，新写一律入目录——落点细则见「审批文档归属」条）；
   2. **全局缺陷与回测测例**：`.plan/qa/DEF-*.md` + `.plan/qa/cases-<主题>.md`（无图归属件，见「缺陷条目」「测例文档」条）；
   3. **全局挂账台账**：`.plan/ledger/挂账-NN-<slug>.md`（见「挂账台账」条）。
   - **封闭含义**：新全局场景入清单须修订本协议（经拍板），不得自行在 `.plan/` 下新落子目录；plan-lint 对 `.plan/` 做封闭清单守门（检查[6]：清单子目录 = `approval/ qa/ ledger/`；2026-09-29 拍板 + 2026-09-30 审批成员目录化）。
   - **全局 ≠ `.plan/`**：调研/复盘（`docs/research/`）与一次性交接/审计（`.tmp/`）同为全局场景，但**不是全局件**——各有归宿与生命周期（research 用 `status: active/closed`，不占 `.plan/`）。
   - **判据归属（2026-09-29 二次拍板）**：全局件目录（`approval/`、`qa/`、`ledger/`）**不参与 effort 判据**——它们是全局件锚点不是图；目录内**不得内嵌 map.md/tickets/**（历史遗留内嵌图=违例数据，迁 `.scratch/<slug>/`，如 novel「全页面人工验收测线」图 2026-09-29 迁出）。`.plan/` 下任何子目录含 `map.md`/`spec.md` 均按违例报，视图不加载。写侧唯一合法 effort 落点仍为 `.scratch/<slug>/`（不变）。
-  - **生命周期**：全局件常驻、**非轮成员**、不随轮归档（与 §四「归档时机」互为正反表述：随轮走的只是图内 qa/ledger）；全局台账**不进入**归档前置判据③的清账范围（判据③只清图内台账）——全局挂账长期「在挂」不阻塞任何轮归档，其清账由「agent 扫描启动纪律」独立驱动。
+  - **生命周期（2026-10-02 二分，取代旧统一表述）**——全局件分两组，归档行为不同：
+
+    | 组 | 成员 | 归档行为 |
+    |:--|:--|:--|
+    | **常驻组** | `.plan/qa/`（全局缺陷＋回测测例）、`.plan/ledger/`（全局台账） | **永不随轮搬**——常驻、非轮成员 |
+    | **搭车组** | `.plan/approval/`（已翻 `archived:` 标记的全局审批档） | **随 effort 归档一并搬走**（2026-10-02 裁定：「归档 effort 时，同时把全局的 approval 合并到一期一起归档」）；判别器同 G1 = 标记本身 |
+
+  - **全局台账/qa 不进入**归档前置判据③的清账范围（判据③只清图内台账）——全局挂账长期「在挂」不阻塞任何轮归档；**其清账由 `plan-loop` 的全局件行动行驱动**（2026-10-02 裁定：不再依赖无人认领的「扫描启动纪律」，改为明确归属方——见下条「全局件推进入口」）。
+  - **全局件推进入口（2026-10-02 裁定）**：全局件不属于任何图，**图收口时天然被跳过**，故**唯一认领方 = `plan-loop` 的全局件行动行**（全局缺陷、全局台账、全局测例各一行，与图内同类同池排序、同规推进）。这是对上一条「独立驱动」的归属补全——此前协议说了纪律却没说谁执行。
 - **一票一文件**：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`。**禁止**把多票写进一个 `tickets.md`／`issues.md`——按文件读取的一方会把合并文件当成**一张票**，里面所有票丢失。
 - **目录契约守门（plan-lint 检查[8][9] · 2026-09-30 拍板，plan-lint-gate 票 16；判据正本 = 各仓 `docs/research/梳理-plan目录写入矩阵-20260930.md` 两层 tree）**：
   - **检查[8] effort 目录白名单**：effort（`.scratch/<slug>/` 含 map.md 或 spec.md）的直接子目录封闭清单 = `issues / assets / approval / qa / ledger` ＋ 存量只读兼容 `tickets / impl / impl-fe`（历史路径不得清理）；清单外自建子目录报 `effort-dir-whitelist`——视图按契约不收集，产物按写入矩阵归 `assets/` 等合法落点。
   - **检查[9] `.plan` 根层文件形状**：全局审批档正本落点 = `.plan/approval/`（2026-09-30 收拢拍板），根层 `.md` 一律违例（README 层级说明档豁免），报 `plan-root-shape`——审批档入 `approval/`，其余按写入矩阵分流 `docs/research/`、`docs/requirements/`、`.tmp/`、effort `assets/`。子目录白名单归检查[6]管。
-- **frontmatter 是权威**：票里 `status` / `type` / `blocked_by` 以 frontmatter 为准，不读正文表格。
-- **`blocked_by` 格式（两形态共用的唯一格式，2026-09-27 拍板统一）**：YAML 流式序列，取值**裸写、不加引号**——
-  - `blocked_by: []`：无前置（**唯一合法空值**；不得写 `[无]`、`none`、留空）
-  - `blocked_by: [03]`：单个前置；`blocked_by: [03, 04]`：多个前置，逗号+空格分隔
+- **状态以正文行为准**（2026-10-02 拍板 Q10=乙，取代旧「frontmatter 是权威」条）：票的 `Status:` **写在正文首部**；`type` 留 frontmatter；**阻塞边写正文 `**Blocked by:**`**。解析方一律读正文行。
+  - **唯一例外是 `type`**：它不回答「走到哪了」，只回答「这是什么单据」，且视图靠它分流（`type: approval` / `qa-defect` 等），故留 frontmatter。
+  - 旧文里「不读正文表格」的告诫仍成立——**读的是正文的固定行（`**Status:**` / `**Blocked by:**`），不是表格**。
+- **阻塞边格式**（2026-10-02 拍板改正文行；唯一格式，**裸写、不加引号**）：写正文 `**Blocked by:**` 行——
+  - `**Blocked by:** None — can start immediately`：无前置（**唯一合法空值**；不得写 `[无]`、`none`、留空）
+  - `**Blocked by:** 03`：单个前置；`**Blocked by:** 03, 04`：多个前置，逗号+空格分隔
   - **禁止加引号**（`["03"]`、`['03']`）——工具侧解析器（`splitNums`）对引号不容忍，会致**整图解析中止**；本插件读取层虽容忍引号，但**正本格式一律裸写**，容忍不等于合法
   - **票 id 形态**：本仓票用两位数字（`03`）；带字面前缀的票（如 `AIT1`、`OPT3`）直接写前缀全称，不加引号
-  - **本格式同时适用于 frontmatter 形态票与 wayfinder 推导形态票**——两形态共享同一 `blocked_by` 契约（推演形态的完整契约见 wayfinder `TRACKER-MARKDOWN.md`）；**禁止另立第二种写法**（协议与 wayfinder 两侧曾各写一套、致 27 处带引号票在工具侧整图中止，2026-09-27 收口）
+  - **执行票与推演票共用同一格式**（推演票的完整契约见 wayfinder `TRACKER-MARKDOWN.md`）；**禁止另立第二种写法**（协议与 wayfinder 两侧曾各写一套、致 27 处带引号票在工具侧整图中止，2026-09-27 收口）。2026-10-02 载体由 frontmatter 改正文行——**旧 frontmatter `blocked_by:` 写法作废**。
 - **文档分层（五层，两类生命周期 · 2026-09-27 拍板）**：`plan` 生态里的文档按**权威寿命**分五层，**新内容该写哪里，按层判**：
 
   | 层 | 文档 | 写什么 | 寿命 |
@@ -132,32 +142,43 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
     > **归宿（<YYYY-MM-DD>）**：→ arch §7.5 ＋ docs/<file> §3
     ```
   - **「更新完成」＝ spec 每节都有归宿行，且指向的目标确实存在。** 语义判断仍要做一次（不可免），但**完成与否由此可机械判定**，且**它同时就是「spec 可否作废」的凭据**——归宿行齐全 ⇒ 可作废；缺失 ⇒ 不可作废；
-  - **取代登记（可作废的第二凭据 · 2026-09-28 拍板 Q1=A/Q2=A，plan-lint 校验[5]）**：effort 票已全终态（`done`/`out_of_scope`）⇒ 该 effort 的 `spec.md` 必带 `superseded-by:` 注记**或**已随轮归档——「effort 票尽则必标」。注记写 **frontmatter `status: superseded-by:<归宿>`**（首选）或**头部 10 行内**引用块——取代声明必须头部机械可检索，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。未满足即 plan-lint 报 `superseded-register`；存量欠账按拍板 Q2=A 一次性补标；
+  - **取代登记（可作废的第二凭据 · 2026-09-28 拍板 Q1=A/Q2=A，plan-lint 校验[5]）**：effort 票已全终态（`resolved`/`out_of_scope`）⇒ 该 effort 的 `spec.md` 必带 `superseded-by:` 注记**或**已随轮归档——「effort 票尽则必标」。注记写**正文首部 `**Status:** superseded-by:<归宿>`**（首选，2026-10-02 载体改正文行）或**头部 10 行内**引用块——取代声明必须头部机械可检索，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。未满足即 plan-lint 报 `superseded-register`；存量欠账按拍板 Q2=A 一次性补标；
   - **时点**：docs 更新钉在「**spec 定稿那一刻**」，与 `to-spec` 现有动作合并——**不等到「关闭 effort 后」**（那时上下文已散）。
-- **状态头四字段**（待拍板 / spec / map 等文档）：`type` / `date` / `status` / `origin`。
-  - `status` 五态：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`。**禁止「待拍项已作废却仍留 pending」**。
+- **文档头三字段 ＋ 正文状态行**（2026-10-02 拍板「全文档统一走正文行」，Q10=乙）：
+  - **frontmatter 保三字段**：`type` / `date` / `origin`。**状态不进 frontmatter。**
+  - **状态写正文首部的固定行**：`**Status:** <值>`（票/审批档等）。为什么在正文——状态是读者打开文件第一眼要找的东西，且同一份文档不该让「值」和「载体的形态」分居两处。
   - `origin`：产生原因（`readability-rescue` / `proactive` / `review` / `retrospective`）。
+  - **`archived:` 归档标记仍写 frontmatter**（它是「已归档」这一事实的机器可检索标记，与状态机无关，见 §四「归档标识」）。
+  - **审批档 `status` 五态**：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`，写正文 `**Status:**` 行。**禁止「待拍项已作废却仍留 pending」**。
+  - **`superseded-by:<path>` 是路径值**，必须写在**正文首部 10 行内**（机械可检索），埋正文深处不算。
 - **审批文档归属（两级，2026-09-29 拍板；全局成员 2026-09-30 收拢拍板）**：**grill-with-doc / wayfinder 生成**的审批档落**所属 effort** 的 `.scratch/<effort-slug>/approval/待拍板-<slug>-<date>.md`（独立 `approval/` 目录——随图归组展示、随 effort 归档）；**全局性审批**（跨图 / 无 effort 归属，如治理类拍板）落 **`.plan/approval/`**（2026-09-30 收拢拍板：由 `.plan/` 根层散放收拢为同名独立子目录，与 effort 内 `approval/` 同形；全局件之一，见「全局件」条）。**落点参数化与声明契约（同日拍板 A）**：to-approval 调用必传 `<effort-slug | global>`（人工无参时问归属，不静默推断——`disable-model-invocation` 防自发不防明文，plan-loop / 子代理等明文调用同规）；图内档 frontmatter 加 `effort: <slug>` 声明、全局档不带（路径即声明），plan-lint 检查[10] `approval-scope` 机械校验声明与落点一致；plan-loop 收口裁决单**默认落 `.plan/approval/`**（跨图收口产物，2026-09-30 拍板「plan-loop，默认就放到 .plan/approval/」）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量兼容：09-29 迁移提根层至 `.plan/` 根的档已于 09-30 收拢进 `.plan/approval/`（本仓实证）；根层 `待拍板-*`/`已拍板-*` 前缀形状仅存量兼容读取（plan-lint 检查[9] 对根层报违例驱动迁移），旧布局 `.plan/<effort>/待拍板-*` 不再有（视图对 `.plan` 关 effort 扫描后此类档入全局 approval/ 组）。
 - **effort 标志**：`.scratch/` 下目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `issues/` 目录不被读取（2026-09-29 议题①裁定：map.md = 文件、effort = 目录、判据 = 目录含 map.md，判据不变、目录根从 `.plan/` 改 `.scratch/`）。**2026-09-29 拍板扩展**：目录无 `map.md` 但含 `spec.md` = **spec-only 实施图**，同被视图加载（to-spec/to-tickets 直出的 effort，无路线 Destination，工单/审批子页照常）；视图加载与 plan-lint 检查[2] 的判据同步为「含 map.md **或** spec.md」，且**只在 `.scratch/`（与归档轮目录）生效**——`.plan/` 下不加载任何 effort，细则见「全局件」条。
-- **非治理目录**：一次性交接 / 审计产物落 `.tmp/handoffs/`、`.tmp/audits/`（2026-09-28 拍板 6b）——不属 plan 生态，视图不加载、`plan-lint` 不扫（`.tmp/` 在仓根，本就在两个治理目录之外）；存量 `.plan/handoffs/`（历史轮快照）只读兼容，plan-lint 豁免（不查缺 map / 状态头 / 同票双档）。
+- **非治理目录**：一次性交接 / 审计产物落 `.tmp/handoffs/`、`.tmp/audits/`（2026-09-28 拍板 6b）——不属 plan 生态，视图不加载、`plan-lint` 不扫（`.tmp/` 在仓根，本就在两个治理目录之外）；存量 `.plan/handoffs/`（历史轮快照）只读兼容，plan-lint 豁免（不查缺 map / 文档头 / 同票双档）。
 - **图二型**（插件按票型自动分组展示，无需文档声明）：**推演图**（票型 `research`/`prototype`/`grilling`，终点=决策清零，wayfinder「Plan, don't do」）与**实施图**（票型 `task`，终点=落码验收）。落地工单 `type` 一律写 `task`——**唯一合法值**（2026-09-27 拍板：`impl` 不支持、不识别）。
   - **`impl` 不是票型（2026-09-27 拍板）**：`impl` 源自早期 novel 的目录名（`.plan/<effort>/impl/`、`impl-fe/`），后被误用为 `type` 值沿用；三处正本（本协议、`to-tickets` 票模板、wayfinder `TRACKER-MARKDOWN.md`）**均未将它列为合法票型**。**新写票一律 `task`**；存量 `type: impl` 票由「形态契约变更回扫」条款迁移——**未迁移前该票不被识别为工单**。注意 `impl` 另有两个**非票型**身份，不可混淆、不得清理——插件内部类型名 `MapKind='impl'`（实施图分组标识）与历史目录路径 `impl/`、`impl-fe/`。
-- **票面 `status` 词表**（工单 frontmatter，执行态与终态）：执行中 = `claimed`（登记格式见「执行登记」硬规则）；终态 = `done`（**不分票型，全票统一**；允许附日期 `done <YYYY-MM-DD>`）。票态有两种合法形态：**frontmatter 形态**（to-tickets 系，`status` 写在 frontmatter）；**wayfinder 推导形态**（`status` 不入 frontmatter，由收束节推导——`## Answer` 带正文 = `done`、`## Ruled out` 带正文 = `out_of_scope`、`claimed_by` 在位 = `claimed`、其余 = `open`）。两形态共享同一 type 词表；推导形态的格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`。
+- **票面 `Status:` 词表**（2026-10-02 拍板 Q1/Q4，**三值**，写正文 `**Status:**` 行，不分票型全票统一）：
+  - `open`（票已建、无人做）→ `claimed`（有 session 在做）→ `resolved`（已解决，终态）。允许附日期 `resolved <YYYY-MM-DD>`。
+  - **载体与词表均为唯一一套**——原「frontmatter 形态 / wayfinder 推导形态」两形态并存的做法已废止（原版明文只认正文 `Status:` 行，见 wayfinder `TRACKER-MARKDOWN.md`）。
+  - **`out_of_scope` 不是 `Status:` 的第四个取值**：它由 `## Ruled out` 带正文**派生**，只存在于「收束」这一维度（见「四套状态机」表）。收束优先读，故已收束票上的 `Status:` 行是惰性残留，**不得改写成 `resolved`/`out_of_scope`**。
+  - **登记格式**：开工那一刻写 `**Status:** claimed` ＋ frontmatter `claimed_by: <agent 名>` ＋ `session: <会话标识>`（DSH 写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）——见「执行登记」硬规则。
   - **本条只管「票」——四套状态机互不套用（2026-09-27 拍板）**：`type` 词表里有状态概念的共四类，但**分属四个坐标系，词表不得互相套用**：
 
     | type | 载体 | 词表 | 回答的问题 |
     |:--|:--|:--|:--|
-    | `task` / `research` / `prototype` / `grilling` | frontmatter `status:` | `open` / `claimed` / `done` | 这张**票**走到哪了 |
-    | `approval` | frontmatter `status:` | `pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned` | 这个**提问**结案了吗 |
+    | `task` / `research` / `prototype` / `grilling` | 正文 `**Status:**` | `open` / `claimed` / `resolved` ＋派生 `out_of_scope` | 这张**票**走到哪了 |
+    | `approval` | 正文 `**Status:**` | `pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned` | 这个**提问**结案了吗 |
     | `ledger` | 正文 `- 状态:` | `在挂` / `已销` / `已转票` | 这笔**债**还了吗、转移到哪了 |
     | `qa-defect` | 正文 `- 状态:` | `待修复` / `已确认` / `修复中` / `待复测` / `已关闭` / `挂起` | 这个**缺陷**修好并复测通过了吗 |
 
-  - **不得统一**：`approval` 的 `closed` 不可改写为 `done`——它会抹掉 `superseded-by`（被取代）与 `abandoned`（不问了）的区分，而这两个态正是「防止已作废的待拍项滞留」的依据；`ledger` 的「已转票」不可改写为 `done`——**「债务已还清」与「债务转移给他处」是两件不同的事**，混同即账目错误。
-  - **载体差异是解析契约**：`ledger` / `qa-defect` 的状态写在**正文固定字段行**（非 frontmatter），是插件台账页／缺陷页与 agent 扫描的解析契约，**不得改形**（见「挂账台账」「缺陷条目」两条）。
-  - **判据**：**同一坐标系才可统一**——`task` 与三个推演票型同属「票」，故共用一套票态并已统一为 `done`；其余三类各答各的问题，**跨坐标系套用词表即语义塌陷**。
+    **载体已统一到正文行**（2026-10-02 拍板 Q10=乙）；**词表仍互不套用**（四类各答各的问题）。
+
+  - **不得统一**：`approval` 的 `closed` 不可改写为 `resolved`——它会抹掉 `superseded-by`（被取代）与 `abandoned`（不问了）的区分，而这两个态正是「防止已作废的待拍项滞留」的依据；`ledger` 的「已转票」不可改写为 `resolved`——**「债务已还清」与「债务转移给他处」是两件不同的事**，混同即账目错误。
+  - **正文状态行是解析契约**：`ledger` / `qa-defect` 的状态写在**正文固定字段行**，是插件台账页／缺陷页与 agent 扫描的解析契约，**不得改形**（见「挂账台账」「缺陷条目」两条）。
+  - **判据**：**同一坐标系才可统一**——`task` 与三个推演票型同属「票」，故共用一套票态（三值）；其余三类各答各的问题，**跨坐标系套用词表即语义塌陷**。
+  - **缺陷/台账的正文行是「状态机制判据」的明文例外**（2026-10-02 Q13）：它们的值**内容推不出来**（是人工推进的路由事实），按判据本该进 header，但**插件解析契约优先**——**不得以判据为由把它们的字段行改形或搬进 frontmatter**。
   - **收口口径**：票态**只有本条一处定义**（README 模板等处的复述须与本节一致）。
-- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。**这份清单即 `type` 的唯一合法词表**——`impl` **不在其中**（2026-09-27 拍板：不支持该类型，见「图二型」条），这是 2026-09-27 收口前的协议内部矛盾点，现予消除。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无 `status` 的文件归「说明 / 杂项」类；无 `type` 但有 `status` 的存量手写票按其 `status` 归工单（兼容形态，新写票一律带 `type`）。
-- **缺陷条目**（`type: qa-defect`，**一缺陷一文件**）：图内 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md`（编号全局唯一 `DEF-<effort-slug>-NN`，2026-09-28 拍板；存量 `DEF-NN` 短号等价兼容），frontmatter `type: qa-defect` + 状态头，正文 `# DEF-NN 标题` + 固定字段行 `- 严重度:`、`- 类型:`（rd/fe/arch/docs）、`- Assignee:`、`- 状态:`（待修复/已确认/修复中/待复测/已关闭/挂起，取首词匹配、允许附注）、`- 关联用例:`、`- 发现源:`、`- 测试设计缺口:`，其后 A~E 五节（E 节最小复现入口必填——骨架正本见 run-qa-testcases `references/qa-records-skeleton.md`）。
+- **`type` 取值约定**：`task`（落地工单）、`approval`（待拍板）、`research` / `prototype` / `grilling`（推演地图节点）、`ledger`（挂账台账）、`qa-defect`（QA 缺陷条目）。**这份清单即 `type` 的唯一合法词表**——`impl` **不在其中**（2026-09-27 拍板：不支持该类型，见「图二型」条），这是 2026-09-27 收口前的协议内部矛盾点，现予消除。`type` 值不在上表的文件按说明/杂项解析，不作单据校验对象。完全无 `type` 也无状态行的文件归「说明 / 杂项」类；无 `type` 但有状态行（正文 `**Status:**`，或存量 frontmatter `status:`）的存量手写票按其状态归工单（兼容形态，新写票一律带 `type` ＋ 正文 `**Status:**`）。
+- **缺陷条目**（`type: qa-defect`，**一缺陷一文件**）：图内 `.scratch/<effort>/qa/DEF-<effort-slug>-NN-<slug>.md`（编号全局唯一 `DEF-<effort-slug>-NN`，2026-09-28 拍板；存量 `DEF-NN` 短号等价兼容），frontmatter 仅 `type: qa-defect` ＋ `date`/`origin`（**无状态字段**，2026-10-02 拍板 Q11「按正文，单写」；`superseded-by:` 为可选保留字段），正文 `# DEF-NN 标题` + 固定字段行 `- 严重度:`、`- 类型:`（rd/fe/arch/docs）、`- Assignee:`、`- 状态:`（待修复/已确认/修复中/待复测/已关闭/挂起，取首词匹配、允许附注）、`- 关联用例:`、`- 发现源:`、`- 测试设计缺口:`，其后 A~E 五节（E 节最小复现入口必填——骨架正本见 run-qa-testcases `references/qa-records-skeleton.md`）。
   - **串联**：缺陷与票/挂账的串联靠详情文本写「票 NN」「挂账-NN」。
   - **识别**：qa 目录内不带 `type: qa-defect` 的文件不被视图识别；旧「单文件多小节」形态（`qa/defect.md` 清单总览表）只读兼容——归档轮快照是旧形态，现行一律一缺陷一文件。
   - **无图归属的缺陷**（SOP 回测、整页回测发现，挂不到具体工单/图）：落根层 `.plan/qa/DEF-*.md`（同格式），进第一层「测例&缺陷」tab。
@@ -166,15 +187,15 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 - **测例文档**：图内 `qa/cases.md`（`.scratch/<effort>/qa/cases.md`）**一图一份、不拆文件**——测例是批量设计文档（§0 被测对象/八源盘点/覆盖矩阵为共享上下文），由插件按路径识别为 `cases` 类单列「🧪 测例」子页，无需 frontmatter。每条测例**必须有唯一编号** `<腿前缀>-NN`（协议腿 D-NN / 呈现腿 P-NN / API 腿 A-NN），以可 grep 的固定形状出现（`### <编号>` 标题或表格行首列），禁止只存在于段落行文中；执行记录同文件按轮次追加（「末轮为准」，不开新文件），`run-qa-testcases` 支持按编号子集精确重跑（`--cases P-13,P-07`）（2026-09-28 六条批复 4/5）。
   - **测试标记写回票面**：`to-qa-testcases` 产出 cases.md 后给被测票写 `qa_cases: true`；`run-qa-testcases` 执行完写 `qa_tested: true`；验收通过（AC 全过 + 无未关闭缺陷）写 `qa_accepted: true`——三标记在票卡/详情以徽标展示。
   - **无图归属的回测测例**（SOP 回测、整页回测，挂不到具体工单/图）：落根层 `.plan/qa/cases-<主题>.md`（一主题一文件、不拆单），进第一层「测例&缺陷」tab；能挂到工单/图的测例放图内 `qa/cases.md`。
-- **调研 / 复盘文档落点（2026-09-28 六条批复 1）**：`.plan/` 专门放审批文档，**调研/复盘不进 `.plan/`**——落 **`docs/research/<name>.md`**（挂文档树、文档地图可指；frontmatter `type: research` / `retrospective` + 四字段头照旧，`status: active/closed` 区分在役/留档）。存量 `.plan/调研-*`、`.plan/复盘-*` 不自动迁移（归存量迁移推进）。
+- **调研 / 复盘文档落点（2026-09-28 六条批复 1）**：`.plan/` 专门放审批文档，**调研/复盘不进 `.plan/`**——落 **`docs/research/<name>.md`**（挂文档树、文档地图可指；frontmatter `type: research` / `retrospective` ＋ `date`/`origin`，正文 `**Status:** active/closed` 区分在役/留档）。存量 `.plan/调研-*`、`.plan/复盘-*` 不自动迁移（归存量迁移推进）。
 - **挂账台账**（`type: ledger`）：**每项目各自管账**——在哪个项目干活挂的账记哪个项目的台账，不跨仓寄挂；发现挂错仓的条目：原台账原地留痕销账（标注迁出去向），新台账迁入注记（维持原状态），不静默消失。
-  - **两级 + 一账一文件**：**全局台账目录**=`.plan/ledger/`（plan 级跨图债务正本，收跨图/环境/架构类条目，常驻 `.plan/`——2026-09-29 拍板全局件不随轮走）；**图内台账目录**=`.scratch/<effort>/ledger/`（收明确属于该图的条目，随所在 effort 整轮归档——轮内成员）。一账一文件：`挂账-NN-<slug>.md`，frontmatter 带 `type: ledger` + 状态头四字段，正文 `# 挂账-NN 标题` + 固定字段行 `- 状态:`（在挂/已销/已转票）、`- 卡点:`（为什么现在做不了/不做）、`- 启动条件:`（什么情况可以开展）、`- 来源:`（何时谁挂的）——字段行是插件台账页与 agent 扫描的解析契约，不得改形。
+  - **两级 + 一账一文件**：**全局台账目录**=`.plan/ledger/`（plan 级跨图债务正本，收跨图/环境/架构类条目，常驻 `.plan/`——2026-09-29 拍板全局件不随轮走）；**图内台账目录**=`.scratch/<effort>/ledger/`（收明确属于该图的条目，随所在 effort 整轮归档——轮内成员）。一账一文件：`挂账-NN-<slug>.md`，frontmatter 仅 `type: ledger` ＋ `date`/`origin`（**无状态字段**——状态由正文 `- 状态:` 行走，见下），正文 `# 挂账-NN 标题` + 固定字段行 `- 状态:`（在挂/已销/已转票）、`- 卡点:`（为什么现在做不了/不做）、`- 启动条件:`（什么情况可以开展）、`- 来源:`（何时谁挂的）——字段行是插件台账页与 agent 扫描的解析契约，不得改形，**且是状态的唯一载体**（与缺陷同规：`- 状态:` 单写，frontmatter 不放状态）。
   - **归属判据**：来源或恢复落点明确指向某张图的归图内，全局性条目留全局，拿不准的留全局（宁少拆不错拆）。插件视图：第一层「台账」页=全局台账，地图内「台账」子页=该图图内台账。
   - **销账**：在**条目文件自身**改 `- 状态:` 并在正文追加销账注记（日期/去向/证据或 commit），不留静默消失；旧「单文件多小节」形态（`.plan/挂账台账.md` 内 `### 挂账-NN` 小节）只读兼容——归档轮快照里是旧形态，现行一律一账一文件。
   - **agent 扫描启动纪律**：开工/收口时两级台账都扫，逐条对照「启动条件」与当前现状，已满足的项当场启动（按拍板落地协议立票或处理）；启动条件未满足的项不许提前动。
-  - **恢复口径**：条目**到达实施阶段**（启动条件满足、要真干活）时**恢复到该条目来源所在的原有 map 立票**——不新开 effort、不另起一张图；恢复后在「来源」字段注记恢复落点，条目 `- 状态:` 改「已转票」并在文件正文留痕；原图若已 `status: closed` 随之重开 `active`（收口条件=该图全部票 done，届时再翻 closed）。
-  - **阶段化状态机**：图内台账条目可含 `- 阻塞: <票NN, 票NN,…>` 字段（结构化依赖，**只允许引用同一张图的票**——依赖节点保证都在 map 中；全局台账跨图/无票依赖不写此字段，启动条件人工判断）。状态词据此分段：`- 状态:` 用 **阻塞中**（有阻塞字段且依赖票未全 done）/ **可启动**（无阻塞字段，或依赖票全部 done）。
-  - **implement 重算条款**：implement/plan-sync 收口翻完票状态后，必须重算本图 `ledger/` 与全局台账中带 `- 阻塞:` 的条目——依赖票全部 done 即把状态词写回「可启动」（附注触发票号），agent 扫描启动条件时读文件即得，不再现算。计划视图按依赖票状态实时计算并展示阶段（写回延迟不影响页面正确性）。
+  - **恢复口径**：条目**到达实施阶段**（启动条件满足、要真干活）时**恢复到该条目来源所在的原有 map 立票**——不新开 effort、不另起一张图；恢复后在「来源」字段注记恢复落点，条目 `- 状态:` 改「已转票」并在文件正文留痕；原图若已 `status: closed` 随之重开 `active`（收口条件=该图全部票 resolved，届时再翻 closed）。
+  - **阶段化状态机**：图内台账条目可含 `- 阻塞: <票NN, 票NN,…>` 字段（结构化依赖，**只允许引用同一张图的票**——依赖节点保证都在 map 中；全局台账跨图/无票依赖不写此字段，启动条件人工判断）。状态词据此分段：`- 状态:` 用 **阻塞中**（有阻塞字段且依赖票未全 resolved）/ **可启动**（无阻塞字段，或依赖票全部 resolved）。
+  - **implement 重算条款**：implement/plan-sync 收口翻完票状态后，必须重算本图 `ledger/` 与全局台账中带 `- 阻塞:` 的条目——依赖票全部 resolved 即把状态词写回「可启动」（附注触发票号），agent 扫描启动条件时读文件即得，不再现算。计划视图按依赖票状态实时计算并展示阶段（写回延迟不影响页面正确性）。
   - **引用带号纪律**：行文、镜像台账、轮次简报凡指称挂账一律写「挂账-NN」编号（编号以台账文件名与 H1 为准），禁止只用绰号（如 ENV-2、B-3）指称；历史绰号引用须括注编号，镜像与正本编号保持一致。
 - **轮内互引一律相对路径**：同一轮的文档互相引用，写相对路径（相对当前文件），不写 `.scratch/...`／`.plan/...` 开头的根相对路径、不写绝对路径。轮收尾后 `plan-archive` 把整轮迁入 `.archive/rounds/<round-id>/`，目录结构原样，相对引用随整树搬迁存活；根相对/绝对引用会断。轮内引用轮外正本不受此限（正本不搬）。
 - **形态契约变更回扫**：凡单据形态契约变更——状态头字段、字段行形状、`type` / `status` 词表——变更当轮对存量单据按新契约回扫迁移一次，不得只约束新写文档。本条管**文档形态**的存量回扫；术语的存量回扫由姊妹条款《术语变更双域Sweep协议》管**术语**，两者互不替代。
@@ -192,8 +213,8 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 
 归档单元是**轮**：从输入端（grill / wayfinder / 补充流问题拍板）到落地链收尾的一次完整闭环。轮走完后由 `plan-archive` 把整轮迁入 `.archive/rounds/<round-id>/`。归档**定义**（2026-09-28 triage 定稿）：整轮 `git mv` 进 `.archive/rounds/<round-id>/` ＋ 轮内引用相对化 ＋ 轮外断链巡检 ＋ `.archive/README.md` 两表更新 ＋ 前置判据核验 ＋ **完成即出检索面**（`.zcodeignore` 排 `.archive/`；DSH 侧 `excludedDirectories` 同步——2026-09-28 拍板「归档完成 = 出检索面」）。规则：
 
-- **归档时机 = effort 全消后的轮归档（2026-09-29 G2 裁定）**：不设独立批量归档时机——qa 中缺陷和台账全消、effort 才能翻转，全部解决后才归档；全局 qa/ledger 为**全局件**，常驻 `.plan/qa|ledger/`、**不随轮迁**（非轮成员——随轮走的只是图内 qa/ledger；2026-09-29 拍板修正本句旧表述「属轮成员随轮走」的相抵措辞）。
-- **前置判据（G4，全满足才可搬）**：①轮内票全终态（`done`/`out_of_scope`）且被测票 `qa_accepted` 齐；②缺陷全关闭；③台账条目全「已销/已转票」（**只清图内台账**；全局台账不在此判据内——全局件常驻，见 §三「全局件」条，2026-09-29 拍板补口径）；④spec 已带 `superseded-by:` 注记或归宿行齐备（票 07 校验面）＋审批档全 `closed`/`superseded-by:`/`abandoned` 或已翻 `archived:`。未满足先补标再归档。
+- **归档时机 = effort 全消后的轮归档（2026-09-29 G2 裁定）**：不设独立批量归档时机——qa 中缺陷和台账全消、effort 才能翻转，全部解决后才归档；全局 qa/ledger 为**全局件（常驻组）**，常驻 `.plan/qa|ledger/`、**不随轮迁**（非轮成员——随轮走的只是图内 qa/ledger）；**但全局审批档属搭车组，随该轮一并搬**（2026-10-02 裁定，见 §三「全局件」条生命周期表）。
+- **前置判据（G4，全满足才可搬）**：①轮内票全终态（`resolved`/`out_of_scope`）且被测票 `qa_accepted` 齐；②缺陷全关闭；③台账条目全「已销/已转票」（**只清图内台账**；全局台账不在此判据内——全局件常驻组，见 §三「全局件」条）；④spec 已带 `superseded-by:` 注记或归宿行齐备（票 07 校验面）＋审批档全 `closed`/`superseded-by:`/`abandoned` 或已翻 `archived:`。未满足先补标再归档。
 - **整轮 `git mv`，目录结构原样（G3）**：源 = `.scratch/`（tracker 类）——成员相对 `.scratch/` 的路径在轮目录内原样保留，轮目录就是该轮当时 `.scratch/`（＋随轮审批档）的快照，`git log --follow` 可溯。文件搬移只发生在轮归档这一处；`plan-approve` 只翻状态、不搬文件。一轮跨多个 feature-slug 时成员按引用关系归组。
 - **头部归档标识（R1）**：归档成员**必须做头部标识**——frontmatter 增 `archived: <round-id>`（无头文件在首行加 `<!-- archived: <round-id> -->` 注释）；任何 agent 直读该文件第一眼即见「已归档、勿据以实现」。写入动作在归档 `git mv` 同批完成。
 - **轮内互引一律相对路径**：整树搬迁后相对引用原样存活，这是「保持目录完整」的前提（见「文档形态约定」）。
@@ -210,20 +231,20 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 
 ## 四·补、文件类型与获取（2026-09-28 收编裁定：获取条款全部落本协议）
 
-**状态机制判据**：状态**由内容唯一决定**的（done/out_of_scope）→ 正文标题派生或票字段；状态**内容推不出来**的（claimed/严重度/Assignee 等路由事实）→ header 字段。两机制各管一半，**双轨维持现状**（2026-09-28 裁定不派生化、不清理双写）。逐类：
+**状态机制判据**：状态**由内容唯一决定**的（resolved/out_of_scope）→ 正文标题派生；状态**内容推不出来**的（open/claimed/严重度/Assignee 等路由事实）→ 正文固定行或 header 字段。**2026-10-02 拍板 Q10=乙：载体统一到正文行**；判据保留为「为什么这么分」的解释，不再作为「该放 header」的依据——**缺陷/台账的正文行是判据的明文例外**（见 §三「四套状态机」条）。逐类：
 
 | 类型 | 落点 | 状态表示与获取 |
 |:--|:--|:--|
 | map | `.scratch/<slug>/map.md` | 无状态字段；读正文即状态（Decisions so far 只索引不存态） |
-| 推演票 | `.scratch/<slug>/issues/NN-<slug>.md` | **派生**：`## Answer` 有正文=done、`## Ruled out` 有正文=out_of_scope、`claimed_by` 在位=claimed、其余=open；frontier = open 且 blocked_by 全终态（wayfinder `TRACKER-MARKDOWN.md` 为格式契约正本） |
-| 执行票 | 同上 | 读 frontmatter `status:`（词表见「票面 status 词表」）；frontier = open 且 blocked_by 全终态 |
-| spec | `.scratch/<slug>/spec.md` | 无状态头；void 判据 = 每节归宿行且目标存在 ＋ 票尽必标 superseded-by（「取代登记」条）；获取 = 读归宿行 + 头部 superseded-by |
-| 审批档 | `.plan/` | frontmatter `status:` 五态 + `archived:` 归档标记（双翻标挂点见 §四） |
-| 调研/复盘 | `docs/research/` | frontmatter `status: active/closed` |
+| 推演票 | `.scratch/<slug>/issues/NN-<slug>.md` | 正文 `**Status:**`（三值）＋**派生**：`## Answer` 有正文=resolved、`## Ruled out` 有正文=out_of_scope、`claimed_by` 在位=claimed、其余=open；frontier = open 且阻塞边全终态（wayfinder `TRACKER-MARKDOWN.md` 为格式契约正本） |
+| 执行票 | 同上 | 读正文 `**Status:**`（词表见「票面 `Status:` 词表」）；frontier = open 且阻塞边全终态 |
+| spec | `.scratch/<slug>/spec.md` | frontmatter `type`/`date`/`origin` ＋ 正文 `**Status:**`（`superseded-by:<归宿>` 写正文首部 10 行内）；void 判据 = 每节归宿行且目标存在 ＋ 票尽必标 superseded-by（「取代登记」条） |
+| 审批档 | `.plan/` | 正文 `**Status:**` 五态（`superseded-by:<path>` 写正文首部 10 行内）＋ frontmatter `archived:` 归档标记（双翻标挂点见 §四） |
+| 调研/复盘 | `docs/research/` | 正文 `**Status:** active/closed` |
 | 测例集 / 执行记录 | `.scratch/<slug>/qa/cases.md` / `test.md` | 无 frontmatter——固定名 + H1 形状识别；测例按编号 grep 直达，执行状态记 test.md 按编号逐条（末轮为准） |
-| 缺陷 | 图内 `.scratch/<slug>/qa/`、全局 `.plan/qa/` | frontmatter `status` + 正文 `- 状态:` 行双写（双轨维持）；终态=已关闭 |
-| 台账 | 全局 `.plan/ledger/`、图内 `.scratch/<slug>/ledger/` | frontmatter `status` + 正文 `- 状态:` 行（已销/已转票=终态）；运行态由 `- 阻塞:` 依赖票派生（阻塞中/可启动） |
-| 全局件（概念，2026-09-29 拍板） | `.plan/approval/` 审批档 + `.plan/qa/` + `.plan/ledger/` | 封闭三件套（定义与豁免见 §三「全局件」条；审批成员 2026-09-30 收拢拍板由根层散放目录化）；各成员状态获取同其单据类型（审批档/缺陷/台账行）；常驻不随轮归档，豁免 effort 判据 |
+| 缺陷 | 图内 `.scratch/<slug>/qa/`、全局 `.plan/qa/` | **正文 `- 状态:` 行单写**（2026-10-02 Q11 拍板取消 frontmatter `status`）；终态=已关闭；`superseded-by:` 为可选 frontmatter 字段 |
+| 台账 | 全局 `.plan/ledger/`、图内 `.scratch/<slug>/ledger/` | 正文 `- 状态:` 行（已销/已转票=终态）；运行态由 `- 阻塞:` 依赖票派生（阻塞中/可启动） |
+| 全局件（概念，2026-09-29 拍板；2026-10-02 生命周期二分） | `.plan/approval/` 审批档 + `.plan/qa/` + `.plan/ledger/` | 封闭三件套（定义见 §三「全局件」条）；各成员状态获取同其单据类型（审批档/缺陷/台账行）；**qa/ledger 常驻不随轮；已翻标的 approval 随轮搭车**；均豁免 effort 判据；推进归 `plan-loop` 全局件行动行 |
 | research 笔记 | `.scratch/<slug>/assets/` | 无状态；经票 frontmatter `assets:` 数组获取 |
 | 归档轮 | `.archive/rounds/<round-id>/` | 已出检索面；获取 = 显式考古（`.archive/README.md` 轮次索引） |
 
@@ -262,7 +283,7 @@ origin: proactive
 - `docs/research/`：调研/复盘文档；`docs/requirements/`：需求文档（文件名含 effort slug）
 - `.tmp/`：一次性交接/审计（出检索面）；`.archive/`：整轮归档（由 plan-archive 迁入）
 
-收口纪律：票面终态 = `done`（不分票型，允许附日期）、执行中 = `claimed`（票态词表正本见 §三「票面 `status` 词表」，本节不另立）；收口动作（implement / plan-sync / 测例执行 / 缺陷诊断 / plan-approve）收尾跑 plan-lint，0 发现或当轮修复。
+收口纪律：票面终态 = `resolved`（不分票型，允许附日期）、执行中 = `claimed`（票态词表正本见 §三「票面 `Status:` 词表」，本节不另立）；收口动作（implement / plan-sync / 测例执行 / 缺陷诊断 / plan-approve）收尾跑 plan-lint，0 发现或当轮修复。
 
 ## 指针
 

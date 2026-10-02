@@ -6,9 +6,7 @@ disable-model-invocation: true
 
 # To Tickets
 
-**本 skill 是 plan 流程的环节之一（落地链第二环）。** 它的上游 / 下游 / 交接契约（输入必须是 spec 或待拍板文档、不得手搓票格式）与文档形态约定，见 `plan-protocol` skill（公共协议层）。
-
-Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
+**本 skill 是 plan 流程的环节之一（落地链第二环）。** 它的上游 / 下游 / 交接契约（输入必须是 spec 或待拍板文档、不得手搓票格式）与文档形态约定，见 `plan-protocol` skill（公共协议层）。Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
 ## Process
 
@@ -59,20 +57,20 @@ Iterate until the user approves the breakdown.
 
 Write **one file per ticket**, under `.scratch/<slug>/issues/`, named `<NN>-<slug>.md` (numbered from 01 in dependency order, blockers first). `<slug>` is a short kebab-case name for the work — if the tickets came from a spec at `.scratch/<slug>/spec.md`, use the same directory. Create the directories if needed; `.scratch/` is committed to version control. Tell the user the paths.
 
-Each file carries frontmatter the tracker reads, then the ticket's own body:
+Each file carries a **short frontmatter of facts a reader cannot see in the body** (`type` is the only one this skill writes), then the ticket's own body — where **status and blocking edges are written as plain lines near the top**:
 
 ```markdown
 ---
 type: task
-blocked_by: []          # ticket ids that gate this one, or [] when none — bare values, never quoted（格式正本=plan-protocol §三「blocked_by 格式」）
-status: open            # open（待领）→ claimed（执行中）→ done；全票型统一 done（允许附日期 done <YYYY-MM-DD>，词表正本=plan-protocol §三）
 ---
 
 # <NN>: <title>
 
 **What to build:** <the end-to-end behaviour this ticket makes work>
 
-**Blocked by:** <titles it depends on, or "None — can start immediately">
+**Blocked by:** <ticket ids that gate this one, or "None — can start immediately">
+
+**Status:** open
 
 **Source spec:** <path to the spec this was cut from, if any>
 
@@ -82,12 +80,20 @@ status: open            # open（待领）→ claimed（执行中）→ done；�
 - [ ] <criterion>
 ```
 
+**The three status values**: `open` (built, nobody on it) → `claimed` (a session is working it) → `resolved` (done). One vocabulary for every ticket type. Write the current value whenever you touch the ticket.
+
+**Why the body, not a frontmatter field.** Status and blocking edges are what a reader looks for first, and a `Status:` line near the top is where the original contract puts them. Keep frontmatter for facts the body does not carry — for a ticket that is just `type`.
+
+**Blocking edges take bare ticket ids** — `Blocked by: 03, 04`, or `None — can start immediately`. **Never quote them** (`"03"`): the tool-side parser does not tolerate quotes, and one quoted id aborts the whole graph parse. `None` is the only way to say "no blockers" — never `[无]`, `none`, or a blank line.
+
+**`out_of_scope` is not a fourth status value.** A ticket is out of scope when its body carries a `## Ruled out` section with prose under it — a *derived* state, never written into `Status:`. It means the ticket sits past the destination. Closure is read first, so the `Status:` line is inert on such a ticket; leave it as it was. See `wayfinder` for when a ticket is ruled out, and for what that does to tickets blocked by it.
+
 **Why one file per ticket, not one combined file.** A combined `issues.md` looks tidier in a directory listing, but anything that reads tickets file-by-file counts it as **a single ticket** and silently loses every ticket inside it. That is not hypothetical — it is how a plan view shows "1 ticket" for a file holding nine. One file per ticket is the shape the wayfinder contract uses, so both readers agree.
 
 **Do not create `map.md`.** (2026-09-29 拍板「to-tickets 不自动补 map」，撤销本 skill 旧有的自动建 map 补丁.) The map is the wayfinder's artifact: an effort directory is loaded by the plan view when it contains a `map.md` **or a `spec.md`** (2026-09-29 拍板扩展：有 spec 无 map = spec-only 实施图，同被加载——本 skill 的 spec + issues/ 直出形态即属此类). Only a bare `issues/` directory with neither file is invisible to the view and reported by plan-lint check [2]. If this ticket set needs a map (e.g. it outgrew a spec-only flow), let the user or a wayfinder session create it — do not synthesize one here.
 
-Keep the ordering in mind when numbering: the frontier is any ticket whose blockers are all done. For a purely linear chain that means 01 runs first.
+Keep the ordering in mind when numbering: the frontier is any ticket whose blockers are all resolved. For a purely linear chain that means 01 runs first.
 
 Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in that ticket's own file, set its `status`, and commit — then clear context before taking the next ticket.
+Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in that ticket's own file, set its `Status:` line, and commit — then clear context before taking the next ticket.

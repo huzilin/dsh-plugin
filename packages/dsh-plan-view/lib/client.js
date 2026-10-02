@@ -237,22 +237,33 @@ window.__ModuleLoader__.load({
 				body
 			};
 		}
+		/** Read a `**Label:** value` line from the document body (2026-10-02 carrier move).
+		*  Fence-aware: a ticket quoting the format must not thereby declare a status.
+		*  Returns undefined when the line is absent, so callers can fall back to
+		*  frontmatter for documents written before the migration. */
+		function bodyField(body, label) {
+			const re = new RegExp(`^\\s*(?:[-*>]\\s*)?\\*\\*${label}:\\*\\*\\s*(.+?)\\s*$`, "im");
+			for (const seg of stripFences(body).split(/\n\s*\n/)) {
+				const m = seg.match(re);
+				if (m?.[1] !== void 0) return m[1].replace(/[*`]/g, "").trim();
+			}
+		}
 		function deriveTicketStatus(file, raw) {
 			const { fm, body } = parseFrontmatter(raw);
-			const hasAnswer = /^## Answer\b/m.test(body) && /^## Answer\b[\s\S]*\n\S/m.test(body);
-			const hasRuledOut = /^## Ruled out\b/m.test(body) && /^## Ruled out\b[\s\S]*\n\S/m.test(body);
+			const hasAnswer = hasSection(body, "Answer");
+			const hasRuledOut = hasSection(body, "Ruled out");
 			const titleMatch = raw.match(/^#\s+(.+)$/m);
 			return {
 				id: ticketId(file),
 				file,
 				title: titleMatch?.[1]?.replace(/`[^`]*`/g, "")?.trim() ?? file,
 				type: fm.type,
-				blockedBy: parseBlockedBy(fm.blocked_by),
+				blockedBy: parseBlockedBy(bodyField(body, "Blocked by") ?? fm.blocked_by),
 				assets: parseAssetRefs(fm.assets),
 				done: hasAnswer,
 				outOfScope: hasRuledOut,
 				claimedBy: fm.claimed_by,
-				status: fm.status,
+				status: bodyField(body, "Status") ?? fm.status,
 				date: fm.date,
 				origin: fm.origin,
 				session: fm.session,
@@ -263,44 +274,50 @@ window.__ModuleLoader__.load({
 				qaAccepted: fm.qa_accepted === "true"
 			};
 		}
-		const DONE_STATUS = /* @__PURE__ */ new Set([
-			"done",
-			"closed",
-			"complete",
-			"completed",
-			"shipped"
-		]);
-		const OUT_STATUS = /* @__PURE__ */ new Set([
-			"abandoned",
-			"rejected",
-			"wontfix",
-			"won't fix",
-			"cancelled",
-			"canceled",
-			"superseded"
-		]);
-		const CLAIMED_STATUS = /* @__PURE__ */ new Set([
-			"doing",
-			"in_progress",
-			"in-progress",
-			"wip",
-			"claimed",
-			"in review",
-			"review"
-		]);
+		function stripFences(body) {
+			const out = [];
+			let fence = null;
+			for (const line of body.split("\n")) {
+				const m = line.match(/^\s*(```+|~~~+)/);
+				if (fence === null) {
+					if (m) {
+						fence = m[1][0] ?? "`";
+						out.push("");
+					} else out.push(line);
+				} else {
+					if (m && m[1][0] === fence) fence = null;
+					out.push("");
+				}
+			}
+			return out.join("\n");
+		}
+		function hasSection(body, name) {
+			const heading = `## ${name}`;
+			const re = new RegExp(`^${heading}\\b`, "m");
+			const segOf = (text) => {
+				const m = re.exec(text);
+				if (!m || m.index === void 0) return null;
+				const after = text.slice(m.index + m[0].length);
+				const stop = after.search(/^## /m);
+				return stop >= 0 ? after.slice(0, stop) : after;
+			};
+			const seg = segOf(stripFences(body));
+			if (seg !== null && /\n\S/.test(seg)) return true;
+			const rawSeg = segOf(body);
+			if (seg !== null && rawSeg !== null && /^\s*\n\s*(```|~~~)/.test(rawSeg)) return true;
+			return false;
+		}
 		function statusWord(t) {
 			const raw = (t.status ?? "").trim().toLowerCase();
 			if (raw.startsWith("superseded-by")) return "superseded";
 			return raw.split(/[\s(#:—-]/)[0] ?? "";
 		}
 		function displayStatus(t) {
-			if (t.outOfScope) return "out_of_scope";
-			if (t.done) return "done";
-			const w = statusWord(t);
-			if (DONE_STATUS.has(w)) return "done";
-			if (OUT_STATUS.has(w)) return "out_of_scope";
-			if (t.claimedBy) return "claimed";
-			if (CLAIMED_STATUS.has(w)) return "claimed";
+			if (hasSection(t.body, "Answer")) return "done";
+			if (hasSection(t.body, "Ruled out")) return "out_of_scope";
+			const w = (t.status ?? "").trim().toLowerCase().split(/[\s(#:—-]/)[0];
+			if (w === "resolved" || w === "done" || w === "closed") return "done";
+			if (w === "claimed" || t.claimedBy) return "claimed";
 			return "open";
 		}
 		function ticketId(file) {
@@ -313,7 +330,9 @@ window.__ModuleLoader__.load({
 			return ticketId(raw.trim().replace(/^["']|["']$/g, "").split("/").pop() ?? "");
 		}
 		function parseBlockedBy(value) {
-			return (value ?? "").replace(/[\[\]]/g, "").split(",").map(normalizeRef).filter(Boolean);
+			const v = (value ?? "").trim();
+			if (/^none\b/i.test(v) && !/^none[a-z]/i.test(v)) return [];
+			return v.replace(/[\[\]]/g, "").split(",").map(normalizeRef).filter(Boolean);
 		}
 		function parseAssetRefs(value) {
 			return (value ?? "").replace(/[\[\]]/g, "").split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
@@ -467,6 +486,7 @@ window.__ModuleLoader__.load({
 		const BORDER_LIGHT = "rgba(255,255,255,.06)";
 		const ACCENT = "#4176e6";
 		const ACCENT_SOFT = "#609bfa";
+		const LOCKED = "#b8860b";
 		const CHIP_BG = "rgba(255,255,255,.07)";
 		const MD_CSS = `
 .pvm-p{margin:.5em 0;line-height:1.75}
@@ -481,9 +501,16 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 .pvm-pre{margin:.7em 0;padding:.8em 1em;background:#141416;border:1px solid ${BORDER_LIGHT};border-radius:8px;overflow:auto}
 .pvm-pre code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:${TEXT_DIM};white-space:pre}
 .pvm-tw{margin:.7em 0;overflow:auto;border:1px solid ${BORDER_LIGHT};border-radius:8px}
-.pvm-table{border-collapse:collapse;width:100%;font-size:12.5px}
-.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap}
-.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top}
+/* 表格宽度（2026-10-02 用户反馈：最小格宽 + 横向滚动）：
+   width:max-content 让表按内容定宽、不再被压缩；min-width:100% 让窄表仍铺满容器
+   （缺它则短表缩成一小坨，右栏留白突兀）。两者缺一不可——只有 min-width 到格子
+   上时表格依旧会压缩以适配容器，永远不溢出、也就永远不出现横向滚动。
+   th/td 的 min-width 是「最小格宽」本体：列窄到这个下限即止，不再压缩到只剩表头
+   文字宽（旧样式下短列被压到 45px，读作挤压变形）。td 的 max-width + break-word
+   给超长单元格封顶并允许折行，避免单列无限伸长把表推成一条长带。 */
+.pvm-table{border-collapse:collapse;width:max-content;min-width:100%;font-size:12.5px}
+.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap;min-width:72px}
+.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top;min-width:72px;max-width:320px;word-break:break-word}
 .pvm-table tr:last-child td{border-bottom:none}
 .pvm-a{color:${ACCENT_SOFT};text-decoration:none}
 .pvm-a:hover{text-decoration:underline}
@@ -702,6 +729,82 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				icon: "🛠️"
 			}
 		};
+		/** 四类单据各自的「已完成」判据（跨坐标系不可共用词表）。 */
+		function isSettled(t, kind) {
+			if (kind === "ticket") return displayStatus(t) === "done";
+			if (kind === "approval") return !isPending(t);
+			if (kind === "ledger") {
+				const e = parseLedgerEntries(t.body)[0];
+				return e !== void 0 && (e.state === "已销" || e.state === "已转票");
+			}
+			if (kind === "defect") {
+				const single = parseDefectFile(t);
+				if (single !== void 0) return DEFECT_CLOSED.has(defectStateWord(single.state));
+				const entries = parseDefectEntries(t.body);
+				return entries.length > 0 && entries.every((d) => DEFECT_CLOSED.has(defectStateWord(d.state)));
+			}
+			return false;
+		}
+		/**
+		* spec.md 是否已归档（协议「取代登记」两条凭据之一，2026-10-02 用户需求②）。
+		* 正本 plan-protocol「spec 生命周期与归宿行」：effort 票尽 ⇒ `spec.md` 必带
+		* `superseded-by:` 注记或已随轮归档。注记位置协议限定两种——frontmatter
+		* `status: superseded-by:<归宿>`（首选），或**头部 10 行内**引用块。
+		* 「埋正文深处不算」（协议明写，doc-authority 复盘实证 23% 可检索率是旧病），
+		* 故此处只认这两个位置，不做全文正则——否则一份「提及」别人被取代的 spec
+		* 会把自己判成已归档。
+		*/
+		function isSpecArchived(specRaw) {
+			if (!specRaw) return false;
+			const fm = specRaw.match(/^---\n([\s\S]*?)\n---/);
+			if (fm && /^\s*status:\s*superseded-by:/m.test(fm[1] ?? "")) return true;
+			const head = specRaw.split("\n").slice(0, 10).join("\n");
+			return /superseded-by/i.test(head);
+		}
+		/**
+		* 一张图的完成度。返回 `pct` 与 `locked` 两个读数。
+		*
+		* 口径（2026-10-02 用户拍板）：
+		*  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
+		*  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
+		*    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
+		*    变为 100%。推演图无 spec.md，不加项。
+		*  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**，并以 `locked` 标出「无法达到」。
+		*
+		* `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（当前只有缺测例一种），
+		* 供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的正常一项，
+		* 属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
+		*
+		* @param own     该图自有单据 + 根层松散件（与卡片其它计数同口径）
+		* @param dir     图目录（判断 qa/cases.md 与 spec.md 归属）
+		* @param cases   全部测例文档（含 effort 归属字段）
+		* @param kind    图型
+		* @param specRaw 该图 spec.md 正文；无 spec 传 undefined
+		*/
+		function effortProgress(own, dir, cases, kind, specRaw) {
+			const countable = own.filter((t) => {
+				const k = ticketKind(t);
+				if (k === "note" || k === "cases") return false;
+				if (k === "ticket" && t.outOfScope) return false;
+				return true;
+			});
+			const settled = countable.filter((t) => isSettled(t, ticketKind(t))).length;
+			const specCounted = kind === "impl" && !!specRaw;
+			const specArchived = isSpecArchived(specRaw);
+			const denom = countable.length + (specCounted ? 1 : 0);
+			const numer = settled + (specCounted && specArchived ? 1 : 0);
+			let pct = denom > 0 ? Math.round(numer / denom * 100) : 0;
+			const hasCases = cases.some((c) => c.effort === dir);
+			const locked = kind === "impl" && !hasCases;
+			if (locked) pct = Math.min(pct, 80);
+			return {
+				pct,
+				locked,
+				hasCases,
+				specCounted,
+				specArchived
+			};
+		}
 		/** Frontmatter `status` marks a document as an approval awaiting a ruling. */
 		function isPending(t) {
 			return statusWord(t) === "pending";
@@ -3221,9 +3324,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							},
 							children: g.items.map(({ e }) => {
 								const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
-								const work = own.filter((t) => ticketKind(t) === "ticket" && !t.outOfScope);
-								const done = work.filter((t) => t.done).length;
-								const pct = work.length > 0 ? Math.round(done / work.length * 100) : 0;
+								const kind = mapKind(e.dir, tickets);
+								const prog = effortProgress(own, e.dir, cases, kind, e.specRaw);
+								const { pct, locked } = prog;
+								const unsettled = own.filter((t) => {
+									const k = ticketKind(t);
+									if (k === "note" || k === "cases") return false;
+									if (k === "ticket" && t.outOfScope) return false;
+									return !isSettled(t, k);
+								}).length;
 								const { stage, color } = effortStage(own);
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									style: {
@@ -3256,18 +3365,54 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											},
 											children: stage
 										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
-												height: 5,
-												borderRadius: 3,
-												background: CHIP_BG,
-												overflow: "hidden"
+												display: "flex",
+												alignItems: "center",
+												gap: 6
 											},
-											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
-												height: "100%",
-												width: `${pct}%`,
-												background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
-											} })
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														flex: 1,
+														height: 5,
+														borderRadius: 3,
+														background: CHIP_BG,
+														overflow: "hidden"
+													},
+													children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+														height: "100%",
+														width: `${pct}%`,
+														background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
+													} })
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+													style: {
+														fontSize: 11,
+														fontWeight: 700,
+														color: locked ? LOCKED : "#4ed17e",
+														minWidth: 34,
+														textAlign: "right",
+														fontVariantNumeric: "tabular-nums"
+													},
+													children: [pct, "%"]
+												}),
+												locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													title: "缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%",
+													style: {
+														fontSize: 10.5,
+														fontWeight: 700,
+														color: LOCKED,
+														background: `${LOCKED}1f`,
+														border: `1px solid ${LOCKED}66`,
+														borderRadius: 4,
+														padding: "1px 4px",
+														whiteSpace: "nowrap",
+														cursor: "help"
+													},
+													children: "🔒 缺测例 20%"
+												})
+											]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
@@ -3276,12 +3421,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 												marginTop: 5
 											},
 											children: [
-												pct,
-												"% · ",
-												work.length - done,
-												" 张在途 · ",
+												unsettled,
+												" 项在途 · ",
 												own.filter((t) => ticketKind(t) === "approval" && isPending(t)).length,
 												" 待拍板",
+												prog.specCounted && !prog.specArchived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													title: "spec.md 是 effort 的一次性实施文档：随 effort 关闭作废归档（带 superseded-by: 注记或随轮归档）。未归档前本图到不了 100%。",
+													style: {
+														color: "#f7ad31",
+														marginLeft: 6
+													},
+													children: "📄 spec 未归档"
+												}),
 												(() => {
 													const dn = defects.filter((t) => t.effort === e.dir).length;
 													if (dn === 0) return null;
@@ -3528,6 +3679,50 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
+		/**
+		* 字号缩放（2026-10-02 用户需求：右上角可调字号）。
+		*
+		* 步进式档位而非连续滑块：档位可枚举、可记忆、点击即到位，读的人知道自己在哪一档。
+		* 范围 0.8–1.4 兼顾「小屏塞得下」与「字太小看不清」，超出范围两端都没有实际用途。
+		*/
+		const FONT_SCALES = [
+			.8,
+			.9,
+			1,
+			1.1,
+			1.25,
+			1.4
+		];
+		const FONT_SCALE_KEY = "dsh-plan-view:font-scale";
+		/** 读上次选择；无记录/损坏/越界一律回 1（默认），绝不让坏值把页面缩没了。 */
+		function loadFontScale() {
+			try {
+				const raw = globalThis.localStorage?.getItem(FONT_SCALE_KEY);
+				if (raw === null || raw === void 0) return 1;
+				const n = Number(raw);
+				return FONT_SCALES.includes(n) ? n : 1;
+			} catch {
+				return 1;
+			}
+		}
+		function saveFontScale(n) {
+			try {
+				globalThis.localStorage?.setItem(FONT_SCALE_KEY, String(n));
+			} catch {}
+		}
+		/**
+		* 初始/换轮后应选中的图下标。`-1` = 「全部地图」聚合态。
+		*
+		* 单图仓（efforts.length === 1）直接选中第 0 张：此时「全部地图」与「这张图」的
+		* 正文完全等价，但 mapdoc/specdoc 两个子页只在选中态才插入（`selEffort` 判空），
+		* 于是单图用户永远要多点一次芯片才能看到「🗺️ map / 📄 spec」（2026-10-02 用户反馈）。
+		*
+		* 多图仓（≥2）保持 `-1`：聚合视角是有信息量的默认；「优先选第一张」会静默藏起
+		* 其余图的票，属于无依据的推断。零图仓同样是 `-1`（无芯片可选）。
+		*/
+		function defaultEffortIdx(effortCount) {
+			return effortCount === 1 ? 0 : -1;
+		}
 		function PlanView(props) {
 			const { ctx } = props;
 			const sessionId = props.sessionId;
@@ -3579,7 +3774,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			(0, react.useEffect)(() => {
 				setEffortIdx(-1);
 			}, [round]);
+			const effortCount = data?.efforts.length ?? 0;
+			(0, react.useEffect)(() => {
+				setEffortIdx(defaultEffortIdx(effortCount));
+			}, [effortCount, round]);
 			const [contextRaw, setContextRaw] = (0, react.useState)(null);
+			const [fontScale, setFontScale] = (0, react.useState)(() => loadFontScale());
 			const onChanged = (0, react.useCallback)(() => {
 				load();
 				loadSessions();
@@ -3629,11 +3829,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				data?.mapRaw,
 				effortIdx
 			]);
-			const refreshBtn = (label = "⟳ 刷新") => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+			const refreshBtn = (label = "⟳") => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
 				onClick: () => void load(),
 				disabled: loading,
 				title: "重新读取治理目录 .scratch/.plan（别处改了文件时用）",
+				"aria-label": "刷新",
 				style: {
 					padding: "5px 10px",
 					border: `1px solid ${BORDER}`,
@@ -3643,7 +3844,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					cursor: loading ? "default" : "pointer",
 					fontSize: 12
 				},
-				children: loading ? "读取中…" : label
+				children: loading ? "…" : label
 			});
 			if (loading) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
@@ -3669,7 +3870,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					background: BG,
 					color: "#888"
 				},
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: round === null ? "No .scratch/.plan found in current directory." : `轮次 ${round} 读取失败（目录可能已被移动或删除）。` }), refreshBtn("⟳ 重新读取")]
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: round === null ? "No .scratch/.plan found in current directory." : `轮次 ${round} 读取失败（目录可能已被移动或删除）。` }),
+					refreshBtn("⟳ 重新读取"),
+					" "
+				]
 			});
 			const planDir = data.effortDir;
 			const readOnly = round !== null;
@@ -3683,6 +3888,23 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				color: active ? TEXT : "#888",
 				fontSize: 12,
 				fontWeight: active ? 700 : 400
+			});
+			const stepFontScale = (dir) => {
+				const i = FONT_SCALES.indexOf(fontScale);
+				const next = FONT_SCALES[Math.min(FONT_SCALES.length - 1, Math.max(0, (i < 0 ? 2 : i) + dir))];
+				if (next === void 0 || next === fontScale) return;
+				setFontScale(next);
+				saveFontScale(next);
+			};
+			const fontBtn = (atEnd) => ({
+				padding: "2px 6px",
+				border: "none",
+				borderRadius: 4,
+				background: "transparent",
+				color: atEnd ? "#555" : TEXT_DIM,
+				cursor: atEnd ? "default" : "pointer",
+				fontSize: 11,
+				fontWeight: 700
 			});
 			const mapTab = (active) => ({
 				padding: "8px 14px 9px",
@@ -3772,7 +3994,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					background: BG,
 					color: TEXT,
 					fontFamily: "sans-serif",
-					fontSize: 14
+					fontSize: 14,
+					zoom: fontScale
 				},
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -3803,33 +4026,79 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								alignItems: "center",
 								gap: 6
 							},
-							children: [rounds.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-								value: round ?? "",
-								onChange: (e) => setRound(e.target.value === "" ? null : e.target.value),
-								title: "按轮查看历史归档（.archive/rounds，只读）",
-								style: {
-									padding: "4px 8px",
-									borderRadius: 6,
-									border: `1px solid ${round !== null ? "#7a4a15" : BORDER}`,
-									background: HEADER_BG,
-									color: round !== null ? "#f7ad31" : TEXT_DIM,
-									fontSize: 12,
-									outline: "none",
-									maxWidth: 280,
-									cursor: "pointer"
-								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-									value: "",
-									children: "📍 现行（.scratch + .plan）"
-								}), rounds.map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-									value: r.id,
+							children: [
+								rounds.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+									value: round ?? "",
+									onChange: (e) => setRound(e.target.value === "" ? null : e.target.value),
+									title: "按轮查看历史归档（.archive/rounds，只读）",
+									style: {
+										padding: "4px 8px",
+										borderRadius: 6,
+										border: `1px solid ${round !== null ? "#7a4a15" : BORDER}`,
+										background: HEADER_BG,
+										color: round !== null ? "#f7ad31" : TEXT_DIM,
+										fontSize: 12,
+										outline: "none",
+										maxWidth: 280,
+										cursor: "pointer"
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "",
+										children: "📍 现行（.scratch + .plan）"
+									}), rounds.map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+										value: r.id,
+										children: [
+											"🗄️ ",
+											r.id,
+											r.topic ? ` · ${r.topic}` : ""
+										]
+									}, r.id))]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										alignItems: "center",
+										gap: 1,
+										padding: "2px 4px",
+										border: `1px solid ${BORDER}`,
+										borderRadius: 6,
+										background: "transparent"
+									},
 									children: [
-										"🗄️ ",
-										r.id,
-										r.topic ? ` · ${r.topic}` : ""
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											onClick: () => stepFontScale(-1),
+											disabled: fontScale === FONT_SCALES[0],
+											title: "缩小字号",
+											"aria-label": "缩小字号",
+											style: fontBtn(fontScale === FONT_SCALES[0]),
+											children: "−"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											title: "当前字号（整页等比缩放）",
+											"aria-live": "polite",
+											style: {
+												fontSize: 10.5,
+												color: TEXT_DIM,
+												minWidth: 30,
+												textAlign: "center",
+												fontVariantNumeric: "tabular-nums"
+											},
+											children: [Math.round(fontScale * 100), "%"]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											onClick: () => stepFontScale(1),
+											disabled: fontScale === FONT_SCALES[FONT_SCALES.length - 1],
+											title: "放大字号",
+											"aria-label": "放大字号",
+											style: fontBtn(fontScale === FONT_SCALES[FONT_SCALES.length - 1]),
+											children: "+"
+										})
 									]
-								}, r.id))]
-							}), refreshBtn()]
+								}),
+								refreshBtn()
+							]
 						})]
 					}),
 					round !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -4003,21 +4272,21 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								readOnly
 							})
 						] }),
-						mapSub === "mapdoc" && selEffort !== void 0 && selEffort.mapRaw !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							style: {
-								flex: 1,
-								overflowY: "auto",
-								padding: 16
-							},
-							dangerouslySetInnerHTML: { __html: md(selEffort.mapRaw) }
+						mapSub === "mapdoc" && selEffort !== void 0 && selEffort.mapRaw !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DocCard, {
+							icon: "🗺️",
+							title: "map.md",
+							path: `${selEffort.dir}/map.md`,
+							scope,
+							ctx,
+							body: selEffort.mapRaw
 						}),
-						mapSub === "specdoc" && selEffort !== void 0 && !!selEffort.specRaw && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							style: {
-								flex: 1,
-								overflowY: "auto",
-								padding: 16
-							},
-							dangerouslySetInnerHTML: { __html: md(selEffort.specRaw) }
+						mapSub === "specdoc" && selEffort !== void 0 && !!selEffort.specRaw && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DocCard, {
+							icon: "📄",
+							title: "spec.md",
+							path: `${selEffort.dir}/spec.md`,
+							scope,
+							ctx,
+							body: selEffort.specRaw
 						}),
 						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
 							approvals: mapApprovals,
@@ -4168,26 +4437,26 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						scope,
 						ctx
 					}),
-					top === "context" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					top === "context" && (contextRaw !== null && contextRaw !== "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DocCard, {
+						icon: "📐",
+						title: "CONTEXT.md",
+						path: cwd === void 0 ? "CONTEXT.md" : `${cwd}/CONTEXT.md`,
+						scope,
+						ctx,
+						body: contextRaw
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
 							flex: 1,
-							overflowY: "auto",
-							padding: 16
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							color: TEXT_FAINT,
+							fontSize: 12,
+							padding: 24,
+							textAlign: "center"
 						},
-						children: contextRaw === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							style: {
-								color: TEXT_FAINT,
-								fontSize: 12
-							},
-							children: "读取 CONTEXT.md…"
-						}) : contextRaw === "" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							style: {
-								color: TEXT_FAINT,
-								fontSize: 12
-							},
-							children: "本仓仓根暂无 CONTEXT.md（领域词汇表/概念正本落点；建立后本页自动呈现）。"
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { dangerouslySetInnerHTML: { __html: md(contextRaw) } })
-					}),
+						children: contextRaw === null ? "读取 CONTEXT.md…" : "本仓仓根暂无 CONTEXT.md（领域词汇表/概念正本落点；建立后本页自动呈现）。"
+					})),
 					top === "guide" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideView, { scope }),
 					top === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
 						ledgers: globalLedgers,
@@ -4330,6 +4599,31 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "skills/plan-protocol/SKILL.md" }),
 							"，本页是它的可视化速览。"
 						] }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(P, { children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+								style: { color: TEXT },
+								children: "台账 / 缺陷 / 测例三类都有「图内」与「全局」两个落点"
+							}),
+							"（2026-10-02 拍板口径）： 有图归属的落该图的 ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".scratch/<effort>/qa|ledger/" }),
+							"，随图整轮归档； 无图归属的（SOP 回测、整页回测这类挂不到具体工单的）落 ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".plan/qa|ledger/" }),
+							"，常驻不随轮走。 拿不准归哪边时",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+								style: { color: TEXT },
+								children: "留全局"
+							}),
+							"（宁少拆不错拆）。",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".plan/approval/" }),
+							" 的全局审批档则不同——它",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+								style: { color: TEXT },
+								children: "搭 effort 归档的车"
+							}),
+							"： 被标了 ",
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "archived:" }),
+							" 的随某一轮一并搬走，没标的一直留在这里等。"
+						] }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(H, { children: "主流程：先决策，再落地" }),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(P, { children: [
 							"「",
@@ -4410,8 +4704,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									tone: "ok",
 									children: [
 										"勾验收项、置 ",
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "status" }),
-										"、补落地注"
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "Status" }),
+										" 行、补落地注"
 									]
 								})
 							]
@@ -4536,7 +4830,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								"\xA0\xA0\xA0\xA001-<slug>.md \xA0",
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: { color: TEXT_FAINT },
-									children: "← frontmatter: type / blocked_by / status"
+									children: "← frontmatter: type；正文: **Status:** / **Blocked by:**"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
 								"\xA0\xA0\xA0\xA002-<slug>.md",
@@ -4545,6 +4839,30 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: { color: TEXT_FAINT },
 									children: "← 图内审批档（待拍板-*.md，grill / wayfinder 生成）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+								"\xA0\xA0qa/ \xA0",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: { color: TEXT_FAINT },
+									children: "← 图内测例（cases.md）＋ 缺陷（DEF-*）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+								"\xA0\xA0ledger/ \xA0",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: { color: TEXT_FAINT },
+									children: "← 图内台账（挂账-NN-*），随图归档"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+								"\xA0\xA0qa/ \xA0",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: { color: TEXT_FAINT },
+									children: "← 图内测例（cases.md）＋ 缺陷（DEF-*）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+								"\xA0\xA0ledger/ \xA0",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									style: { color: TEXT_FAINT },
+									children: "← 图内台账（挂账-NN-*），随图归档"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
 								".plan/ \xA0",
@@ -4589,16 +4907,23 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											style: { color: TEXT },
 											children: "等被做"
 										}),
-										"的活（",
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "status: open/done" }),
+										"的活（正文 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "**Status:** open/claimed/resolved" }),
 										"）； 待拍板是",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
 											style: { color: TEXT },
 											children: "等你做决定"
 										}),
-										"的文档（",
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "status: pending" }),
-										"）。 拍板结论若要干活，就该当场生成票——两者不是同一个东西，但会接力。"
+										"的文档（正文 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "**Status:** pending" }),
+										"）。 两者状态都写",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+											style: { color: TEXT },
+											children: "正文行"
+										}),
+										"，不再写 frontmatter（2026-10-02 起；frontmatter 只留 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "type" }),
+										" 等事实字段）。 拍板结论若要干活，就该当场生成票——两者不是同一个东西，但会接力。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -4639,7 +4964,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
 										"结构漂移先用只读脚本查：",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan" }),
-										"（同票双档、缺 map.md、缺状态头/非法 status、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单；仓里有机器可读词表时加 ",
+										"（同票双档、缺 map.md、文档头违规、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单；仓里有机器可读词表时加 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "--terms 词表" }),
 										"，检查[7] 再断言全仓术语无标记残留）； 再跑 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
@@ -4658,7 +4983,41 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-archive" }),
 										"（手动触发）迁到 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".archive/" }),
-										"， 并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。 右上角「轮次」选择器可切进某一轮的快照（",
+										"， 并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+										"归档时",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+											style: { color: TEXT },
+											children: "全局 qa/ 与 ledger/ 不搬"
+										}),
+										"（常驻），但",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", {
+											style: { color: TEXT },
+											children: [
+												"已标 ",
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "archived:" }),
+												" 的全局审批档一并搭车搬走"
+											]
+										}),
+										"（2026-10-02 拍板）；",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
+										" 收尾会先核一遍归档前置判据并报告。 归档时",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
+											style: { color: TEXT },
+											children: "全局 qa/ 与 ledger/ 不搬"
+										}),
+										"（常驻）， 但",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", {
+											style: { color: TEXT },
+											children: [
+												"已标 ",
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "archived:" }),
+												" 的全局审批档一并搭车搬走"
+											]
+										}),
+										"（2026-10-02 拍板）。",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
+										" 收尾会先核一遍归档前置判据并报告，不必等归档时才发现缺件。 右上角「轮次」选择器可切进某一轮的快照（",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".archive/rounds/<round-id>/" }),
 										"）， 按轮只读查看当时的路线 / 工单 / 拍板。"
 									]
@@ -4671,9 +5030,18 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											children: "历史遗留的 impl/ 、impl-fe/ 目录？"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
-										"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页； 收尾时会清理并入 ",
+										"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页； 收尾时并入 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "issues/" }),
+										"。",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", {
+											style: { color: TEXT },
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "tickets/" }), " 同样是非法目录名"]
+										}),
+										"—— 票只认 ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "issues/" }),
+										"（存量 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "tickets/" }),
-										"。"
+										" 待迁移）。"
 									]
 								})
 							]
@@ -6255,6 +6623,72 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			for (const e of [...treeEdges, ...crossEdges]) if (e.from === key && e.to === active || e.from === active && e.to === key) return true;
 			return false;
 		}
+		function DocCard({ icon, title, path, scope, ctx, body }) {
+			const open = () => openFileInSidebar(ctx, scope, path, path);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					minHeight: 0,
+					overflowY: "auto",
+					padding: 12
+				},
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: MD_CSS }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					style: {
+						border: `1px solid ${BORDER}`,
+						borderRadius: 10,
+						background: CARD,
+						overflow: "hidden"
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							padding: "10px 14px",
+							borderBottom: `1px solid ${BORDER}`,
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							background: HEADER_BG
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							style: {
+								fontSize: 13,
+								fontWeight: 700,
+								color: TEXT
+							},
+							children: [
+								icon,
+								" ",
+								title
+							]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							onClick: open,
+							title: `点击在右栏打开：${path}`,
+							style: {
+								fontSize: 10.5,
+								fontFamily: "ui-monospace,Menlo,monospace",
+								color: TEXT_FAINT,
+								background: "transparent",
+								border: "none",
+								padding: 0,
+								cursor: "pointer",
+								textAlign: "left",
+								overflow: "hidden",
+								textOverflow: "ellipsis",
+								whiteSpace: "nowrap"
+							},
+							children: path
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						style: {
+							padding: "10px 14px 14px",
+							fontSize: 13,
+							color: TEXT_DIM
+						},
+						dangerouslySetInnerHTML: { __html: md(body) }
+					})]
+				})]
+			});
+		}
 		function CasesView({ cases, scope, ctx, readOnly }) {
 			if (cases.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
@@ -6278,52 +6712,62 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					})
 				]
 			});
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				style: {
 					flex: 1,
-					overflowY: "auto",
-					padding: 12,
+					minHeight: 0,
+					overflow: "hidden",
 					display: "flex",
-					flexDirection: "column",
-					gap: 12
+					flexDirection: "column"
 				},
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: MD_CSS }), cases.map((c) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					style: {
-						border: `1px solid ${BORDER}`,
-						borderRadius: 10,
-						background: CARD,
-						overflow: "hidden"
+						flex: 1,
+						minHeight: 0,
+						overflowY: "auto",
+						padding: 12,
+						display: "flex",
+						flexDirection: "column",
+						gap: 12
 					},
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("style", { children: MD_CSS }), cases.map((c) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
-							padding: "10px 14px",
-							borderBottom: `1px solid ${BORDER}`,
-							display: "flex",
-							alignItems: "center",
-							gap: 8,
-							background: HEADER_BG
+							border: `1px solid ${BORDER}`,
+							borderRadius: 10,
+							background: CARD,
+							overflow: "hidden"
 						},
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: {
-								fontSize: 13,
-								fontWeight: 700,
-								color: TEXT
+								padding: "10px 14px",
+								borderBottom: `1px solid ${BORDER}`,
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								background: HEADER_BG
 							},
-							children: ["🧪 ", c.title]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
-							ticket: c,
-							scope,
-							ctx
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								style: {
+									fontSize: 13,
+									fontWeight: 700,
+									color: TEXT
+								},
+								children: ["🧪 ", c.title]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilePath, {
+								ticket: c,
+								scope,
+								ctx
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								padding: "10px 14px 14px",
+								fontSize: 13,
+								color: TEXT_DIM
+							},
+							dangerouslySetInnerHTML: { __html: md(c.body) }
 						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						style: {
-							padding: "10px 14px 14px",
-							fontSize: 13,
-							color: TEXT_DIM
-						},
-						dangerouslySetInnerHTML: { __html: md(c.body) }
-					})]
-				}, `${c.effort}/${c.file}`))]
+					}, `${c.effort}/${c.file}`))]
+				})
 			});
 		}
 		const ADR_STATUS_META = {

@@ -25,7 +25,10 @@ interface ParsedTicket {
   id: string; file: string; title: string; type: string | undefined
   blockedBy: string[]; done: boolean; outOfScope: boolean; claimedBy: string | undefined
   assets: string[]           // frontmatter `assets: [path]` — 推演产物链接（三视图归组，票 21）
-  status: string | undefined  // frontmatter `status` — the portable state field
+  // `status` / `blockedByRaw` come from the **body** since 2026-10-02 (plan-protocol
+  // Q10=乙: 状态写正文行). Frontmatter still carries `type`; a legacy frontmatter
+  // `status:`/`blocked_by:` is still read as a fallback so pre-migration docs render.
+  status: string | undefined  // body `**Status:**` (fallback: frontmatter `status`)
   date: string | undefined    // frontmatter `date` — used for "how long has this been pending"
   origin: string | undefined  // frontmatter `origin` — why an approval doc exists
   session: string | undefined       // frontmatter `session` — the session bound to this ticket (B1)
@@ -54,48 +57,134 @@ function parseFrontmatter(raw: string): { fm: Record<string, string>; body: stri
   return { fm, body }
 }
 
+/** Read a `**Label:** value` line from the document body (2026-10-02 carrier move).
+ *  Fence-aware: a ticket quoting the format must not thereby declare a status.
+ *  Returns undefined when the line is absent, so callers can fall back to
+ *  frontmatter for documents written before the migration. */
+function bodyField(body: string, label: string): string | undefined {
+  const re = new RegExp(`^\\s*(?:[-*>]\\s*)?\\*\\*${label}:\\*\\*\\s*(.+?)\\s*$`, 'im')
+  for (const seg of stripFences(body).split(/\n\s*\n/)) {
+    const m = seg.match(re)
+    if (m?.[1] !== undefined) return m[1].replace(/[*`]/g, '').trim()
+  }
+  return undefined
+}
+
 function deriveTicketStatus(file: string, raw: string): ParsedTicket {
   const { fm, body } = parseFrontmatter(raw)
-  const hasAnswer = /^## Answer\b/m.test(body) && /^## Answer\b[\s\S]*\n\S/m.test(body)
-  const hasRuledOut = /^## Ruled out\b/m.test(body) && /^## Ruled out\b[\s\S]*\n\S/m.test(body)
+  // done/outOfScope 与 displayStatus 同源（都走 hasSection），不再各写一份正则——
+  // 两份判据漂移过：进度条用 t.done、状态徽标用 displayStatus，同一张票能同时
+  // 显示「✅ 收口」和「0%」（2026-10-02 用户实测 qa-skill-merge 复现）。
+  const hasAnswer = hasSection(body, 'Answer')
+  const hasRuledOut = hasSection(body, 'Ruled out')
   const titleMatch = raw.match(/^#\s+(.+)$/m)
   return {
     id: ticketId(file),
     file, title: titleMatch?.[1]?.replace(/`[^`]*`/g, '')?.trim() ?? file,
     type: fm.type,
-    blockedBy: parseBlockedBy(fm.blocked_by),
+    blockedBy: parseBlockedBy(bodyField(body, 'Blocked by') ?? fm.blocked_by),
     assets: parseAssetRefs(fm.assets),
     done: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
-    status: fm.status, date: fm.date, origin: fm.origin,
+    status: bodyField(body, 'Status') ?? fm.status, date: fm.date, origin: fm.origin,
     session: fm.session, originSession: fm['origin_session'], body,
     qaCases: fm.qa_cases === 'true', qaTested: fm.qa_tested === 'true', qaAccepted: fm.qa_accepted === 'true',
   }
 }
 
-// Status vocabulary shared by both conventions in the wild: wayfinder's
-// body-section markers (`## Answer` / `## Ruled out`) and a plain frontmatter
-// `status` field, which is what non-wayfinder repos write. Both are honoured;
-// the section markers win when present, since they carry more detail.
-const DONE_STATUS = new Set(['done', 'closed', 'complete', 'completed', 'shipped'])
-const OUT_STATUS = new Set(['abandoned', 'rejected', 'wontfix', "won't fix", 'cancelled', 'canceled', 'superseded'])
-const CLAIMED_STATUS = new Set(['doing', 'in_progress', 'in-progress', 'wip', 'claimed', 'in review', 'review'])
+// ─── 票态推导（唯一真相源 = plan-protocol §三「票面 status 词表」）──────────────
+//
+// 协议只定义**一种**票态载体（2026-10-02 用户拍板：去掉 frontmatter 兼容识别，
+// 统一按标准协议）：status **不入 frontmatter**，由正文收束节推导——
+//   `## Answer` 带正文 = done；`## Ruled out` 带正文 = out_of_scope；
+//   claimed_by 在位 = claimed；其余 = open。
+// 格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`（该文件明写「There is no
+// status: field」——字段会是正文的第二次抄写，两处必然各自过期、互相说谎）。
+//
+// 本次删除的旧兼容层：DONE_STATUS/OUT_STATUS/CLAIMED_STATUS 三张宽容词表
+// （done/closed/complete/shipped/abandoned/wontfix/doing/wip…）。它们是为
+// 「非 wayfinder 仓写 frontmatter status」那一代数据加的别名映射，与协议冲突：
+// 同一张票在词表里可以是 done、在正文里却没有任何收束节，读出来的是两种事实。
+//
+// ⚠️ 注意 `statusWord` 保留——它服务于 **approval 的独立词表**（pending/closed/
+// superseded-by/active/abandoned），那套词表协议明确规定「不得与票态统一」（四套
+// 状态机互不套用）。删掉的只是「票」这一坐标系里的别名映射。
 
-// A status string may arrive as `done`, or with a trailing note
-// (`done # 2026-09-12 交付`), or `superseded-by:<path>`. Compare on the head word.
+// 剥掉围栏代码块内容（wayfinder 明文：「Every scan for structure — headings,
+// titles, bullets, links — ignores whatever sits inside a fenced code block」）。
+// 一张讨论票格式的票会在正文里**引用** `## Answer` 这一行；不剥围栏就会让那张票
+// 自己把自己判成 done——本仓正是「关于协议的地图」，这是最可能踩的一票。
+// 围栏内每个字符替换成空行，保留行数（对外层无影响，只为让区间计算不串位）。
+function stripFences(body: string): string {
+  const out: string[] = []
+  let fence: string | null = null
+  for (const line of body.split('\n')) {
+    const m = line.match(/^\s*(```+|~~~+)/)
+    if (fence === null) {
+      if (m) { fence = m[1][0] ?? '`'; out.push('') } // 开围栏：连同标记行一起吞掉
+      else out.push(line)
+    } else {
+      if (m && m[1][0] === fence) fence = null // 闭围栏
+      out.push('')
+    }
+  }
+  return out.join('\n')
+}
+
+// 收束节判据（wayfinder 格式契约正本逐条对应）：
+//   ① 节标题须存在且带**正文**——「It is the prose, not the heading, that closes
+//      the ticket.」；只有 `## Answer` 一行 = 没结论，票不算收口。
+//   ② 结构扫描忽略围栏内容——「A ticket that quotes the ticket format in its
+//      Question contains the line `## Answer`, and must not thereby resolve itself.」
+//   ③ 单向豁免——「a closing section whose entire body is a code fence is still
+//      written, and still closes the ticket」。
+// 三者合一：在**剥围栏后**的正文上找节与正文；找不到时回头看是不是「整节即围栏」
+// （③ 的合法收口），用原文该节区间里有没有围栏标记判定。
+function hasSection(body: string, name: string): boolean {
+  const heading = `## ${name}`
+  const re = new RegExp(`^${heading}\\b`, 'm')
+  const segOf = (text: string): string | null => {
+    const m = re.exec(text)
+    if (!m || m.index === undefined) return null
+    const after = text.slice(m.index + m[0].length)
+    const stop = after.search(/^## /m)
+    return stop >= 0 ? after.slice(0, stop) : after
+  }
+  // ② 主判据：剥围栏后，节内仍有非空行。
+  const stripped = stripFences(body)
+  const seg = segOf(stripped)
+  if (seg !== null && /\n\S/.test(seg)) return true
+  // ③ 豁免：原文该节内整块是围栏 → 仍算写过。仅在「剥后找不到该节」时适用，
+  //    以免把「引用格式的票」误判收口（那类票的 `## Answer` 本身就在围栏里）。
+  const rawSeg = segOf(body)
+  if (seg !== null && rawSeg !== null && /^\s*\n\s*(```|~~~)/.test(rawSeg)) return true
+  return false
+}
+
+// 取 frontmatter `status:` 的首词。**只服务非票词表**——approval（pending/closed/
+// superseded-by/active/abandoned）与 ADR 状态，它们的词表由各自协议定义，和票态
+// 分属不同坐标系、不得互相套用。票态一律走上面的 displayStatus。
+// 一个 status 串可能带附注（`done # 2026-09-12 交付`）或 `superseded-by:<path>`，
+// 故只比首词。
 function statusWord(t: ParsedTicket): string {
+  // `t.status` is already body-first (fallback frontmatter) — see deriveTicketStatus.
   const raw = (t.status ?? '').trim().toLowerCase()
   if (raw.startsWith('superseded-by')) return 'superseded'
   return raw.split(/[\s(#:—-]/)[0] ?? ''
 }
 
 function displayStatus(t: ParsedTicket): TicketStatus {
-  if (t.outOfScope) return 'out_of_scope'
-  if (t.done) return 'done'
-  const w = statusWord(t)
-  if (DONE_STATUS.has(w)) return 'done'
-  if (OUT_STATUS.has(w)) return 'out_of_scope'
-  if (t.claimedBy) return 'claimed'
-  if (CLAIMED_STATUS.has(w)) return 'claimed'
+  // Closure is read FIRST, so a `Status:` line (or a stale `claimed_by`) on a
+  // closed ticket is inert litter — it can never hold the frontier. Never let a
+  // ticket's own `**Status:** resolved` outrank an absent closing section: the
+  // closing section IS the act of closing (plan-protocol / TRACKER-MARKDOWN).
+  if (hasSection(t.body, 'Answer')) return 'done'
+  if (hasSection(t.body, 'Ruled out')) return 'out_of_scope'
+  // The body `**Status:**` line is the carrier since 2026-10-02. `resolved` is
+  // only reachable without a closing section when a document says so while
+  // carrying neither — treat that as done, since the writer's intent is explicit.
+  const w = (t.status ?? '').trim().toLowerCase().split(/[\s(#:—-]/)[0]
+  if (w === 'resolved' || w === 'done' || w === 'closed') return 'done'
+  if (w === 'claimed' || t.claimedBy) return 'claimed'
   return 'open'
 }
 
@@ -126,7 +215,13 @@ function normalizeRef(raw: string): string {
 }
 
 function parseBlockedBy(value: string | undefined): string[] {
-  return (value ?? '').replace(/[\[\]]/g, '').split(',').map(normalizeRef).filter(Boolean)
+  // `**Blocked by:** None — can start immediately` is the prose form for "no
+  // blockers" (to-tickets §5). Only that exact leading word counts as empty —
+  // a title fragment like "Nonexistent ticket" must not be swallowed.
+  const v = (value ?? '').trim()
+  // "None" alone, or the full prose form — but never a word merely starting with it.
+  if (/^none\b/i.test(v) && !/^none[a-z]/i.test(v)) return []
+  return v.replace(/[\[\]]/g, '').split(',').map(normalizeRef).filter(Boolean)
 }
 
 // 票面 `assets:` 字段（TRACKER-MARKDOWN:41 可选 `[<repo-relative path>]`）：
@@ -285,6 +380,9 @@ const BORDER = 'rgba(255,255,255,.10)'        // border-l2
 const BORDER_LIGHT = 'rgba(255,255,255,.06)'  // border-l1
 const ACCENT = '#4176e6'      // deepseek-500 — brand
 const ACCENT_SOFT = '#609bfa' // blue-400
+// 「锁死/够不到」标识色（2026-10-02 用户需求①：深黄色）。刻意区别于警示用的
+// 橙黄 #f7ad31（在途/待拍板）——深黄读作「此路不通」，橙黄读作「注意」。
+const LOCKED = '#b8860b'      // darkgoldenrod — 无法达到的上限
 const CHIP_BG = 'rgba(255,255,255,.07)'
 
 // Scoped styles for the rendered body. Kept here (not in a stylesheet) so the
@@ -302,9 +400,16 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 .pvm-pre{margin:.7em 0;padding:.8em 1em;background:#141416;border:1px solid ${BORDER_LIGHT};border-radius:8px;overflow:auto}
 .pvm-pre code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:${TEXT_DIM};white-space:pre}
 .pvm-tw{margin:.7em 0;overflow:auto;border:1px solid ${BORDER_LIGHT};border-radius:8px}
-.pvm-table{border-collapse:collapse;width:100%;font-size:12.5px}
-.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap}
-.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top}
+/* 表格宽度（2026-10-02 用户反馈：最小格宽 + 横向滚动）：
+   width:max-content 让表按内容定宽、不再被压缩；min-width:100% 让窄表仍铺满容器
+   （缺它则短表缩成一小坨，右栏留白突兀）。两者缺一不可——只有 min-width 到格子
+   上时表格依旧会压缩以适配容器，永远不溢出、也就永远不出现横向滚动。
+   th/td 的 min-width 是「最小格宽」本体：列窄到这个下限即止，不再压缩到只剩表头
+   文字宽（旧样式下短列被压到 45px，读作挤压变形）。td 的 max-width + break-word
+   给超长单元格封顶并允许折行，避免单列无限伸长把表推成一条长带。 */
+.pvm-table{border-collapse:collapse;width:max-content;min-width:100%;font-size:12.5px}
+.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap;min-width:72px}
+.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top;min-width:72px;max-width:320px;word-break:break-word}
 .pvm-table tr:last-child td{border-bottom:none}
 .pvm-a{color:${ACCENT_SOFT};text-decoration:none}
 .pvm-a:hover{text-decoration:underline}
@@ -518,6 +623,110 @@ function mapKind(dir: string, tickets: ParsedTicket[]): MapKind | undefined {
 const MAP_KIND_META: Record<MapKind, { label: string; icon: string }> = {
   speculation: { label: '推演图', icon: '🗺️' },
   impl: { label: '实施图', icon: '🛠️' },
+}
+
+// ─── 图进度（2026-10-02 用户拍板，两条口径变更）─────────────────────────────
+//
+// ① **四类单据全计**：分母不再只数工单（`ticket`），`approval` / `ledger` /
+//    `qa-defect` 一并计入。它们各自答不同的问题（见 plan-protocol「四套状态机
+//    互不套用」），故**完成判据按各自坐标系**取，不共用票态词表：
+//      - ticket      → displayStatus(t) === 'done'（## Answer 带正文）
+//      - approval    → 已结案：不是 pending（closed / superseded-by / abandoned）
+//      - ledger      → 已销账：正文 `- 状态:` 为「已销」或「已转票」
+//      - qa-defect   → 已关闭：正文 `- 状态:` 为「已关闭」
+//    这样「图里还压着一堆待拍板/挂账/缺陷」时进度条不再显示成 100%。
+//
+// ② **实施图缺测例封顶 80%**：实施图（有 `type: task`）若无 `qa/cases.md`，
+//    完成度上限压到 80%——测例是实施图的验收前提，没测例的「全做完」不算真收口。
+//    取**封顶**而非加权：语义直观（「没测例就别想满分」），且票数为 0 的空图不会
+//    因分母加虚拟项而算出诡异小数。
+
+/** 四类单据各自的「已完成」判据（跨坐标系不可共用词表）。 */
+function isSettled(t: ParsedTicket, kind: TicketKind): boolean {
+  if (kind === 'ticket') return displayStatus(t) === 'done'
+  // approval 的终态不等于 done（协议：closed 不可改写为 done，会抹掉 superseded /
+  // abandoned 的区分）。故此处判的是「不再 pending」＝已结案。
+  if (kind === 'approval') return !isPending(t)
+  if (kind === 'ledger') {
+    const e = parseLedgerEntries(t.body)[0]
+    // `state` 已被 parseLedgerEntries 归一为核心词，直接比对词表。
+    return e !== undefined && (e.state === '已销' || e.state === '已转票')
+  }
+  if (kind === 'defect') {
+    const single = parseDefectFile(t)
+    if (single !== undefined) return DEFECT_CLOSED.has(defectStateWord(single.state))
+    const entries = parseDefectEntries(t.body)
+    return entries.length > 0 && entries.every(d => DEFECT_CLOSED.has(defectStateWord(d.state)))
+  }
+  return false
+}
+
+/**
+ * spec.md 是否已归档（协议「取代登记」两条凭据之一，2026-10-02 用户需求②）。
+ * 正本 plan-protocol「spec 生命周期与归宿行」：effort 票尽 ⇒ `spec.md` 必带
+ * `superseded-by:` 注记或已随轮归档。注记位置协议限定两种——frontmatter
+ * `status: superseded-by:<归宿>`（首选），或**头部 10 行内**引用块。
+ * 「埋正文深处不算」（协议明写，doc-authority 复盘实证 23% 可检索率是旧病），
+ * 故此处只认这两个位置，不做全文正则——否则一份「提及」别人被取代的 spec
+ * 会把自己判成已归档。
+ */
+export function isSpecArchived(specRaw: string | undefined): boolean {
+  if (!specRaw) return false
+  const fm = specRaw.match(/^---\n([\s\S]*?)\n---/)
+  if (fm && /^\s*status:\s*superseded-by:/m.test(fm[1] ?? '')) return true
+  const head = specRaw.split('\n').slice(0, 10).join('\n')
+  return /superseded-by/i.test(head)
+}
+
+/**
+ * 一张图的完成度。返回 `pct` 与 `locked` 两个读数。
+ *
+ * 口径（2026-10-02 用户拍板）：
+ *  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
+ *  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
+ *    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
+ *    变为 100%。推演图无 spec.md，不加项。
+ *  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**，并以 `locked` 标出「无法达到」。
+ *
+ * `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（当前只有缺测例一种），
+ * 供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的正常一项，
+ * 属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
+ *
+ * @param own     该图自有单据 + 根层松散件（与卡片其它计数同口径）
+ * @param dir     图目录（判断 qa/cases.md 与 spec.md 归属）
+ * @param cases   全部测例文档（含 effort 归属字段）
+ * @param kind    图型
+ * @param specRaw 该图 spec.md 正文；无 spec 传 undefined
+ */
+export function effortProgress(
+  own: ParsedTicket[], dir: string, cases: ParsedTicket[], kind: MapKind | undefined, specRaw: string | undefined,
+): { pct: number; locked: boolean; hasCases: boolean; specCounted: boolean; specArchived: boolean } {
+  const countable = own.filter(t => {
+    const k = ticketKind(t)
+    // note（说明/杂项）不是单据；cases 单独作封顶条件、不进分母。
+    if (k === 'note' || k === 'cases') return false
+    // 出局票从分母剔除（与旧口径一致）：整票判出局 = 这件事不做了，不是没做完。
+    if (k === 'ticket' && t.outOfScope) return false
+    return true
+  })
+  const settled = countable.filter(t => isSettled(t, ticketKind(t))).length
+  // 实施图的 spec 占一个名额（推演图无 spec.md，不加）。
+  const specCounted = kind === 'impl' && !!specRaw
+  const specArchived = isSpecArchived(specRaw)
+  const denom = countable.length + (specCounted ? 1 : 0)
+  const numer = settled + (specCounted && specArchived ? 1 : 0)
+  let pct = denom > 0 ? Math.round((numer / denom) * 100) : 0
+  const hasCases = cases.some(c => c.effort === dir)
+  const locked = kind === 'impl' && !hasCases
+  if (locked) pct = Math.min(pct, 80)
+  return { pct, locked, hasCases, specCounted, specArchived }
+}
+
+/** 兼容旧签名：只要百分比读数时用（测试与少量调用点）。 */
+export function effortPct(
+  own: ParsedTicket[], dir: string, cases: ParsedTicket[], kind: MapKind | undefined, specRaw?: string,
+): number {
+  return effortProgress(own, dir, cases, kind, specRaw).pct
 }
 
 /** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -1561,19 +1770,48 @@ function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffort
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {g.items.map(({ e }) => {
                 const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
-                const work = own.filter(t => ticketKind(t) === 'ticket' && !t.outOfScope)
-                const done = work.filter(t => t.done).length
-                const pct = work.length > 0 ? Math.round((done / work.length) * 100) : 0
+                const kind = mapKind(e.dir, tickets)
+                const prog = effortProgress(own, e.dir, cases, kind, e.specRaw)
+                const { pct, locked } = prog
+                // 「在途」与新口径同源：四类单据中尚未结案的项数（不与 pct 各算一套，
+                // 否则又会出现「100% · 3 项在途」这种自相矛盾的卡片）。
+                const unsettled = own.filter(t => {
+                  const k = ticketKind(t)
+                  if (k === 'note' || k === 'cases') return false
+                  if (k === 'ticket' && t.outOfScope) return false
+                  return !isSettled(t, k)
+                }).length
                 const { stage, color } = effortStage(own)
                 return (
                   <div key={e.dir} style={{ flex: '1 1 220px', minWidth: 220, padding: '10px 12px', borderRadius: 10, background: CARD, border: `1px solid ${BORDER}`, borderTop: `3px solid ${color}` }}>
                     <div style={{ fontSize: 11, color: TEXT_FAINT, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.dir.split('/').pop()}</div>
                     <div style={{ fontSize: 15, fontWeight: 700, color, margin: '3px 0 6px' }}>{stage}</div>
-                    <div style={{ height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+                    {/* 进度条 + 右侧读数（2026-10-02 用户需求①）：缺口锁死时在进度
+                        右边显示 🔒 与「缺测例 20%」——20% 是**够不到的那一段**，
+                        深黄色（#b8860b）区别于「在途」的橙黄，且带锁形标识。
+                        放在条右侧而非下方文案里，是为了让「上限被锁」在扫视进度
+                        条时立刻可见，不用去读小字。 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ flex: 1, height: 5, borderRadius: 3, background: CHIP_BG, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: locked ? LOCKED : '#4ed17e', minWidth: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
+                      {locked && (
+                        <span
+                          title="缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%"
+                          style={{ fontSize: 10.5, fontWeight: 700, color: LOCKED, background: `${LOCKED}1f`, border: `1px solid ${LOCKED}66`, borderRadius: 4, padding: '1px 4px', whiteSpace: 'nowrap', cursor: 'help' }}
+                        >🔒 缺测例 20%</span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>
-                      {pct}% · {work.length - done} 张在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板
+                      {unsettled} 项在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板
+                      {/* spec 占一个名额（实施图）：未归档时明示「还差这一项」，
+                          否则用户看到 n/(n+1) 的百分比会以为票没做完。 */}
+                      {prog.specCounted && !prog.specArchived && (
+                        <span title="spec.md 是 effort 的一次性实施文档：随 effort 关闭作废归档（带 superseded-by: 注记或随轮归档）。未归档前本图到不了 100%。" style={{ color: '#f7ad31', marginLeft: 6 }}>
+                          📄 spec 未归档
+                        </span>
+                      )}
                       {(() => {
                         const dn = defects.filter(t => t.effort === e.dir).length
                         if (dn === 0) return null
@@ -1664,6 +1902,43 @@ type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'adr' | 'co
 //（spec-only）第 2 子页 = spec.md 正文——按选中 effort 的文件有无互斥显示。
 	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'research' | 'prototype' | 'grilling'
 
+/**
+ * 字号缩放（2026-10-02 用户需求：右上角可调字号）。
+ *
+ * 步进式档位而非连续滑块：档位可枚举、可记忆、点击即到位，读的人知道自己在哪一档。
+ * 范围 0.8–1.4 兼顾「小屏塞得下」与「字太小看不清」，超出范围两端都没有实际用途。
+ */
+const FONT_SCALES = [0.8, 0.9, 1, 1.1, 1.25, 1.4] as const
+const FONT_SCALE_KEY = 'dsh-plan-view:font-scale'
+
+/** 读上次选择；无记录/损坏/越界一律回 1（默认），绝不让坏值把页面缩没了。 */
+function loadFontScale(): number {
+  try {
+    const raw = globalThis.localStorage?.getItem(FONT_SCALE_KEY)
+    if (raw === null || raw === undefined) return 1
+    const n = Number(raw)
+    return FONT_SCALES.includes(n as typeof FONT_SCALES[number]) ? n : 1
+  } catch { return 1 } // localStorage 可能被禁用（隐私模式/沙箱），读失败不算错
+}
+
+function saveFontScale(n: number): void {
+  try { globalThis.localStorage?.setItem(FONT_SCALE_KEY, String(n)) } catch { /* 存不下就只在本次会话生效 */ }
+}
+
+/**
+ * 初始/换轮后应选中的图下标。`-1` = 「全部地图」聚合态。
+ *
+ * 单图仓（efforts.length === 1）直接选中第 0 张：此时「全部地图」与「这张图」的
+ * 正文完全等价，但 mapdoc/specdoc 两个子页只在选中态才插入（`selEffort` 判空），
+ * 于是单图用户永远要多点一次芯片才能看到「🗺️ map / 📄 spec」（2026-10-02 用户反馈）。
+ *
+ * 多图仓（≥2）保持 `-1`：聚合视角是有信息量的默认；「优先选第一张」会静默藏起
+ * 其余图的票，属于无依据的推断。零图仓同样是 `-1`（无芯片可选）。
+ */
+export function defaultEffortIdx(effortCount: number): number {
+  return effortCount === 1 ? 0 : -1
+}
+
 export function PlanView(props: { ctx: any; sessionId?: string }) {
   // cwd 不由外层预解析（sessionCwd 链随票 19 退役）：首帧 snapshot 的响应自带
   // 服务端解析好的 cwd。scope 是只读快照对象，每渲染重建（字段少，无谓开销）。
@@ -1713,9 +1988,26 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   useEffect(() => { loadSessions() }, [loadSessions])
   // 换轮后旧 effort 下标可能越界，回到「全部地图」。
   useEffect(() => { setEffortIdx(-1) }, [round])
+  // 单图自动进入（2026-10-02 用户反馈）：全仓只有一张图时，「全部地图」与「这张图」
+  // 的正文完全等价，但 mapdoc/specdoc 两个子页只在选中态才插入（见下方 selEffort
+  // 判空）——于是单图仓看到的永远缺「🗺️ map / 📄 spec」两页，必须手动点一次芯片
+  // 才出现。单图没有筛选余地，默认选中第 0 张，省掉这次点击。
+  // 与上面「换轮重置」合为一个 effect、同一批 setState，避免两处写同一状态而依赖
+  // effect 声明顺序取胜（React 按声明顺序执行，reorder 即静默失效）。
+  // 依赖不含 effortIdx：故用户手动点「全部地图」后不会被回弹覆盖。
+  const effortCount = data?.efforts.length ?? 0
+  useEffect(() => { setEffortIdx(defaultEffortIdx(effortCount)) }, [effortCount, round])
   // CONTEXT.md 正文随 snapshot 一次带回（2026-09-30 拍板：全局第一行末位 tab；
   // 缺档/非文本统一空态，tab 常驻不隐藏）。
   const [contextRaw, setContextRaw] = useState<string | null>(null) // null=未定（加载中），''=缺失
+  // 字号缩放（2026-10-02 用户需求：右上角可调字号）。
+  // 用 CSS `zoom` 作用于视图根：本视图有 190+ 处硬编码 fontSize，逐个改成 calc
+  // 派生既invasive又易漏；zoom 一处生效、等比缩放整个子树（字号/行高/间距/卡头
+  // 一起变），实测布局与滚动均不受损（.docCard 的 clientHeight/scrollHeight 关系
+  // 保持不变、canScrollY 仍为 true）。代价是它也缩放了间距——这是「整页等比」
+  // 的预期语义，与浏览器 Ctrl+加号一致。
+  // 初值只读一次 localStorage（惰性初始化）：每渲染读会与用户拖动打架。
+  const [fontScale, setFontScale] = useState<number>(() => loadFontScale())
   // Post-dispatch refresh: the plan files may have a new `session:` binding and
   // the session map may have a new entry — both reread together.
   const onChanged = useCallback(() => { void load(); loadSessions() }, [load, loadSessions])
@@ -1788,15 +2080,18 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // Both early returns keep the refresh control: "no .plan found" is exactly the
   // state where re-reading is the thing you want, and a modal dead-end with no
   // way out is worse than the error itself.
-  const refreshBtn = (label = '⟳ 刷新') => (
+  // 主头部用纯符号（2026-10-02 用户需求：刷新只用刷新符号）；错误页那处保留文字，
+  // 因为「重新读取」是那里唯一的出路，纯符号在空白页里读不出是什么。
+  const refreshBtn = (label = '⟳') => (
     <button
       type="button"
       onClick={() => void load()}
       disabled={loading}
       title="重新读取治理目录 .scratch/.plan（别处改了文件时用）"
+      aria-label="刷新"
       style={{ padding: '5px 10px', border: `1px solid ${BORDER}`, borderRadius: 6, background: 'transparent', color: loading ? '#555' : '#aaa', cursor: loading ? 'default' : 'pointer', fontSize: 12 }}
     >
-      {loading ? '读取中…' : label}
+      {loading ? '…' : label}
     </button>
   )
 
@@ -1807,7 +2102,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, background: BG, color: '#888' }}>
         <span>{round === null ? 'No .scratch/.plan found in current directory.' : `轮次 ${round} 读取失败（目录可能已被移动或删除）。`}</span>
-        {refreshBtn('⟳ 重新读取')}
+        {refreshBtn('⟳ 重新读取')} {/* 错误页保留文字：这里是唯一出路，纯符号读不出含义 */}
       </div>
     )
   }
@@ -1817,6 +2112,15 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // 选中 effort（第 2 子页 map/spec 的数据源；「全部地图」态为 undefined）。
   const selEffort = effortIdx >= 0 ? data.efforts[effortIdx] : undefined
   const tabBtn = (active: boolean): React.CSSProperties => ({ padding: '8px 14px', border: 'none', borderRadius: 7, cursor: 'pointer', background: active ? CARD : 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400 })
+  // 字号档位（2026-10-02 用户需求）：dir = +1 放大 / −1 缩小；已在端点则不动。
+  // 到端点不循环——循环会让「一直点」从最大突然跳回最小，是意外而非意图。
+  const stepFontScale = (dir: 1 | -1) => {
+    const i = FONT_SCALES.indexOf(fontScale as typeof FONT_SCALES[number])
+    const next = FONT_SCALES[Math.min(FONT_SCALES.length - 1, Math.max(0, (i < 0 ? 2 : i) + dir))]
+    if (next === undefined || next === fontScale) return
+    setFontScale(next); saveFontScale(next)
+  }
+  const fontBtn = (atEnd: boolean): React.CSSProperties => ({ padding: '2px 6px', border: 'none', borderRadius: 4, background: 'transparent', color: atEnd ? '#555' : TEXT_DIM, cursor: atEnd ? 'default' : 'pointer', fontSize: 11, fontWeight: 700 })
   // 子页签用下划线 tab 语言（导航），与 chips 的 pill 语言（筛选）分层。
   const mapTab = (active: boolean): React.CSSProperties => ({ padding: '8px 14px 9px', border: 'none', borderRadius: 0, cursor: 'pointer', background: 'transparent', color: active ? TEXT : '#888', fontSize: 12, fontWeight: active ? 700 : 400, borderBottom: active ? `2px solid ${ACCENT_SOFT}` : '2px solid transparent' })
   const subBtn = (active: boolean): React.CSSProperties => ({ padding: '6px 14px', border: `1px solid ${active ? BORDER : 'transparent'}`, borderRadius: 7, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11.5, fontWeight: active ? 700 : 400 })
@@ -1862,7 +2166,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // 固定、溢出裁切，滚动责任在本视图。minHeight:0 解除 flex 列方向的内容式
   // 自动最小高度，否则根被正文撑高后被宿主裁掉——全 tab 不可滚动。
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14 }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: BG, color: TEXT, fontFamily: 'sans-serif', fontSize: 14, zoom: fontScale }}>
       <div style={{ display: 'flex', gap: 4, padding: '8px 12px', borderBottom: `1px solid ${BORDER}`, background: HEADER_BG, alignItems: 'center' }}>
         {tabs.map(t => (
           <button key={t.id} type="button" style={tabBtn(top === t.id)} onClick={() => setTop(t.id)}>
@@ -1888,6 +2192,31 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
               ))}
             </select>
           )}
+          {/* 字号（2026-10-02 用户需求）：只有百分比与加减号，不带「字号」和 A 字符
+              ——按钮自带 title/aria-label 说明用途，视觉上不占位。
+              根节点 zoom 让整个子树等比缩放（含本控件自身，故调大后控件也跟着
+              变大——与浏览器缩放同一预期）。到端点后按钮置灰，不做循环。 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '2px 4px', border: `1px solid ${BORDER}`, borderRadius: 6, background: 'transparent' }}>
+            <button
+              type="button"
+              onClick={() => stepFontScale(-1)}
+              disabled={fontScale === FONT_SCALES[0]}
+              title="缩小字号"
+              aria-label="缩小字号"
+              style={fontBtn(fontScale === FONT_SCALES[0])}
+            >−</button>
+            <span title="当前字号（整页等比缩放）" aria-live="polite" style={{ fontSize: 10.5, color: TEXT_DIM, minWidth: 30, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(fontScale * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => stepFontScale(1)}
+              disabled={fontScale === FONT_SCALES[FONT_SCALES.length - 1]}
+              title="放大字号"
+              aria-label="放大字号"
+              style={fontBtn(fontScale === FONT_SCALES[FONT_SCALES.length - 1])}
+            >+</button>
+          </div>
+          {/* 刷新固定在最右（2026-10-02 用户需求）：位置不变找起来不用扫，
+              符号本身也是通用语义，无需文字。 */}
           {refreshBtn()}
         </div>
       </div>
@@ -1954,10 +2283,10 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {/* 第 2 子页正文：map.md（推演图）/ spec.md（spec-only 实施图），与
               票面详情同一 markdown 渲染器。 */}
           {mapSub === 'mapdoc' && selEffort !== undefined && selEffort.mapRaw !== '' && (
-            <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} dangerouslySetInnerHTML={{ __html: md(selEffort.mapRaw) }} />
+            <DocCard icon="🗺️" title="map.md" path={`${selEffort.dir}/map.md`} scope={scope} ctx={ctx} body={selEffort.mapRaw} />
           )}
           {mapSub === 'specdoc' && selEffort !== undefined && !!selEffort.specRaw && (
-            <div style={{ flex: 1, overflowY: 'auto', padding: 16 }} dangerouslySetInnerHTML={{ __html: md(selEffort.specRaw as string) }} />
+            <DocCard icon="📄" title="spec.md" path={`${selEffort.dir}/spec.md`} scope={scope} ctx={ctx} body={selEffort.specRaw as string} />
           )}
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
@@ -1991,13 +2320,18 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
       )}
       {top === 'adr' && <AdrView adrs={adrs} scope={scope} ctx={ctx} />}
       {top === 'context' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
-          {contextRaw === null
-            ? <div style={{ color: TEXT_FAINT, fontSize: 12 }}>读取 CONTEXT.md…</div>
-            : contextRaw === ''
-              ? <div style={{ color: TEXT_FAINT, fontSize: 12 }}>本仓仓根暂无 CONTEXT.md（领域词汇表/概念正本落点；建立后本页自动呈现）。</div>
-              : <div dangerouslySetInnerHTML={{ __html: md(contextRaw) }} />}
-        </div>
+        // 与 spec/map 同壳（2026-10-02 用户反馈：样式还不一致）：CONTEXT 页此前是
+        // 光板 div——虽已注入 MD_CSS（上一轮补的，解决「标题无层级/表格无边框」），
+        // 但仍缺卡片框、卡头、可点开的文件路径，且正文继承 14px 而非文档页的 13px。
+        // 直接复用 DocCard（同为「整篇 markdown 正文」场景），不再写第二套壳。
+        // 空态/加载态仍走原分支：DocCard 要求有正文，且两者都无正文可展示。
+        contextRaw !== null && contextRaw !== ''
+          ? <DocCard icon="📐" title="CONTEXT.md" path={cwd === undefined ? 'CONTEXT.md' : `${cwd}/CONTEXT.md`} scope={scope} ctx={ctx} body={contextRaw} />
+          : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT, fontSize: 12, padding: 24, textAlign: 'center' }}>
+            {contextRaw === null
+              ? '读取 CONTEXT.md…'
+              : '本仓仓根暂无 CONTEXT.md（领域词汇表/概念正本落点；建立后本页自动呈现）。'}
+          </div>
       )}
       {top === 'guide' && <GuideView scope={scope} />}
       {top === 'ledger' && <LedgerView ledgers={globalLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
@@ -2059,6 +2393,14 @@ function GuideView({ scope }: { scope: SessionScope }) {
           审批档与全局缺陷/台账在 <Code>.plan/</Code>。本页说明这些文件怎么产生、谁维护、怎么流转。完整的流程协议
           （每环节的位置与交接契约）记在同仓 <Code>skills/plan-protocol/SKILL.md</Code>，本页是它的可视化速览。
         </P>
+        <P>
+          <strong style={{ color: TEXT }}>台账 / 缺陷 / 测例三类都有「图内」与「全局」两个落点</strong>（2026-10-02 拍板口径）：
+          有图归属的落该图的 <Code>.scratch/&lt;effort&gt;/qa|ledger/</Code>，随图整轮归档；
+          无图归属的（SOP 回测、整页回测这类挂不到具体工单的）落 <Code>.plan/qa|ledger/</Code>，常驻不随轮走。
+          拿不准归哪边时<strong style={{ color: TEXT }}>留全局</strong>（宁少拆不错拆）。
+          <Code>.plan/approval/</Code> 的全局审批档则不同——它<strong style={{ color: TEXT }}>搭 effort 归档的车</strong>：
+          被标了 <Code>archived:</Code> 的随某一轮一并搬走，没标的一直留在这里等。
+        </P>
 
         <H>主流程：先决策，再落地</H>
         <P>「<strong style={{ color: TEXT }}>已知要做</strong>」时走这条链——把需求写成 spec，再拆票实现。</P>
@@ -2084,7 +2426,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
           </Box>
           <Arrow />
           <Box title="⑤ 回写" who="plan-sync（执行时同步）" tone="ok">
-            勾验收项、置 <Code>status</Code>、补落地注
+            勾验收项、置 <Code>Status</Code> 行、补落地注
           </Box>
         </div>
         <P style={{ marginTop: 2 }}>
@@ -2124,9 +2466,13 @@ function GuideView({ scope }: { scope: SessionScope }) {
           .scratch/&lt;effort&gt;/ &nbsp;<span style={{ color: TEXT_FAINT }}>← tracker 类（spec/map/issues 票）</span><br />
           &nbsp;&nbsp;map.md &nbsp;<span style={{ color: TEXT_FAINT }}>← effort 标志：没有它，整个目录不被加载</span><br />
           &nbsp;&nbsp;issues/<br />
-          &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type / blocked_by / status</span><br />
+          &nbsp;&nbsp;&nbsp;&nbsp;01-&lt;slug&gt;.md &nbsp;<span style={{ color: TEXT_FAINT }}>← frontmatter: type；正文: **Status:** / **Blocked by:**</span><br />
           &nbsp;&nbsp;&nbsp;&nbsp;02-&lt;slug&gt;.md<br />
           &nbsp;&nbsp;approval/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内审批档（待拍板-*.md，grill / wayfinder 生成）</span><br />
+          &nbsp;&nbsp;qa/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内测例（cases.md）＋ 缺陷（DEF-*）</span><br />
+          &nbsp;&nbsp;ledger/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内台账（挂账-NN-*），随图归档</span><br />
+          &nbsp;&nbsp;qa/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内测例（cases.md）＋ 缺陷（DEF-*）</span><br />
+          &nbsp;&nbsp;ledger/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 图内台账（挂账-NN-*），随图归档</span><br />
           .plan/ &nbsp;<span style={{ color: TEXT_FAINT }}>← 全局件目录：approval/（全局审批档，2026-09-30 收拢拍板）＋ qa/（无图归属缺陷/测例）＋ ledger/（全局台账）——三件即封闭清单，清单外新子目录由 plan-lint 拦</span>
         </div>
         <P>
@@ -2139,8 +2485,9 @@ function GuideView({ scope }: { scope: SessionScope }) {
         <div style={{ fontSize: 12.5, lineHeight: 1.85, color: TEXT_DIM }}>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>票和待拍板有什么区别？</strong><br />
-            票是<strong style={{ color: TEXT }}>等被做</strong>的活（<Code>status: open/done</Code>）；
-            待拍板是<strong style={{ color: TEXT }}>等你做决定</strong>的文档（<Code>status: pending</Code>）。
+            票是<strong style={{ color: TEXT }}>等被做</strong>的活（正文 <Code>**Status:** open/claimed/resolved</Code>）；
+            待拍板是<strong style={{ color: TEXT }}>等你做决定</strong>的文档（正文 <Code>**Status:** pending</Code>）。
+            两者状态都写<strong style={{ color: TEXT }}>正文行</strong>，不再写 frontmatter（2026-10-02 起；frontmatter 只留 <Code>type</Code> 等事实字段）。
             拍板结论若要干活，就该当场生成票——两者不是同一个东西，但会接力。
           </div>
           <div style={{ margin: '10px 0' }}>
@@ -2155,21 +2502,26 @@ function GuideView({ scope }: { scope: SessionScope }) {
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>看到状态不对怎么办？</strong><br />
             结构漂移先用只读脚本查：<Code>bash ~/.zcode/skills/mp-plan-approve/scripts/plan-lint.sh 仓库根/.scratch 仓库根/.plan</Code>
-            （同票双档、缺 map.md、缺状态头/非法 status、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单；仓里有机器可读词表时加 <Code>--terms 词表</Code>，检查[7] 再断言全仓术语无标记残留）；
+            （同票双档、缺 map.md、文档头违规、合体票文件、effort 票尽未标 superseded-by、.plan 根层白名单；仓里有机器可读词表时加 <Code>--terms 词表</Code>，检查[7] 再断言全仓术语无标记残留）；
             再跑 <Code>plan-sync</Code> 对账票面与实际进度（对照 git 提交判定，先报告差异再改）。
             两者都只报告、不擅自改。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>归档在哪？</strong><br />
             已完成内容由 <Code>plan-archive</Code>（手动触发）迁到 <Code>.archive/</Code>，
-            并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。
+            并 sweep 全仓引用（含归档区自身）、标过时/废弃。归档区的「现行权威」表是引用断链的高发地，每次归档都要维护它。<br/>
+            归档时<strong style={{ color: TEXT }}>全局 qa/ 与 ledger/ 不搬</strong>（常驻），但<strong style={{ color: TEXT }}>已标 <Code>archived:</Code> 的全局审批档一并搭车搬走</strong>（2026-10-02 拍板）；<Code>plan-sync</Code> 收尾会先核一遍归档前置判据并报告。
+            归档时<strong style={{ color: TEXT }}>全局 qa/ 与 ledger/ 不搬</strong>（常驻），
+            但<strong style={{ color: TEXT }}>已标 <Code>archived:</Code> 的全局审批档一并搭车搬走</strong>（2026-10-02 拍板）。
+            <Code>plan-sync</Code> 收尾会先核一遍归档前置判据并报告，不必等归档时才发现缺件。
             右上角「轮次」选择器可切进某一轮的快照（<Code>.archive/rounds/&lt;round-id&gt;/</Code>），
             按轮只读查看当时的路线 / 工单 / 拍板。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
             那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页；
-            收尾时会清理并入 <Code>tickets/</Code>。
+            收尾时并入 <Code>issues/</Code>。<strong style={{ color: TEXT }}><Code>tickets/</Code> 同样是非法目录名</strong>——
+            票只认 <Code>issues/</Code>（存量 <Code>tickets/</Code> 待迁移）。
           </div>
         </div>
 
@@ -2922,6 +3274,47 @@ function edgesRelated(key: string, active: string | null, treeEdges: ChainEdge[]
   return false
 }
 
+// ─── DocCard（整篇 markdown 正文卡片）────────────────────────────────────────
+//
+// 地图页第 2 子页【map】/【spec】的正文壳，口径对齐 CasesView/AdrView：一篇文章
+// 一张卡（卡头 = 图标＋文件名＋可点开的路径，正文 = 渲染后 markdown）。
+// 关键在 <style>{MD_CSS}</style>：MD_CSS 是随组件注入的局部样式表，定义了
+// .pvm-h/.pvm-table/.pvm-code 等类；漏注入则 md() 吐出的 HTML 拿不到任何排版
+// 样式（标题无层级、表格无边框），读起来就是一堆裸字——这正是 2026-10-02 用户
+// 报「spec/map 页风格与其它页不一致」的根因（此前两处是光板 div）。
+//
+// path 走字符串而非 ticket：effort 对象只有 dir，没有 FilePath 需要的
+// path/file 字段；点击打开仍复用宿主侧边栏（openFileInSidebar）同一通路。
+
+function DocCard({ icon, title, path, scope, ctx, body }: {
+  icon: string; title: string; path: string; scope: SessionScope; ctx: any; body: string
+}) {
+  const open = () => openFileInSidebar(ctx, scope, path, path)
+  return (
+    // 滚动容器刻意用块级布局（不加 display:flex）：flex 列容器上的子项默认
+    // flex-shrink:1 会被压扁到塞满容器，scrollHeight 恒等于 clientHeight，
+    // 等于滚不动（同 CasesView 的坑，2026-10-02 实测）。块级布局不压缩内容，
+    // 正文多长 scrollHeight 就多长。minHeight:0 负责在父 flex 列里占住受限高度。
+    <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}>
+      <style>{MD_CSS}</style>
+      <div style={{ border: `1px solid ${BORDER}`, borderRadius: 10, background: CARD, overflow: 'hidden' }}>
+        <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8, background: HEADER_BG }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>{icon} {title}</span>
+          <button
+            type="button"
+            onClick={open}
+            title={`点击在右栏打开：${path}`}
+            style={{ fontSize: 10.5, fontFamily: 'ui-monospace,Menlo,monospace', color: TEXT_FAINT, background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {path}
+          </button>
+        </div>
+        <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(body) }} />
+      </div>
+    </div>
+  )
+}
+
 // ─── CasesView（测例）────────────────────────────────────────────────────────
 //
 // 一图一份 `qa/cases.md`（to-qa-testcases 产出），单列在地图「🧪 测例」子页。
@@ -2938,18 +3331,30 @@ function CasesView({ cases, scope, ctx, readOnly }: { cases: ParsedTicket[]; sco
       </div>
     )
   }
+  // 滚动修复（2026-10-02 实测定位）：本视图同时是「flex 列容器」+「滚动容器」。
+  // 卡片的默认 flex-shrink:1 会被 flexbox 压到刚好塞满容器，scrollHeight 恒等于
+  // clientHeight——没有任何可滚余量（Chrome 实测：1500px 内容得 client=scroll=536、
+  // canScroll=false；同为 flex 列滚动容器但子项 flex-shrink:0 时 canScroll=true）。
+  // 所以这不是 min-height 问题：min-height:0 与 min-height:auto 实测同结果，
+  // 单补 minHeight:0 无效（44d7c2a 的同类修法在此不适用）。
+  //
+  // 修法＝「外层管高度、内层管滚动」分离式（同 LedgerView/DefectView 既有范式）：
+  // 外层只负责在父容器里占住受限高度；内层 overflowY:auto 是普通块级滚动容器，
+  // 块级布局不做 flex 压缩，内容多高 scrollHeight 就多高，滚动自然成立。
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{MD_CSS}</style>
-      {cases.map(c => (
-        <div key={`${c.effort}/${c.file}`} style={{ border: `1px solid ${BORDER}`, borderRadius: 10, background: CARD, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8, background: HEADER_BG }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>🧪 {c.title}</span>
-            <FilePath ticket={c} scope={scope} ctx={ctx} />
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <style>{MD_CSS}</style>
+        {cases.map(c => (
+          <div key={`${c.effort}/${c.file}`} style={{ border: `1px solid ${BORDER}`, borderRadius: 10, background: CARD, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 8, background: HEADER_BG }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>🧪 {c.title}</span>
+              <FilePath ticket={c} scope={scope} ctx={ctx} />
+            </div>
+            <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(c.body) }} />
           </div>
-          <div style={{ padding: '10px 14px 14px', fontSize: 13, color: TEXT_DIM }} dangerouslySetInnerHTML={{ __html: md(c.body) }} />
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

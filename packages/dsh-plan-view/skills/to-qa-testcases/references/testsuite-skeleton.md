@@ -8,7 +8,7 @@
 ## 一、《用例设计》`.scratch/<effort>/qa/cases.md`
 
 > 落点：`.scratch/<effort>/qa/cases.md`（effort = `.scratch/` 下有 `map.md` 的计划目录——effort 唯一落点，`.plan/` 下无 effort；无 effort 的项目按其 docs 惯例放 `qa/cases.md`）。可执行脚本资产不进治理目录，留仓库 `qa/`（要进 CI、跟代码走）。
-> **文档形态**：本文件**不加 frontmatter 状态头**——qa 三件套中只有 `defect.md` 加头（`type: qa-defect`，规定见 `run-qa-testcases` 的缺陷台账骨架），本文件与 `test.md` 保持纯正文形态，不被 plan 视图识别。
+> **文档形态**：本文件**不加状态头**——qa 三件套中只有缺陷档加 frontmatter 头（`type: qa-defect` ＋ `date`/`origin`；状态写正文 `- 状态:` 行，规定见 `run-qa-testcases` 的缺陷台账骨架），本文件与 `test.md` 保持纯正文形态，不被 plan 视图识别。
 > **修订史不入正文**：测例文档（cases.md 与无图归属的回测测例档）只写现行口径的最新形态；增补/改版过程——日期化补登/补检/补编标记、「同日 N 版」版本叙事、拍板与改道过程、票号更正链、删除线旧值——写进工单与拍板文档（过程的本体在那边），测例文档不携带，被取代的旧口径直接删除。基线观测证据（复跑日期+结果数）与用户批注原话（U 组 oracle）不受本条限制。
 
 ### §0 基本信息
