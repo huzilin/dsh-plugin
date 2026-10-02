@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 08: 收编 tdd / code-review / codebase-design 进源仓
+
+**Status:** resolved
+**Blocked by:** None — can start immediately
 
 ## Question
 

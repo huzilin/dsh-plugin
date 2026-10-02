@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-23
-status: closed
 origin: review
 ---
 
 # 待拍板：plan-lint 随 skill 内置分发（修复 plan-approve / plan-sync 悬空引用）
+
+**Status:** closed
 
 ## 背景与原话
 

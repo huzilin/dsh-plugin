@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
 claimed_by: dsh-plugin 会话（拍板直推）
-status: done 2026-09-30
 ---
 
 # 20: ADR 全局层 ＋ effort 层移除「工单」子页
+
+**Status:** resolved 2026-09-30
+**Blocked by:** None — can start immediately
 
 **What to build:** 用户 2026-09-30 两条视图拍板（原文与配套方案见 [已拍板-视图ADR全局层与effort工单子页移除-20260930.md](../../../.plan/approval/已拍板-视图ADR全局层与effort工单子页移除-20260930.md)）：
 

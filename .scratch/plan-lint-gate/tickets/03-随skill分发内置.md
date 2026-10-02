@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: [02]
-status: done
 ---
 
 # 03: plan-lint 随 skill 分发内置（1A：skill 自包含）
+
+**Status:** resolved
 
 **What to build:** 口径收口后的 sh 成为唯一实现并随 skill 走：①脚本正本落 `skills/plan-approve/scripts/plan-lint.sh`，`skills/plan-sync/` 侧由安装机制注入同一文件（安装态目录内副本与 SKILL.md 同地位——都是源仓产物，真相在源仓）；②`plan-approve` 与 `plan-sync` 两个 SKILL.md 第 1 步调用文本改为「跑本 skill 目录下的 `scripts/plan-lint.sh`」，不再写 "(in this plugin's package)"；③GuideView 说明页文案改指 skill 内脚本；④`scripts/plan-lint.mjs` 退役，活引用 sweep 清零（历史票/文档按引用与过时管理规则标注留存价值，不删）。
 

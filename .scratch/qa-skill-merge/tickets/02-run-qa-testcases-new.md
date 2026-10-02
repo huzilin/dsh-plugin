@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: [01]
-status: done
 ---
 
 # 02: 新建 run-qa-testcases（执行 + 缺陷管理）
+
+**Status:** resolved
 
 **What to build:** 新建 `run-qa-testcases` skill：跑测例 → 出验收记录 → 出缺陷台账 → 返工闭环 → 更新回归基线。支持**指定单个实施图**与 **full 全量回归**两种调用。产物落 `.plan/<effort>/qa/`。
 

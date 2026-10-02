@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
 claimed_by: dsh-plugin 会话（拍板直推）
-status: done 2026-09-30
 ---
 
 # 19: snapshot 服务端数据面——plan-view 与 better-sidebar 完全解耦
+
+**Status:** resolved 2026-09-30
+**Blocked by:** None — can start immediately
 
 **What to build:** 用户 2026-09-30 报 plan view 加载慢（体感 20 倍）。排查定案：慢因 = better-sidebar 0.22.x 每 fs 调用 ~100ms 且完全串行（非票15；详见 `.plan/待拍板-planview加载性能-20260930.md` 证据链）。用户拍板方案A并明确目标「plan-view 和 better-sidebar 完全解耦」。
 

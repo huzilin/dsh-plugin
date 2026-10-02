@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-30
-status: closed
 origin: proactive
 ---
 
 # 已拍板：mp 源仓 grilling 补丁收编、统一由本仓管理（2026-09-30）
+
+**Status:** closed
 
 > **状态头**：`status: closed`——当场执行型拍板，落地完毕即闭环。
 

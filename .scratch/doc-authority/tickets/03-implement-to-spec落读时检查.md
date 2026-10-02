@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: [01, 02]
-status: done
 ---
 
 # 03 `implement*` / `to-spec` 落「读时检查 + 定稿即更新 docs」
+
+**Status:** resolved
+**Blocked by:** 01, 02
 
 ## 执行记录（2026-09-27 完成）
 

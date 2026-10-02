@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 07: nvwa 存量 `type: impl` 票回扫为 `task`
+
+**Status:** resolved
 
 **What to build:** 把 nvwa 仓 `.plan/dna-ab-full/tickets/` 下 **15 张 `type: impl` 票**回扫为 `type: task`，使 `impl` 票型别名在存量中彻底清零；清零后删除插件读取层的 `LEGACY_TICKET_TYPES` 容错集合。
 

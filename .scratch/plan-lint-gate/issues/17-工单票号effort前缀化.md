@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: []
-status: open
 ---
 
 # 17: 工单票号 effort 前缀化（跨 effort 全局唯一）
+
+**Status:** open
+**Blocked by:** None — can start immediately
 
 **真相源**：2026-09-29 对账拍板（用户原话「5 转工单」，指对账单⑤悬置项立项）。背景＝nvwa jiaomai-gongyue 会话质询「ticket 号唯一漏实现」：查证协议正本无工单号全局唯一条款（唯一带 effort 名的编号条款是缺陷 `DEF-<effort-slug>-NN`，2026-09-28 拍板）、「双 07 撞号接受现状」反向拍板在案（本图 `tickets/` 即有活的 `07-nvwa存量impl票回扫` × `07-取代登记完备性校验` 双 07）；用户拍板立新规＝工单票号带 effort 名保跨 effort 唯一。
 

@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-18
-status: closed
 origin: proactive
 ---
 
 # 待拍板：流程协议化——两张流程、一份协议文档、架构正本入链、plan-archive
+
+**Status:** closed
 
 > **你的原话（照抄）**：
 > 「1. 用 2 也可以，这样避免污染 spec。

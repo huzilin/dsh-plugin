@@ -1,14 +1,14 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 11: 视图适配——approval 目录发现 + research/prototype 票型展示
 
+**Status:** resolved
+
 **What to build:** 2026-09-29 两项拍板的视图适配批：①审批档两级归属（grill-with-doc / wayfinder 生成入 effort 的 `approval/` 目录）；②「按照新的目录结构，并支持新的 type 的展示，包括 research、prototype」。协议 129 与 to-approval 步骤 7 文本已随拍板改写；本票落视图侧。
 
-**Blocked by:** None — can start immediately.
+**Blocked by:** None — can start immediately
 
 **Source spec:** plan-protocol「审批文档归属（两级）」条款 + 本批 map 决策行。
 

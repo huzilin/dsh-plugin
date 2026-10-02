@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done 2026-09-29
 ---
 
 # 06: 视图适配 spec-only effort（无 map 有 spec 视为实施图并展示）
+
+**Status:** resolved 2026-09-29
 
 **What to build:** 2026-09-29 用户拍板（原话：「.scratch/global-items/ 无 map.md，6 个票形文件视图不加载 这个符合预期，这个需要视图层适配，没有 map，就必须有 spec，只有 spec 就视为实施图。也要展示，需要页面兼容」）——effort 判据扩展：`.scratch/` 下目录含 `map.md`（wayfinder 图）**或 `spec.md`（spec-only 实施图）**都算 effort；spec-only 图进 effort 分组（按票型自动归实施图组）、工单/审批等子页正常；路线页 destination 横幅空缺已安全兜底，chip 加 spec-only 标注。联动：plan-lint 检查 [2] 豁免同步扩为「缺 map **且**缺 spec 才报」；plan-protocol「effort 标志」条与 §二 to-tickets 行、to-tickets skill 文本同步口径。
 

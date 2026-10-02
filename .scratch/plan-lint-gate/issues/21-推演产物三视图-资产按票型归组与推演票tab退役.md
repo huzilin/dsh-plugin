@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
 claimed_by: dsh-plugin 会话（拍板直推）
-status: done 2026-09-30
 ---
 
 # 21: 推演产物三视图——assets 按票型归组 ＋「推演票」子页退役
+
+**Status:** resolved 2026-09-30
+**Blocked by:** None — can start immediately
 
 **What to build:** 用户 2026-09-30 拍板（原文与配套方案见 [已拍板-推演产物三视图与推演票tab退役-20260930.md](../../../.plan/approval/已拍板-推演产物三视图与推演票tab退役-20260930.md)）：
 

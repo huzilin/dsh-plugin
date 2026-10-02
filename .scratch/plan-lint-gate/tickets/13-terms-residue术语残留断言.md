@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
-status: done 2026-09-29
 claimed_by: zcode(dsh-plugin 会话)
 ---
 
 # 13: terms-residue 术语残留断言（检查[7]，novel 移交方案 C 落地）
+
+**Status:** resolved 2026-09-29
+**Blocked by:** None — can start immediately
 
 **What to build:** novel 2026-09-29 移交（`novel/.tmp/handoffs/2026-09-29-termsweep-into-plan-lint.md`，自包含方案 C）：把术语 sweep 的「验」半收编进 plan-lint——词表驱动、全仓活面、断言「无标记残留=0」；「改」半（sweep 替换动作）留各仓术语 SOP，不进 lint。用户拍板方向原话「我们要在 plugin 项目实现这个工具，我的建议是实现在 plan-lint……调整完成，可以走这个工具确定如何替换。这个可能需要嵌入 domain 的 skills」。用法场景：调整词汇表后跑本检查，得「哪些残留要替换、在哪、哪些是合法留痕不用动」（词表 `=>` 列给替换方向）。
 

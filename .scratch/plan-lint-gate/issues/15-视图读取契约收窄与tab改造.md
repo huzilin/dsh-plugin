@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
-status: done 2026-09-30
 claimed_by: dsh-plugin 会话（implement-spec 直推）
 ---
 
 # 15: 视图读取契约收窄与 tab 改造
+
+**Status:** resolved 2026-09-30
+**Blocked by:** None — can start immediately
 
 **What to build:** 2026-09-30 用户定义视图读取契约（原话「展示读取逻辑……所以这几个目录也对应的」），写入矩阵正本 = [docs/research/梳理-plan目录写入矩阵-20260930.md](../../../docs/research/梳理-plan目录写入矩阵-20260930.md) §六。按契约改造 plan-view 数据面与页签。
 

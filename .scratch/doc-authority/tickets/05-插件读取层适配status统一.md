@@ -1,12 +1,13 @@
 ---
 type: task
-blocked_by: [04]
-status: done
 claimed_by: dsh-session
 session: session-plan-protocol-status-alignment
 ---
 
 # 05 插件读取层适配 status 统一
+
+**Status:** resolved
+**Blocked by:** 04
 
 ## 执行记录（2026-09-27）
 

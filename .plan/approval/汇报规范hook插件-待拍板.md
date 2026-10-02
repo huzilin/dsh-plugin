@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-10
-status: closed
 origin: proactive
 ---
 
 # 汇报规范 hook 插件 — 待拍板项审批文档
+
+**Status:** closed
 
 > **状态头 2026-09-22 补录**（plan-approve lint 发现缺头，按实况回填，非当日原始头）：五项待拍板已全部落地——走②桥接方案已挂 web profile（`~/.dsh/profiles/web/cordis.patch.yml` 挂 `dsh-hooks-claude-code`），实现落 `packages/dsh-report-hook/`（触发策略先正则粗筛 + 注入内容给处理方法，均按用户后续确认升级）。**残留挂账：该目录 git untracked，待显式 commit 入库。**
 

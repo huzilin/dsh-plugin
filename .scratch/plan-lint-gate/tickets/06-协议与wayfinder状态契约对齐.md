@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 06: 协议与 wayfinder 状态契约对齐（重新定性版）
+
+**Status:** resolved
+**Blocked by:** None — can start immediately
 
 > **〔重新定性声明（2026-09-27）〕** 本票原版（2026-09-27 立）把冲突定性为「**我方协议 vs 上游 `wayfinder-maps` 工具**」，并据此列出三选项 A（改工具）/B（改协议）/C（分治）。**该定性的证据基础经复核不成立**——原版所引的 `~/workdir/wayfinder-maps` 路径**在当前环境中不存在**，其「上游原文」实为**本仓文件**。按用户指示「重新定性吧」，本票整体重写。
 >

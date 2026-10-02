@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-21
-status: closed
 origin: readability-rescue
 ---
 
 # 待拍板：to-qa-testcases 接入 Playwright 的引入方案
+
+**Status:** closed
 
 ## 背景与原话
 

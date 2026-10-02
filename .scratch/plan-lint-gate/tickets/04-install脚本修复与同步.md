@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: [03]
-status: done
 ---
 
 # 04: install-skills.sh 修复与安装态同步（项 3 修复）
+
+**Status:** resolved
 
 **What to build:** 修同步机制本身，再把改好的 skill 真正同步进活安装态：①目的地从过时的 `~/.dsh/skills`（现为空目录）改为 `~/.dsh/.agent-presets/full/skills`——落票实施时先核实 `.agent-presets` 是否有 DSH 自身回填机制，避免双写打架；②具名清单补 `plan-sync`（今日不在清单内），并核 `to-qa-testcases`/`run-qa-testcases` 是否入列（对应「其余暂靠手动同步」既记缺口）；③同步后加在位自检（`scripts/plan-lint.sh` 在位断言）；④实际执行同步并验收。
 

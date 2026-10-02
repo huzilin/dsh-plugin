@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 02 协议落「spec 生命周期与归宿行」条款
+
+**Status:** resolved
+**Blocked by:** None — can start immediately
 
 ## 交付什么
 

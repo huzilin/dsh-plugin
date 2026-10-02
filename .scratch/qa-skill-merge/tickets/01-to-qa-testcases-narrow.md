@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 01: to-qa-testcases 收窄为「构建测例」
+
+**Status:** resolved
 
 **What to build:** 把 `to-qa-testcases` 从「设计+资产+执行+缺陷」四件事收窄为**只做构建测例**：设计依据盘点 → 用例设计（A/B/P/C/D/U 六组）→ 可执行资产三原则。执行验收、缺陷台账、返工闭环整段迁出（去票 02）。
 

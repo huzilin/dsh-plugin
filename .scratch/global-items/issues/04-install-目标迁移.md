@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done 2026-09-29
 ---
 
 # 04: install-skills 安装目标迁 `~/.dsh/skills`
+
+**Status:** resolved 2026-09-29
 
 **What to build:** DSH 已把 skills 安装态迁 `~/.dsh/skills`（软链重指、agent-presets/full/skills 清空），install-skills.sh 的 SKILLS_DST 默认值随迁；头注释重写保留 ticket 04 历史；架构正本与 skills README 的路径同步；拍板档旧路径加过时标注。
 

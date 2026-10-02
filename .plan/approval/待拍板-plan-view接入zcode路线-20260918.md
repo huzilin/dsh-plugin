@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-18
-status: abandoned
 origin: readability-rescue
 ---
 
 # 待拍板：dsh-plan-view 接入 zcode 的口径与路线
+
+**Status:** abandoned
 
 ## 一、原话照抄与语境
 

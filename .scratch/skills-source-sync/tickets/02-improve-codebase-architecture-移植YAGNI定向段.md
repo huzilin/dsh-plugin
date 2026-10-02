@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: open
 ---
 
 # 02: improve-codebase-architecture 移植 YAGNI 扫描定向段（拍板 B.B1）
+
+**Status:** open
 
 **What to build:** 把源侧 SKILL.md 的「Scope before you scan: YAGNI」段（原文照抄见审批文档 §待拍板 B）插入本仓版 SKILL.md 的「读 glossary/ADR 之后、subagent 走查之前」位置。本仓自含化改造（proceed silently 两处、subagent 环境兼容措辞）原样保留；引入文字随带源侧文风（无 em-dash）。HTML-REPORT.md 无实质差异，不动。
 

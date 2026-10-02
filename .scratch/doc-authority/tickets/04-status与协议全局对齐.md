@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 04 status 与 `plan-protocol` 全局对齐（wayfinder 改从协议）
+
+**Status:** resolved
+**Blocked by:** None — can start immediately
 
 ## 执行记录（2026-09-27 完成）
 

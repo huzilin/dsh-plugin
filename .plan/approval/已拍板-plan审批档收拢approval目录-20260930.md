@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-30
-status: closed
 origin: proactive
 ---
 
 # 已拍板：全局审批档收拢 `.plan/approval/`（2026-09-30）
+
+**Status:** closed
 
 > **状态头**：`status: closed`——本拍板为当场执行型（拍板即落地完毕），按「审批档与ADR生命周期」直接落 `已拍板-*` 形态，不经 pending 过渡。
 

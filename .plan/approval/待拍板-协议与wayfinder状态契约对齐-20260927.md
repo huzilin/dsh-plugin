@@ -1,7 +1,6 @@
 ---
 type: approval
 date: 2026-09-27
-status: superseded-by: .scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md
 origin: review
 ---
 
@@ -14,6 +13,8 @@ origin: review
 > **本文中被独立裁定并已落地的两项保留有效**：① `impl` 不支持并从协议清理（§十二 裁定 3-1）；② `blocked_by` 格式两侧统一（§十二 裁定 3-2）。**这两项不依赖上述错误定性。**
 
 # 待拍板：协议与 wayfinder 的状态契约对齐——「票面状态写在哪儿」由哪一侧改
+
+**Status:** superseded-by: .scratch/plan-lint-gate/tickets/06-协议与wayfinder状态契约对齐.md
 
 > **本文怎么来的**：novel 仓 2026-09-27 合并前体检，你拍板决策项 **D3**，原话「这个参考 /plan-protocol 是不是有哪里没对齐，如果是协议和 wayfinder 本身没对齐，那需要让协议对齐，然后再适配」。该决策经 handoff（`.plan/handoffs/2026-09-27-协议与wayfinder状态契约对齐.md`）移交本仓，落票 `06-协议与wayfinder状态契约对齐.md`（open）。票 06 与 handoff 都把「待裁定」标为三选一、**未定案、勿径自实施**，故本文把选择摆给你。
 >

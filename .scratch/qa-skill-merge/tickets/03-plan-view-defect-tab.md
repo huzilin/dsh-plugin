@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 03: plan 视图新增「🐞 缺陷」tab（插件侧）
+
+**Status:** resolved
 
 **What to build:** `dsh-plan-view` 插件识别 `type: qa-defect` 的缺陷台账，新增「🐞 缺陷」tab（**按图过滤**，细到 map）；同时让 `qa/` 下的 cases/test 不被 plan 识别。
 

@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
-status: done 2026-09-30
 claimed_by: dsh-plugin 会话（implement-spec 直推）
 ---
 
 # 16: plan-lint 目录契约守门（effort 白名单 + .plan 根层文件形状）
+
+**Status:** resolved 2026-09-30
+**Blocked by:** None — can start immediately
 
 **What to build:** 2026-09-30 两层目录 tree 经用户拍板（「那就按这个来」）后，协议的目录封闭清单尚无机械守门——存量违例（`tickets/` 旧布局并存、nvwa `fengping/`、novel `specs|改造工单|briefs`、`.plan/` 根层 9 份清单外文件）全部绿灯。给 plan-lint 补两条检查，判据 = 写入矩阵（[docs/research/梳理-plan目录写入矩阵-20260930.md](../../../docs/research/梳理-plan目录写入矩阵-20260930.md)）。
 

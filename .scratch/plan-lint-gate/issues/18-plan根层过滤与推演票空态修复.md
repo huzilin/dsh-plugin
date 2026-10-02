@@ -1,11 +1,12 @@
 ---
 type: task
-blocked_by: []
-status: done 2026-09-30
 claimed_by: dsh-plugin 会话（implement-spec 直推）
 ---
 
 # 18: `.plan` 根层过滤（路线页干净）+ 推演票空态崩溃修复
+
+**Status:** resolved 2026-09-30
+**Blocked by:** None — can start immediately
 
 **What to build:** 用户 2026-09-30 报「路线页看到 issues 以外的内容」（截图：`.plan/` 根层 4 份调研档被当票展示 + `tickets/` 存量票），定性「路线就不该看到」。数据侧迁移（tickets/ 重编号 + 根层 9 份分流）经用户指令**挂账不动**，本票只修视图侧识别。
 

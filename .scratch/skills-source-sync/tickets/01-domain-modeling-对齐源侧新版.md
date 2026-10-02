@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: open
 ---
 
 # 01: domain-modeling 三文件整体对齐源侧新版（拍板 A.A1）
+
+**Status:** open
 
 **What to build:** `packages/dsh-plan-view/skills/domain-modeling/` 的 SKILL.md、ADR-FORMAT.md、CONTEXT-FORMAT.md 三文件整体以源侧（`/Users/huzilin/workdir/skills/skills/engineering/domain-modeling/`）覆盖，引入两步升级：08-13 的 description 触发词重写、08-19 的 em-dash 清除文风。本仓侧无本地改造，直接覆盖无损失。
 

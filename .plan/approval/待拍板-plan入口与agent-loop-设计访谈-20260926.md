@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-26
-status: pending
 origin: proactive
 ---
 
 # 待拍板：plan 成为项目开发管理入口 + agent loop —— 设计访谈（第二轮）
+
+**Status:** pending
 
 > 第一轮 6 问中 2 项已裁定（见 §二 裁定记录），3 项未答移入第二轮，1 项（Q1）从裁定推定待确认。本文档持续更新，拍板完翻 closed。
 

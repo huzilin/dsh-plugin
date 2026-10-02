@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-30
-status: closed
 origin: proactive
 ---
 
 # 待拍板：to-approval 落点参数化 ＋ plan-lint 归属一致性校验（2026-09-30）
+
+**Status:** closed
 
 ## 〇、背景与你的两点要求（原话）
 

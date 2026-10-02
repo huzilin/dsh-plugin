@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: [01, 02, 03, 04, 05]
-status: done
 ---
 
 # 06 `doc-authority` 自身归宿分流（自指验证）
+
+**Status:** resolved
+**Blocked by:** 01, 02, 03, 04, 05
 
 ## 执行记录（2026-09-27 完成 · 自指验证通过）
 

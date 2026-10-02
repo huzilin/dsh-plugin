@@ -1,10 +1,11 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 09: 目录迁移——tracker 类对象从 .plan/ 迁回原版 .scratch/ 布局
+
+**Status:** resolved
+**Blocked by:** None — can start immediately
 
 ## Question
 

@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 04: Playwright 接入协议改票（形态正本 + 两 skill 同步改 + 装态回补）
+
+**Status:** resolved
 
 **What to build:** 把已拍定的 Playwright 接入方案落成协议文本，端到效果 = 文字模型（无视觉）在任何项目跑 QA 时，有可依的呈现通道资产形态与降级规程：新建形态正本 `to-qa-testcases/references/playwright-assets.md`（D5 六项 + DOM 探针清单 + 无视觉三态口径 + VLM 位置表的唯一权威），to 侧加指针、run 侧同步改四处、验收记录骨架补视觉维附注口径，装态双侧回补。
 

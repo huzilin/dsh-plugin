@@ -1,9 +1,11 @@
 ---
 type: task
-blocked_by: []
 ---
 
 # 01: 重写 plan-loop 适配新方案链路
+
+**Status:** open
+**Blocked by:** None — can start immediately
 
 ## Question
 

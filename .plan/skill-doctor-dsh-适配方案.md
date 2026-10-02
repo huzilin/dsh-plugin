@@ -1,11 +1,12 @@
 ---
 type: approval
 date: 2026-09-15
-status: closed
 origin: proactive
 ---
 
 # skill-doctor 适配 DSH：改动清单与待拍板项
+
+**Status:** closed
 
 > **状态头 2026-09-22 补录**（plan-approve lint 发现缺头，按实况回填）：四项拍板全部落地——A 走「开启默认根扫描 includeDefaultRoots: true」（`~/.dsh/.agent-presets/full/agent.cordis.yml` 留痕）、B1 harness 白名单正式加 dsh（`collect_sessions.py`）、C1 走 zstd 二进制、D1 原地改本地副本；DSH 报告已产出（`.plan/skill-doctor-reports/dsh-20260915.html`）。**残留挂账：`.dsh/skills/` 与配置改动在仓库外/未跟踪区，入库口径另定。**
 

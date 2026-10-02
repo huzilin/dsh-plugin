@@ -20,19 +20,23 @@
 #      .plan/approval/ 同理豁免——全局审批档正本落点，2026-09-30 收拢拍板）
 #   3. 状态头违规：approval / qa-defect 缺四字段/状态越词表；task 状态越词表；
 #      文件名带「待拍板」或 DEF- 前缀却无 frontmatter（围栏/引用块插件读不到）
-#   4. 票形态：issues/（存量 tickets/）下文件缺 frontmatter 或缺 type/blocked_by；
-#      合体 issues.md / tickets.md（多票一文件会被视图当成一张票；2026-09-24
-#      拍板「1」——手写票不拦写入，格式必须同源 to-tickets，lint 兜底）
-#      词表正本 = plan-protocol §三「票面 status 词表」（2026-09-27 拍板统一）：
-#      票的终态只有一个词 done（不分票型，允许附日期 done <YYYY-MM-DD>）、
-#      执行中 claimed、另有 open 与 out_of_scope。
-#      resolved 已于 2026-09-27 退出票态词表（原话「resolved 改为 done」），
-#      本脚本不再放行——残留 resolved 的票须由「形态契约变更回扫」迁移。
-#      todo/doing/closed 为插件归一容忍别名；type 不在上表的文件按说明/杂项
-#      解析、不查（研究型票 status 暂不设门，留观察）。
-#      impl 已于 2026-09-27 废弃（存量已于 2026-09-29 全 workdir 回扫清零，
-#      plan-lint-gate 票 07）；再遇即真漂移，本脚本不作拦截。
-#   5. 取代登记：effort 票已全终态（done/out_of_scope）⇒ 该 effort 的 spec.md
+#   4. 票形态：issues/（存量 tickets/）下文件缺 frontmatter 或缺 type；缺正文
+#      **Status:** / **Blocked by:** 行；合体 issues.md / tickets.md（多票一文件
+#      会被视图当成一张票；2026-09-24 拍板「1」——手写票不拦写入，格式必须
+#      同源 to-tickets，lint 兜底）
+#      载体正本 = plan-protocol §三「文档头三字段 ＋ 正文状态行」（2026-10-02
+#      拍板 Q10=乙「全文档统一走正文行」）：type 留 frontmatter（它回答「这是
+#      什么单据」，视图靠它分流），**状态与阻塞边一律写正文行**，frontmatter
+#      的 status:/blocked_by: 仅作存量回退读取，本脚本按违例报出驱动迁移。
+#      词表正本 = plan-protocol §三「票面 Status: 词表」（2026-10-02 拍板
+#      Q1/Q4，三值）：open / claimed / resolved（终态 resolved 允许附日期）。
+#      done 已于 2026-10-02 退出词表（对齐 mp 原版 issue-tracker-local.md 明文，
+#      取代 2026-09-27「resolved 改为 done」拍板）；out_of_scope 是派生态（由
+#      ## Ruled out 带正文派生），非 Status: 的第四个取值，残留不报。
+#      type 不在上表的文件按说明/杂项解析、不查（研究型票 status 暂不设门，
+#      留观察）。impl 已于 2026-09-27 废弃（存量已于 2026-09-29 全 workdir 回扫
+#      清零，plan-lint-gate 票 07）；再遇即真漂移，本脚本不作拦截。
+#   5. 取代登记：effort 票已全终态（resolved/out_of_scope）⇒ 该 effort 的 spec.md
 #      必带 superseded-by 注记或已随轮归档（2026-09-28 拍板 Q1=A/Q2=A，
 #      票 07；spec 一次性化收口——防走完的 effort 留下无取代声明的 spec
 #      被后续会话当现行权威照做）
@@ -139,6 +143,20 @@ has_header() {
   awk 'NR==1 && $0!~/^---[ \t\r]*$/{exit 1} NR>1 && $0~/^---[ \t\r]*$/{s=1; exit} END{exit s?0:1}' "$1"
 }
 
+# 正文固定行取字段（2026-10-02 拍板 Q10=乙：状态载体统一到正文行）。
+# 形态 = 行首 **Label:** value（票 Status / Blocked by，审批档 Status，spec Status）。
+# 围栏感知：``` / ~~~ 代码块内的同形行不算声明（防「引用格式的票」自我收口，
+# 与客户端 bodyField fence 语义对齐）。命中即返回，无命中输出空串。
+body_field() {
+  awk -v k="$2" '
+    /^[ \t]*(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    index($0, "**" k ":**") == 1 {
+      sub(/^\*\*[^*]*:\*\*[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit
+    }
+  ' "$1"
+}
+
 # 某目录到治理目录根的路径上有没有 map.md（同 mjs 的 hasMapOnPath）
 has_map_on_path() {
   local d="$1"
@@ -174,13 +192,21 @@ for PD in $PLAN_DIRS; do
         -o -name handoffs -o -name ledger \) -prune \) \
      -o \( -type f -name '*.md' ! -name '.*' -print \) | sort > "$TMP/files.txt"
 
-  # 逐文件预取元数据：dir \t id \t path \t hasHeader \t type \t status
+  # 逐文件预取元数据：dir \t id \t path \t hasHeader \t type \t status \t blockedBy
+  # status 取值优先级（2026-10-02 拍板 Q10=乙「全文档统一走正文行」）：
+  #   正文 **Status:** 行 > 正文 - 状态: 行（缺陷/台账）> frontmatter status:
+  # frontmatter 仅作存量回退读取；新写文档一律正文行（协议 §三）。
   : > "$TMP/meta.tsv"
   while IFS= read -r f; do
     b=$(basename "$f"); id=${b%.md}; d=$(dirname "$f")
     hh=$(has_header "$f" && echo 1 || echo 0)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$d" "$id" "$f" "$hh" \
-      "$(fm_field "$f" type)" "$(fm_field "$f" status)" >> "$TMP/meta.tsv"
+    st=$(body_field "$f" "Status")
+    [ -z "$st" ] && st=$(awk '/^[ \t]*-[ \t]*状态:[ \t]*/ { sub(/^[ \t]*-[ \t]*状态:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }' "$f")
+    [ -z "$st" ] && st=$(fm_field "$f" status)
+    bby=$(body_field "$f" "Blocked by")
+    [ -z "$bby" ] && bby=$(fm_field "$f" blocked_by)
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$d" "$id" "$f" "$hh" \
+      "$(fm_field "$f" type)" "$st" "$bby" >> "$TMP/meta.tsv"
   done < "$TMP/files.txt"
 
   echo "plan-lint: 校验 $PD"
@@ -240,17 +266,21 @@ for PD in $PLAN_DIRS; do
   echo "[3] 状态头（approval·qa-defect 四字段与词表 / task 词表 / 「待拍板」·DEF- 裸文件）"
   # type 不在 approval/task/qa-defect 的文件按说明/杂项解析，不作校验对象（协议 §三 2026-09-24）
   bad=0
-  while IFS=$'\t' read -r d id f hh ty st; do
+  while IFS=$'\t' read -r d id f hh ty st bby; do
     lcty=$(printf '%s' "$ty" | tr 'A-Z' 'a-z')
-    if [ "$lcty" = "approval" ] || [ "$lcty" = "qa-defect" ]; then
-      for k in type date status origin; do
+    if [ "$lcty" = "approval" ]; then
+      # 审批档：frontmatter 保三字段（2026-10-02 拍板 Q10=乙），状态走正文 **Status:**
+      for k in type date origin; do
         v=$(fm_field "$f" "$k")
         if [ -z "$v" ]; then
-          note "✗ $f: status-header — ${lcty} 文档缺 frontmatter 字段「${k}」"; bad=$((bad + 1))
+          note "✗ $f: status-header — approval 文档缺 frontmatter 字段「${k}」"; bad=$((bad + 1))
         fi
       done
       if [ -z "$st" ]; then
-        note "✗ $f: status-header — ${lcty} 文档缺 status"; bad=$((bad + 1)); continue
+        note "✗ $f: status-header — approval 文档缺状态（正文 **Status:** 行）"; bad=$((bad + 1)); continue
+      fi
+      if [ -z "$(body_field "$f" "Status")" ] && [ -n "$(fm_field "$f" status)" ]; then
+        note "✗ $f: status-header — 状态仍在 frontmatter status:，须迁正文行 **Status:**（2026-10-02 拍板 Q10=乙/Q14）"; bad=$((bad + 1))
       fi
       head="${st%%:*}"
       case "$head" in
@@ -258,16 +288,32 @@ for PD in $PLAN_DIRS; do
         *)
           case "$st" in
             superseded-by*) : ;;
-            *) note "✗ $f: status-header — ${lcty} status「${st}」不在词表（pending/closed/superseded-by:<path>/active/abandoned）"; bad=$((bad + 1)) ;;
+            *) note "✗ $f: status-header — approval status「${st}」不在词表（pending/closed/superseded-by:<path>/active/abandoned）"; bad=$((bad + 1)) ;;
           esac ;;
       esac
     fi
+    if [ "$lcty" = "qa-defect" ]; then
+      # 缺陷档：2026-10-02 拍板 Q11「按正文，单写」——frontmatter 取消 status
+      # （superseded-by: 为可选保留字段），状态只由正文 `- 状态:` 行承载。
+      for k in type date origin; do
+        v=$(fm_field "$f" "$k")
+        if [ -z "$v" ]; then
+          note "✗ $f: status-header — qa-defect 文档缺 frontmatter 字段「${k}」"; bad=$((bad + 1))
+        fi
+      done
+      if [ -n "$(fm_field "$f" status)" ]; then
+        note "✗ $f: status-header — 缺陷档 frontmatter 不得带 status（2026-10-02 拍板 Q11），状态只写正文「- 状态:」行"; bad=$((bad + 1))
+      fi
+      if [ -z "$st" ]; then
+        note "✗ $f: status-header — qa-defect 文档缺正文「- 状态:」行"; bad=$((bad + 1))
+      fi
+    fi
     if [ "$lcty" = "task" ] && [ -n "$st" ]; then
       case "$st" in
-        open|claimed|done|out_of_scope|done\ *) : ;;
-        todo|doing|closed) : ;;  # 插件归一容忍别名（→claimed / →done）
-        resolved|resolved\ *) note "✗ $f: status-header — task status「${st}」为已废弃词：resolved 已退出票态词表（2026-09-27 拍板「resolved 改为 done」），请改为 done"; bad=$((bad + 1)) ;;
-        *) note "✗ $f: status-header — task status「${st}」不在词表（open/claimed/done [日期]/out_of_scope；容忍别名 todo/doing/closed）"; bad=$((bad + 1)) ;;
+        open|claimed|resolved|resolved\ *) : ;;
+        out_of_scope|out_of_scope\ *) : ;;  # 派生态：由 ## Ruled out 带正文派生，容忍残留不报
+        done|done\ *) note "✗ $f: status-header — task status「${st}」为已废弃词：done 已于 2026-10-02 退出票态词表（对齐 mp 原版 issue-tracker-local.md），请改为 resolved"; bad=$((bad + 1)) ;;
+        *) note "✗ $f: status-header — task status「${st}」不在词表（open/claimed/resolved，终态可附日期；out_of_scope 为派生态不写入）"; bad=$((bad + 1)) ;;
       esac
     fi
     if [ "$hh" = "0" ]; then
@@ -282,22 +328,36 @@ for PD in $PLAN_DIRS; do
   echo
 
   # ── 4. 票形态 ──────────────────────────────────────────────────────────────
-  echo "[4] 票形态（issues/·tickets/ 下文件缺 frontmatter/type/blocked_by；合体票文件）"
+  echo "[4] 票形态（issues/·tickets/ 下文件缺 frontmatter/type；缺正文 Status/Blocked by 行；合体票文件）"
   bad4=0
-  while IFS=$'\t' read -r d id f hh ty st; do
+  while IFS=$'\t' read -r d id f hh ty st bby; do
     case "$d" in */issues|*/tickets) ;; *) continue ;; esac
     lcid=$(printf '%s' "$id" | tr 'A-Z' 'a-z')
     if [ "$lcid" = "issues" ] || [ "$lcid" = "tickets" ]; then
       note "✗ $f: ticket-shape — 合体票文件（issues.md/tickets.md）会被视图当成一张票，须拆一票一文件"; bad4=$((bad4 + 1)); continue
     fi
     if [ "$hh" = "0" ]; then
-      note "✗ $f: ticket-shape — 票缺 frontmatter 状态头"; bad4=$((bad4 + 1)); continue
+      note "✗ $f: ticket-shape — 票缺 frontmatter（type 仍须留 frontmatter）"; bad4=$((bad4 + 1)); continue
     fi
-    for k in type blocked_by; do
-      if [ -z "$(fm_field "$f" "$k")" ]; then
-        note "✗ $f: ticket-shape — 票缺 frontmatter 字段「${k}」"; bad4=$((bad4 + 1))
+    # type 仍留 frontmatter：它回答「这是什么单据」，视图靠它分流（协议 §三 2026-10-02）
+    if [ -z "$(fm_field "$f" type)" ]; then
+      note "✗ $f: ticket-shape — 票缺 frontmatter 字段「type」"; bad4=$((bad4 + 1))
+    fi
+    # 状态与阻塞边改为正文行载体（2026-10-02 拍板 Q1/Q2，对齐 mp 原版明文）
+    if [ -z "$(body_field "$f" "Status")" ]; then
+      if [ -n "$(fm_field "$f" status)" ]; then
+        note "✗ $f: ticket-shape — 状态仍在 frontmatter status:，须迁正文行 **Status:**（2026-10-02 拍板 Q1）"; bad4=$((bad4 + 1))
+      else
+        note "✗ $f: ticket-shape — 票缺正文 **Status:** 行"; bad4=$((bad4 + 1))
       fi
-    done
+    fi
+    if [ -z "$(body_field "$f" "Blocked by")" ]; then
+      if [ -n "$(fm_field "$f" blocked_by)" ]; then
+        note "✗ $f: ticket-shape — 阻塞边仍在 frontmatter blocked_by:，须迁正文行 **Blocked by:**（2026-10-02 拍板 Q2）"; bad4=$((bad4 + 1))
+      else
+        note "✗ $f: ticket-shape — 票缺正文 **Blocked by:** 行（无前置写 None — can start immediately）"; bad4=$((bad4 + 1))
+      fi
+    fi
   done < "$TMP/meta.tsv"
   [ "$bad4" -eq 0 ] && note "✓ 无"
   findings=$((findings + bad4))
@@ -306,10 +366,11 @@ for PD in $PLAN_DIRS; do
   # ── 5. 取代登记 ────────────────────────────────────────────────────────────
   echo "[5] 取代登记（effort 票全终态 ⇒ spec 必带 superseded-by 注记或已归档）"
   # 判据正本 = 2026-09-28 拍板（Q1=A/Q2=A，plan-lint-gate 票 07）：「effort 票全
-  # done ⇒ spec 必带 superseded-by 或已归档」。spec 已归档时整文件随轮搬进
+  # resolved ⇒ spec 必带 superseded-by 或已归档」。spec 已归档时整文件随轮搬进
   # .archive/（本脚本遍历剪枝区），自然不在校验面——留在治理目录的 spec 才查。
-  # 终态词 = done/out_of_scope（done 允许附日期）；存在 open/claimed/空 status
-  # 的票 = effort 未走完，不触发。无票目录或零票 = 无「票尽」判据，跳过。
+  # 终态词 = resolved/out_of_scope（resolved 允许附日期，2026-10-02 词表三值）；
+  # 存在 open/claimed/空 status 的票 = effort 未走完，不触发。无票目录或零票
+  # = 无「票尽」判据，跳过。
   unmarked=0
   while IFS=$'\t' read -r d id f hh ty st; do
     [ "$id" = "spec" ] || continue
@@ -320,11 +381,11 @@ for PD in $PLAN_DIRS; do
     done
     [ "$found" -eq 1 ] || continue
     all_done=1; ntk=0
-    while IFS=$'\t' read -r td tid tf tth tty tst; do
+    while IFS=$'\t' read -r td tid tf tth tty tst tbby; do
       case "$td" in "$d/tickets"|"$d/issues") ;; *) continue ;; esac
       ntk=$((ntk + 1))
       case "$tst" in
-        done|done\ *|out_of_scope) : ;;
+        resolved|resolved\ *|out_of_scope) : ;;
         *) all_done=0 ;;
       esac
     done < "$TMP/meta.tsv"
@@ -339,7 +400,7 @@ for PD in $PLAN_DIRS; do
     # 不做全文 grep：正文「提及」他人被取代（引用性出现）不算自身已标，2026-09-29 实测误放行。
     if [ "$marked" -eq 0 ] && head -10 "$f" | grep -q 'superseded-by' 2>/dev/null; then marked=1; fi
     if [ "$marked" -eq 0 ]; then
-      note "✗ $f: superseded-register — effort 票已全部终态（done/out_of_scope），spec.md 仍无 superseded-by 注记且未归档（按五类归宿分流后补标或归档）"
+      note "✗ $f: superseded-register — effort 票已全部终态（resolved/out_of_scope），spec.md 仍无 superseded-by 注记且未归档（按五类归宿分流后补标或归档）"
       unmarked=$((unmarked + 1))
     fi
   done < "$TMP/meta.tsv"

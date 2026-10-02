@@ -1,10 +1,10 @@
 ---
 type: task
-blocked_by: []
-status: done
 ---
 
 # 01: plan-lint 只读校验脚本 + 说明页悬空引用修复
+
+**Status:** resolved
 
 **What to build:** 一个无依赖 Node 只读脚本 `packages/dsh-plan-view/scripts/plan-lint.mjs`，对给定仓库的 `.plan/**` 做结构校验并输出违规清单（不修改任何文件）；插件「📖 说明」页不再引用不存在的 `plan-lint` skill，改为指向该脚本的真实调用方式。
 

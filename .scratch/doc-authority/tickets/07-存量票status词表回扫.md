@@ -1,12 +1,13 @@
 ---
 type: task
-blocked_by: [04]
-status: done
 claimed_by: dsh-session
 session: session-plan-protocol-status-alignment
 ---
 
 # 07 存量票 status 词表回扫（resolved → done）
+
+**Status:** resolved
+**Blocked by:** 04
 
 ## 执行记录（2026-09-27 完成）
 
