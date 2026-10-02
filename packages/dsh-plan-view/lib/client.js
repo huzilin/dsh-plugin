@@ -3173,7 +3173,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				}, String(g.kind)))]
 			});
 		}
-		function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
+		function OverviewView({ tickets, efforts, cases, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const byId = new Map(tickets.map((t) => [t.id, t]));
 			const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : void 0;
@@ -4470,6 +4470,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					top === "overview" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OverviewView, {
 						tickets: all,
 						efforts: data.efforts,
+						cases,
 						defects,
 						ledgers,
 						effortIdx,

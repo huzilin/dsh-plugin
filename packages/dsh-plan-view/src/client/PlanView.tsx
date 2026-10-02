@@ -1672,9 +1672,10 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
   )
 }
 
-function OverviewView({ tickets, efforts, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
+function OverviewView({ tickets, efforts, cases, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }: {
   tickets: ParsedTicket[]
   efforts: { dir: string; mapRaw: string; specRaw?: string }[]
+  cases: ParsedTicket[]
   defects: ParsedTicket[]
   ledgers: ParsedTicket[]
   effortIdx: number
@@ -2335,7 +2336,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
       )}
       {top === 'guide' && <GuideView scope={scope} />}
       {top === 'ledger' && <LedgerView ledgers={globalLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} defects={defects} ledgers={ledgers} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+      {top === 'overview' && <OverviewView tickets={all} efforts={data.efforts} cases={cases} defects={defects} ledgers={ledgers} effortIdx={effortIdx} setEffortIdx={setEffortIdx} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
     </div>
   )
 }
