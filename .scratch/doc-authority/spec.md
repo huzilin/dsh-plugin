@@ -1,12 +1,6 @@
----
-type: spec
-date: 2026-09-27
-origin: retrospective
----
+<!-- superseded-by: docs/architecture.md -->
 
 # 文档权威治理 · 技术 spec（spec 一次性化与 docs 分层）
-
-**Status:** superseded-by:docs/architecture.md
 
 > **⚠️ 本 spec 已作废（2026-09-27）**
 >

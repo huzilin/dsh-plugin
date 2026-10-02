@@ -1,12 +1,4 @@
----
-type: spec
-date: 2026-09-29
-origin: review
----
-
 # Spec：全局件治理落地批（global-items）
-
-**Status:** active
 
 > **决策来源**：`.plan/待拍板-全局件概念与全局目录-20260929.md`（2026-09-29 五项拍板全 A，closed，已翻 `archived:` 标）。写前已读架构正本 `docs/architecture.md`（2026-09-29）。**主体已于拍板结算当轮落地**（commit 1a38ef6 / b2aa101 / 01c8aa2 / 21e1a75），本 spec 如实划分「已落地对账面」与「剩余实施面」。
 

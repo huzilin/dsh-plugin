@@ -142,7 +142,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
     > **归宿（<YYYY-MM-DD>）**：→ arch §7.5 ＋ docs/<file> §3
     ```
   - **「更新完成」＝ spec 每节都有归宿行，且指向的目标确实存在。** 语义判断仍要做一次（不可免），但**完成与否由此可机械判定**，且**它同时就是「spec 可否作废」的凭据**——归宿行齐全 ⇒ 可作废；缺失 ⇒ 不可作废；
-  - **取代登记（可作废的第二凭据 · 2026-09-28 拍板 Q1=A/Q2=A，plan-lint 校验[5]）**：effort 票已全终态（`resolved`/`out_of_scope`）⇒ 该 effort 的 `spec.md` 必带 `superseded-by:` 注记**或**已随轮归档——「effort 票尽则必标」。注记写**正文首部 `**Status:** superseded-by:<归宿>`**（首选，2026-10-02 载体改正文行）或**头部 10 行内**引用块——取代声明必须头部机械可检索，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。未满足即 plan-lint 报 `superseded-register`；存量欠账按拍板 Q2=A 一次性补标；
+  - **取代登记（可作废的第二凭据 · 2026-09-28 拍板 Q1=A/Q2=A，plan-lint 校验[5]）**：effort 票已全终态（`resolved`/`out_of_scope`）⇒ 该 effort 的 `spec.md` 必带 `superseded-by:` 注记**或**已随轮归档——「effort 票尽则必标」。注记写法按文档有无头分两类（2026-10-02 拍板）：**无头 spec**（正本形态）写**首行 HTML 注释** `<!-- superseded-by: <归宿> -->`；有头文档写**正文首部 `**Status:** superseded-by:<归宿>`**（首选）或**头部 10 行内**引用块。**取代声明必须头部机械可检索**，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。未满足即 plan-lint 报 `superseded-register`；存量欠账按拍板 Q2=A 一次性补标；
   - **时点**：docs 更新钉在「**spec 定稿那一刻**」，与 `to-spec` 现有动作合并——**不等到「关闭 effort 后」**（那时上下文已散）。
 - **文档头三字段 ＋ 正文状态行**（2026-10-02 拍板「全文档统一走正文行」，Q10=乙）：
   - **frontmatter 保三字段**：`type` / `date` / `origin`。**状态不进 frontmatter。**
@@ -151,6 +151,11 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
   - **`archived:` 归档标记仍写 frontmatter**（它是「已归档」这一事实的机器可检索标记，与状态机无关，见 §四「归档标识」）。
   - **审批档 `status` 五态**：`pending` / `closed` / `superseded-by:<path>` / `active` / `abandoned`，写正文 `**Status:**` 行。**禁止「待拍项已作废却仍留 pending」**。
   - **`superseded-by:<path>` 是路径值**，必须写在**正文首部 10 行内**（机械可检索），埋正文深处不算。
+- **无头文档（2026-10-02 拍板）**：**spec.md 是无头文档**——`to-spec` 的产出模板自 `## Problem Statement` 起，无 frontmatter、无 H1、无状态行；该形态**与上游 mp 原版逐字一致**（2026-10-02 对拍 `/Users/huzilin/workdir/skills/skills/engineering/to-spec/SKILL.md` 确认），属原版既定行为，**不改模板、不补头**。上表 spec 行原写的「frontmatter `type`/`date`/`origin` ＋ 正文 `**Status:**`」**对本类不适用**，已由本条取代。
+  - **标记一律用头部注释**：无头文档的**任何头部标记**（`archived:` / `superseded-by:`）**不用 frontmatter，改写在文件首行的 HTML 注释**——格式 `<!-- <键>: <值> -->`，如 `<!-- superseded-by: docs/architecture.md -->`、`<!-- archived: <round-id> -->`。**位置在首行**（正文第一行之前），保证任何 agent 直读第一眼可见、机器可 grep；埋正文深处不算。
+  - **为什么用注释而非补头**：spec 是**一次性过程物**（effort 关闭即作废归档），不是长期权威；给它补 frontmatter 会把「过程物」伪装成「有状态头的正式单据」，与「spec 不承担权威」的既有口径相悖。注释是「顺带标一笔」的形态，与它的生命周期地位相符。
+  - **凡无头文档的判定**：首行不是 `---` 的治理文档即无头类；其状态/标记**只读注释行与正文**，不读 frontmatter（本就没有）。
+  - **`superseded-by:` 的机械检索**：无头 spec 的取代声明**同时认**首行注释与**正文首部 10 行内**（两个位置任一命中即算），与有头文档同规，埋深处不算。
 - **审批文档归属（两级，2026-09-29 拍板；全局成员 2026-09-30 收拢拍板）**：**grill-with-doc / wayfinder 生成**的审批档落**所属 effort** 的 `.scratch/<effort-slug>/approval/待拍板-<slug>-<date>.md`（独立 `approval/` 目录——随图归组展示、随 effort 归档）；**全局性审批**（跨图 / 无 effort 归属，如治理类拍板）落 **`.plan/approval/`**（2026-09-30 收拢拍板：由 `.plan/` 根层散放收拢为同名独立子目录，与 effort 内 `approval/` 同形；全局件之一，见「全局件」条）。**落点参数化与声明契约（同日拍板 A）**：to-approval 调用必传 `<effort-slug | global>`（人工无参时问归属，不静默推断——`disable-model-invocation` 防自发不防明文，plan-loop / 子代理等明文调用同规）；图内档 frontmatter 加 `effort: <slug>` 声明、全局档不带（路径即声明），plan-lint 检查[10] `approval-scope` 机械校验声明与落点一致；plan-loop 收口裁决单**默认落 `.plan/approval/`**（跨图收口产物，2026-09-30 拍板「plan-loop，默认就放到 .plan/approval/」）。挂账恢复转票进某图时，其关联拍板**随迁同图**（与挂账「恢复口径」联动，见挂账台账条）。存量兼容：09-29 迁移提根层至 `.plan/` 根的档已于 09-30 收拢进 `.plan/approval/`（本仓实证）；根层 `待拍板-*`/`已拍板-*` 前缀形状仅存量兼容读取（plan-lint 检查[9] 对根层报违例驱动迁移），旧布局 `.plan/<effort>/待拍板-*` 不再有（视图对 `.plan` 关 effort 扫描后此类档入全局 approval/ 组）。
 - **effort 标志**：`.scratch/` 下目录里有 `map.md` 才被当作 effort 加载；没有 `map.md` 的 `issues/` 目录不被读取（2026-09-29 议题①裁定：map.md = 文件、effort = 目录、判据 = 目录含 map.md，判据不变、目录根从 `.plan/` 改 `.scratch/`）。**2026-09-29 拍板扩展**：目录无 `map.md` 但含 `spec.md` = **spec-only 实施图**，同被视图加载（to-spec/to-tickets 直出的 effort，无路线 Destination，工单/审批子页照常）；视图加载与 plan-lint 检查[2] 的判据同步为「含 map.md **或** spec.md」，且**只在 `.scratch/`（与归档轮目录）生效**——`.plan/` 下不加载任何 effort，细则见「全局件」条。
 - **非治理目录**：一次性交接 / 审计产物落 `.tmp/handoffs/`、`.tmp/audits/`（2026-09-28 拍板 6b）——不属 plan 生态，视图不加载、`plan-lint` 不扫（`.tmp/` 在仓根，本就在两个治理目录之外）；存量 `.plan/handoffs/`（历史轮快照）只读兼容，plan-lint 豁免（不查缺 map / 文档头 / 同票双档）。
@@ -241,7 +246,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | map | `.scratch/<slug>/map.md` | 无状态字段；读正文即状态（Decisions so far 只索引不存态） |
 | 推演票 | `.scratch/<slug>/issues/NN-<slug>.md` | 正文 `**Status:**`（三值）＋**派生**：`## Answer` 有正文=resolved、`## Ruled out` 有正文=out_of_scope、`claimed_by` 在位=claimed、其余=open；frontier = open 且阻塞边全终态（wayfinder `TRACKER-MARKDOWN.md` 为格式契约正本） |
 | 执行票 | 同上 | 读正文 `**Status:**`（词表见「票面 `Status:` 词表」）；frontier = open 且阻塞边全终态 |
-| spec | `.scratch/<slug>/spec.md` | frontmatter `type`/`date`/`origin` ＋ 正文 `**Status:**`（`superseded-by:<归宿>` 写正文首部 10 行内）；void 判据 = 每节归宿行且目标存在 ＋ 票尽必标 superseded-by（「取代登记」条） |
+| spec | `.scratch/<slug>/spec.md` | **无头文档**（2026-10-02 拍板；to-spec 原版模板自 `## Problem Statement` 起，无 frontmatter/无状态行）——标记写**首行 HTML 注释** `<!-- superseded-by: <归宿> -->`（或正文首部 10 行内）；void 判据 = 每节归宿行且目标存在 ＋ 票尽必标 superseded-by（「取代登记」条） |
 | 审批档 | `.plan/` | 正文 `**Status:**` 五态（`superseded-by:<path>` 写正文首部 10 行内）＋ frontmatter `archived:` 归档标记（双翻标挂点见 §四） |
 | 调研/复盘 | `docs/research/` | 正文 `**Status:** active/closed` |
 | 测例集 / 执行记录 | `.scratch/<slug>/qa/cases.md` / `test.md` | 无 frontmatter——固定名 + H1 形状识别；测例按编号 grep 直达，执行状态记 test.md 按编号逐条（末轮为准） |

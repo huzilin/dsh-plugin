@@ -111,6 +111,8 @@ Horizontal vs vertical is the judgment that decides charter-or-domain-doc: **"ho
 
 **After discharging: flip the approval docs this spec consumed** (翻标挂点②, plan-lint-gate 票 10). Any approval document under `.plan/` whose items this spec absorbed gets `archived: <spec 落点>` added to its frontmatter at this moment — that mark is what lets `plan-archive` move it with the round while unmarked approvals stay in `.plan/`. Do not touch its `status` (the `archived:` mark sits outside the status machine); `superseded-by:` keeps its own meaning (replaced by a later ruling).
 
+**The spec itself is a headerless document (2026-10-02 拍板).** The template above starts at `## Problem Statement` — no frontmatter, no H1, no status line, and this is verbatim upstream behaviour, so **do not add a header**. When this spec later needs a head mark (its own `superseded-by:` when the effort's tickets all reach a terminal state, or `archived:` at round archiving), write it as an **HTML comment on the first line**: `<!-- superseded-by: <归宿> -->` / `<!-- archived: <round-id> -->`. First line, before any body text — a mark buried in the body is not machine-retrievable and does not count.
+
 Two prohibitions worth stating outright, because both are how this goes wrong:
 
 - **Do not hold a live pointer from a long-lived doc into the tracker layer.** The charter states *what the architecture is now*; specs, maps and tickets in `.scratch/` (approvals in `.plan/`) are temporary by design and move to `.archive/` when their effort closes. Record *where the decision came from* inside the spec's own disposition lines and the approval doc — both travel with the round into the archive — not as a pointer that breaks on that move.

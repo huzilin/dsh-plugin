@@ -397,7 +397,10 @@ for PD in $PLAN_DIRS; do
     esac
     # 头部 10 行内的「superseded-by:」注记也认（取代声明必须头部机械可检索——
     # 埋正文的标记 agent 读不到，doc-authority 复盘实证 23% 可检索率教训）。
-    # 不做全文 grep：正文「提及」他人被取代（引用性出现）不算自身已标，2026-09-29 实测误放行。
+    # 这一条同时覆盖无头 spec 的首行 HTML 注释形态 `<!-- superseded-by: … -->`
+    # （2026-10-02 拍板：spec 是无头文档，标记一律走注释），因二者都落在头部
+    # 10 行内。不做全文 grep：正文「提及」他人被取代（引用性出现）不算自身已标，
+    # 2026-09-29 实测误放行。
     if [ "$marked" -eq 0 ] && head -10 "$f" | grep -q 'superseded-by' 2>/dev/null; then marked=1; fi
     if [ "$marked" -eq 0 ]; then
       note "✗ $f: superseded-register — effort 票已全部终态（resolved/out_of_scope），spec.md 仍无 superseded-by 注记且未归档（按五类归宿分流后补标或归档）"
