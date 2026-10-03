@@ -21,3 +21,5 @@ type: task
 ## 执行记录（2026-10-04）
 
 改动七文件：`skills/prototype/SKILL.md`（落点契约节＋Rules 1 例外）、`skills/prototype/UI.md`（sub-shape 章整章替换为独立 html 形态＋`#variant=` hash 切换骨架＋wire/production-gate/cleanup 三处对应改造）、`skills/prototype/LOGIC.md`（步骤 5 落点注）、`skills/plan-protocol/SKILL.md`（检查[8] 条）、`skills/plan-approve/scripts/plan-lint.sh`（检查[8] 三处＋头注释）、`docs/research/梳理-plan目录写入矩阵-20260930.md`（三处）。分发同步 install-skills.sh（prototype 走主循环默认映射，无需改脚本）。
+
+**补注（2026-10-04 二批）**：用户追加指令「to-spec：grill 对话产出过原型的，最终选择的原型挂到 spec」——`skills/to-spec/SKILL.md` 新增「Mount the prototypes chosen in the conversation」节（Process 层独立节，不动 spec 模板文字）：Implementation Decisions 加挂载行（相对路径＋`#variant=` 胜出键＋拍板日期）；部分采纳逐文件挂载；不 inline html、不拷变体代码；mp 原版 decision-rich snippet inline 例外保留、与挂载行并存不互替；无胜出者先问不猜、无原型静默跳过。

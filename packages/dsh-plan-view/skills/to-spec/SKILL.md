@@ -74,6 +74,21 @@ Any further notes about the feature.
 
 </spec-template>
 
+## Mount the prototypes chosen in the conversation（本仓补丁 2026-10-04，plan-lint-gate 票 23 契约）
+
+If the grill conversation produced prototypes — the `prototype` skill ran, and the effort's `.scratch/<slug>/prototype/` is non-empty — the spec must **mount the winning prototype(s)**. A UI decision made by flipping through variants is encoded by the file, not by prose:
+
+- In **Implementation Decisions**, at the decision the prototype answers, add a mount line:
+
+  ```markdown
+  - 原型：`prototype/<name>.html#variant=<k>`（胜出变体 <k>，<YYYY-MM-DD> 拍板）
+  ```
+
+- **Partial adoption**（「要 B 的头部＋C 的侧栏」）mounts every file that carries a chosen piece, each with one line saying what was taken from which variant.
+- The path is **relative into the effort's own `prototype/` directory**（plan-protocol 检查[8] 白名单成员；文件随 effort 归档，spec 的归宿行与指针随轮可达）。Do **not** inline the html into the spec and do not copy variant code into it — the mount line is a reference to the asset, the asset stays in `prototype/`.
+- mp 原版「inline a decision-rich snippet」例外（模板 Implementation Decisions 节）仍可用——状态机/reducer/schema 等决策性片段照旧转写；但**文件挂载不因其豁免**：snippet 是决策的转写，挂载行是资产的引用，两者并存不互替。
+- Prototype files exist but the user never picked a winner → list the files and ask which won (or which parts) **before** writing the mount line; do not guess. No prototypes in the conversation → skip silently.
+
 ## After writing: keep the architecture charter current
 
 The spec is one layer down from the architecture charter. If the repo keeps a single architecture source of truth (`docs/architecture.md`, self-declared "全局架构唯一正本"), update it after the spec lands:
