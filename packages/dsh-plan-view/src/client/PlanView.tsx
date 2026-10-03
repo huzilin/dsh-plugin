@@ -819,8 +819,9 @@ const ROOT_GROUP = '\u0000root'
 // ─── Four views, one collection pass ─────────────────────────────────────────
 //
 // The tab shows the different things that happen to share a directory:
-//   路线 (route)     — the wayfinder map: an effort's destination and its DAG
-//                      （2026-09-30 拍板：工单子页并入路线，Table 变体即原工单表）
+//   工单 (route)     — an effort's tickets: destination and its DAG/Kanban/Table
+//                      （2026-10-03 拍板：路线 tab 裁撤更名「工单」——09-30 工单
+//                      子页已并入此页，票看板本来就是主体；内部 id 仍 route）
 //   待拍板 (approvals) — decisions waiting on the human
 //   台账 (ledger)    — standing debts across maps (挂账台账)
 //   缺陷 (defects)   — test-found bugs, scoped to one map (缺陷台账)
@@ -1611,7 +1612,7 @@ const isDshSession = (id: string): boolean => id.startsWith('session-')
 // ─── 推演产物三视图（2026-09-30 拍板③，取代票 12 的「🔍 推演票」聚合页）──────
 //
 // 每个票型一个视图，仅选中推演图（mapKind==='speculation'）显示：该型推演票
-// 全量列出（含已收口——路线页 Table 变体默认只显 open/claimed），行内展示其
+// 全量列出（含已收口——工单页 Table 变体默认只显 open/claimed），行内展示其
 // frontmatter `assets:` 字段命中的产物文件。归组走官方获取契约（资产存仓、
 // 经字段链接、不贴正文）；未被任何票引用的资产文件是契约外孤岛，不进视图。
 function SpeculationTypeView({ kind, tickets, assetFiles, cwd, planDir, scope, ctx, sessions, onChanged, readOnly }: {
@@ -1699,7 +1700,7 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
             const accent = done ? '#4ed17e' : ACCENT
             const specOnly = e.mapRaw === ''
             return (
-              <span key={e.dir} onClick={() => setEffortIdx(i)} title={`${e.dir}${specOnly ? '（spec-only 实施图：无 map.md，凭 spec.md 加载，路线页无 Destination）' : ''}${done ? '（全部工单已验收）' : ''}`} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? accent : done ? '#4ed17e55' : BORDER}`, color: on || done ? accent : TEXT_FAINT, background: on ? `${accent}22` : 'transparent' }}>
+              <span key={e.dir} onClick={() => setEffortIdx(i)} title={`${e.dir}${specOnly ? '（spec-only 实施图：无 map.md，凭 spec.md 加载，工单页无 Destination）' : ''}${done ? '（全部工单已验收）' : ''}`} style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, cursor: 'pointer', border: `1px solid ${on ? accent : done ? '#4ed17e55' : BORDER}`, color: on || done ? accent : TEXT_FAINT, background: on ? `${accent}22` : 'transparent' }}>
                 {kind ? MAP_KIND_META[kind].icon : '🗺️'} {e.dir.split('/').pop()}{specOnly ? ' 📄' : ''} <span style={{ opacity: .7 }}>{countFor(e.dir)}</span>
               </span>
             )
@@ -1730,7 +1731,7 @@ function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effort
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const byId = new Map(tickets.map(t => [t.id, t]))
   // 页内筛选（2026-09-21 拍板）：绑定全局 effortIdx——选中某图后，卡片与
-  // 下方三个聚合区都只看该图；根层松散文档与路线页同语义保持可见。
+  // 下方三个聚合区都只看该图；根层松散文档与工单页同语义保持可见。
   const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : undefined
   const shownEfforts = effortIdx < 0 ? efforts : efforts.filter((_, i) => i === effortIdx)
   const visible = useMemo(
@@ -2090,7 +2091,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     () => (effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
     [mapOwnTickets, effortIdx, selectedDir],
   )
-  // 缺陷挂在具体图下（.scratch/<effort>/qa/），按当前选中的图过滤——与路线页共用
+  // 缺陷挂在具体图下（.scratch/<effort>/qa/），按当前选中的图过滤——与工单页共用
   // effortIdx/selectedDir，切图时缺陷跟着切。根层全局缺陷（.plan/qa/DEF-*.md，
   // 无图归属）不进地图页——2026-09-25 拍板：地图页只看图归属缺陷，全局缺陷
   // 只进第一层「测例&缺陷」tab。
@@ -2100,7 +2101,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   )
   // 待拍板同语义随图切换（2026-09-21 拍板：筛选后看到的都是同一张图）；
   // 全局审批档（.plan/approval/，2026-09-30 收拢拍板起为正本落点，inEffort 对
-  // ROOT_GROUP 恒真）与路线页松散票同语义保持可见。
+  // ROOT_GROUP 恒真）与工单页松散票同语义保持可见。
   const mapApprovals = useMemo(
     () => (effortIdx < 0 ? approvals : approvals.filter(t => selectedDir !== undefined && inEffort(t, selectedDir))),
     [approvals, effortIdx, selectedDir],
@@ -2298,15 +2299,15 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
           <div style={{ display: 'flex', gap: 2, padding: '4px 14px 0', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
             {([
-              ['route', '🗺️ 路线', openTickets(mapTickets)],
+              ['route', '🎫 工单', openTickets(mapTickets)],
               // 第 2 子页（2026-09-30 拍板）：推演图 =【map】渲染 map.md 正文；
               // 实施图（spec-only）=【spec】渲染 spec.md 正文。按选中 effort 的
               // 文件有无互斥插入；「全部地图」态无单一正文，不显示。
               ...(selEffort === undefined ? [] : selEffort.mapRaw !== ''
                 ? [['mapdoc', '🗺️ map', 0] as [MapSub, string, number]]
                 : selEffort.specRaw ? [['specdoc', '📄 spec', 0] as [MapSub, string, number]] : []),
-              // 「🎫 工单」子页已移除（2026-09-30 拍板②）：票列表归宿＝路线子页
-              // 三变体（Table 变体即原工单表）；推演票另见三票型视图（仅推演图）。
+              // 原「🎫 工单」独立子页已移除（2026-09-30 拍板②）并入本页（Table
+              // 变体即原工单表）；2026-10-03 拍板：本页由「路线」更名「工单」。
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
               ['ledger', '📒 台账', openLedgerCount(mapLedgers)],
               ['defects', '🐞 缺陷', openDefectCount(mapDefects)],
@@ -2556,7 +2557,7 @@ function GuideView({ scope }: { scope: SessionScope }) {
             <Code>prototype</Code>＝原型票（🧩 做粗糙实物给讨论反应）；
             <Code>grilling</Code>＝拷问票（🔥 逐题拍板）。
             推演图（后三种组成）终点是<strong style={{ color: TEXT }}>决策清零</strong>，实施图（task）终点是<strong style={{ color: TEXT }}>落码验收</strong>；
-            卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；路线页 Table 变体默认只显 open/claimed，收口票看这里）。
+            卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；工单页 Table 变体默认只显 open/claimed，收口票看这里）。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>进度条右端的黄色锁区是什么？</strong><br />
@@ -2581,11 +2582,11 @@ function GuideView({ scope }: { scope: SessionScope }) {
             但<strong style={{ color: TEXT }}>已标 <Code>archived:</Code> 的全局审批档一并搭车搬走</strong>（2026-10-02 拍板）。
             <Code>plan-sync</Code> 收尾会先核一遍归档前置判据并报告，不必等归档时才发现缺件。
             右上角「轮次」选择器可切进某一轮的快照（<Code>.archive/rounds/&lt;round-id&gt;/</Code>），
-            按轮只读查看当时的路线 / 工单 / 拍板。
+            按轮只读查看当时的地图 / 工单 / 拍板。
           </div>
           <div style={{ margin: '10px 0' }}>
             <strong style={{ color: TEXT }}>历史遗留的 impl/ 、impl-fe/ 目录？</strong><br />
-            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页；
+            那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🎫 工单」子页（Kanban/Table/Relation），不再单独成页；
             收尾时并入 <Code>issues/</Code>。<strong style={{ color: TEXT }}><Code>tickets/</Code> 同样是非法目录名</strong>——
             票只认 <Code>issues/</Code>（存量 <Code>tickets/</Code> 待迁移）。
           </div>

@@ -3194,7 +3194,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							const specOnly = e.mapRaw === "";
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								onClick: () => setEffortIdx(i),
-								title: `${e.dir}${specOnly ? "（spec-only 实施图：无 map.md，凭 spec.md 加载，路线页无 Destination）" : ""}${done ? "（全部工单已验收）" : ""}`,
+								title: `${e.dir}${specOnly ? "（spec-only 实施图：无 map.md，凭 spec.md 加载，工单页无 Destination）" : ""}${done ? "（全部工单已验收）" : ""}`,
 								style: {
 									fontSize: 11.5,
 									padding: "4px 12px",
@@ -4227,7 +4227,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							children: [
 								[
 									"route",
-									"🗺️ 路线",
+									"🎫 工单",
 									openTickets(mapTickets)
 								],
 								...selEffort === void 0 ? [] : selEffort.mapRaw !== "" ? [[
@@ -5035,7 +5035,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											style: { color: TEXT },
 											children: "落码验收"
 										}),
-										"； 卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；路线页 Table 变体默认只显 open/claimed，收口票看这里）。"
+										"； 卡片上的彩色徽标即票型身份；推演图子页「🔍 调研 / 🧩 原型 / 🔥 拷问」按票型全量列出这三种票与其 assets: 关联产物（2026-09-30 拍板：三视图取代聚合推演票页，仅推演图可见；工单页 Table 变体默认只显 open/claimed，收口票看这里）。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -5128,7 +5128,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "plan-sync" }),
 										" 收尾会先核一遍归档前置判据并报告，不必等归档时才发现缺件。 右上角「轮次」选择器可切进某一轮的快照（",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: ".archive/rounds/<round-id>/" }),
-										"）， 按轮只读查看当时的路线 / 工单 / 拍板。"
+										"）， 按轮只读查看当时的地图 / 工单 / 拍板。"
 									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -5139,7 +5139,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 											children: "历史遗留的 impl/ 、impl-fe/ 目录？"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
-										"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🗺️ 路线」子页（Kanban/Table/Relation），不再单独成页； 收尾时并入 ",
+										"那是早期形态的实施工单，正在逐步废弃。它们的票现在也出现在「🗺️ 地图 → 🎫 工单」子页（Kanban/Table/Relation），不再单独成页； 收尾时并入 ",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Code, { children: "issues/" }),
 										"。",
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", {

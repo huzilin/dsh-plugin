@@ -3,7 +3,7 @@
  *
  * 被测的是 lib/server.js 的纯数据面（collectSnapshot / upsertFrontmatterKey），
  * 不起 HTTP：读取契约（effort 判据、白名单、PLAN_ROOT_ALLOW、round 白名单）
- * 错一处，路线页就静默少一块数据。跑 `node --test test/` 即可。
+ * 错一处，工单页就静默少一块数据。跑 `node --test test/` 即可。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
