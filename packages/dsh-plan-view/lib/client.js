@@ -328,6 +328,18 @@ window.__ModuleLoader__.load({
 		function shortId(t) {
 			return (t.id.match(/^([A-Za-z]*\d+)/)?.[1] ?? t.id).slice(0, 4).toUpperCase();
 		}
+		function ticketSeqKey(t) {
+			const m = t.id.match(/^([A-Za-z]*)(\d+)/);
+			return [
+				m?.[1] ?? "",
+				m ? parseInt(m[2], 10) : Number.MAX_SAFE_INTEGER,
+				t.id
+			];
+		}
+		function compareTicketSeq(a, b) {
+			const ka = ticketSeqKey(a), kb = ticketSeqKey(b);
+			return ka[0].localeCompare(kb[0]) || ka[1] - kb[1] || (ka[2] < kb[2] ? -1 : ka[2] > kb[2] ? 1 : 0);
+		}
 		function normalizeRef(raw) {
 			return ticketId(raw.trim().replace(/^["']|["']$/g, "").split("/").pop() ?? "");
 		}
@@ -962,7 +974,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			}));
 			const adrs = parsed.filter((t) => t.group === "adr");
 			const assetFiles = parsed.filter((t) => t.group === "assets");
-			const tickets = parsed.filter((t) => t.group !== "adr" && t.group !== "assets").filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md");
+			const tickets = parsed.filter((t) => t.group !== "adr" && t.group !== "assets").filter((t) => t.group !== "qa" || ticketKind(t) === "defect" || t.file === "cases.md").sort((a, b) => (a.effort ?? "").localeCompare(b.effort ?? "") || compareTicketSeq(a, b));
 			const qaTests = parsed.filter((t) => t.group === "qa" && (t.file === "test.md" || /^test-/.test(t.file)));
 			const efforts = snap.efforts.map((e) => ({
 				dir: e.dir,

@@ -213,6 +213,19 @@ function shortId(t: ParsedTicket): string {
   return (m?.[1] ?? t.id).slice(0, 4).toUpperCase()
 }
 
+// 工单排序（2026-10-03 用户需求：展示按文件名前面数字序号）。此前票序 = 服务端
+// fs 枚举序，APFS/Ext4 上都不是字母序——Kanban 列内卡片实为目录随机序。
+// 序号形状与 shortId 徽标同款（字母前缀+数字），键 = (字母前缀, 数字值, 文件名)：
+// 数字按值比（`2` < `10`），纯数字票（前缀空）最先，无数字票垫底按文件名兜底。
+function ticketSeqKey(t: ParsedTicket): [string, number, string] {
+  const m = t.id.match(/^([A-Za-z]*)(\d+)/)
+  return [m?.[1] ?? '', m ? parseInt(m[2], 10) : Number.MAX_SAFE_INTEGER, t.id]
+}
+function compareTicketSeq(a: ParsedTicket, b: ParsedTicket): number {
+  const ka = ticketSeqKey(a), kb = ticketSeqKey(b)
+  return ka[0].localeCompare(kb[0]) || ka[1] - kb[1] || (ka[2] < kb[2] ? -1 : ka[2] > kb[2] ? 1 : 0)
+}
+
 // `blocked_by` is written several ways across repos: `[02]`, `["W3-大纲版本化"]`,
 // `["R2"]`, even `["../state-machine/改造工单/R12-….md"]`. Normalise each entry to
 // the same space as ticketId so the dependency graph can actually resolve them.
@@ -878,6 +891,9 @@ function assemblePlanData(snap: Snapshot): PlanData {
   const tickets = parsed
     .filter(t => t.group !== 'adr' && t.group !== 'assets')
     .filter(t => t.group !== 'qa' || ticketKind(t) === 'defect' || t.file === 'cases.md')
+    // effort 首键：聚合态各图编号各自从 01 起，跨图比数字无意义——保持按图分组
+    // （与收集序同构：根层票最先），组内按序号升序。Kanban/关系图/表格默认序全继承。
+    .sort((a, b) => (a.effort ?? '').localeCompare(b.effort ?? '') || compareTicketSeq(a, b))
   // 执行验收记录在进票面前截走（同 cases.md 的「不当票」拍板，2026-09-20）：
   // 文件名与 cases 契约对称（test.md / test-*.md），只留存在性给进度锁判据。
   const qaTests = parsed.filter(t => t.group === 'qa' && (t.file === 'test.md' || /^test-/.test(t.file)))
