@@ -3,8 +3,8 @@
  *
  * 变更① 四类单据全计：分母从「只数工单」扩为 `ticket`/`approval`/`ledger`/
  *        `qa-defect` 全计，完成判据**各按自己坐标系**（协议明文「四套状态机互不
- *        套用」）：ticket=正文 ## Answer 带正文；approval=不再 pending；ledger=
- *        已销/已转票；qa-defect=已关闭。
+ *        套用」）：ticket=displayStatus 判 done（收口节或正文 `**Status:**` 行）；
+ *        approval=不再 pending；ledger=已销/已转票；qa-defect=已关闭。
  * 变更② 实施图缺 `qa/cases.md` → 完成度**封顶 80%**（用户选定「封顶」而非加权）。
  * 变更③（2026-10-03 用户需求）有测例但缺执行验收记录 `qa/test.md` → **封顶 90%**，
  *        `lockPct/lockKind` 标出锁档（20=cases / 10=test），两档互斥取深。

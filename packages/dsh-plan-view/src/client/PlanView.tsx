@@ -72,33 +72,40 @@ function bodyField(body: string, label: string): string | undefined {
 
 function deriveTicketStatus(file: string, raw: string): ParsedTicket {
   const { fm, body } = parseFrontmatter(raw)
-  // done/outOfScope 与 displayStatus 同源（都走 hasSection），不再各写一份正则——
-  // 两份判据漂移过：进度条用 t.done、状态徽标用 displayStatus，同一张票能同时
-  // 显示「✅ 收口」和「0%」（2026-10-02 用户实测 qa-skill-merge 复现）。
-  const hasAnswer = hasSection(body, 'Answer')
-  const hasRuledOut = hasSection(body, 'Ruled out')
   const titleMatch = raw.match(/^#\s+(.+)$/m)
-  return {
+  const t: ParsedTicket = {
     id: ticketId(file),
     file, title: titleMatch?.[1]?.replace(/`[^`]*`/g, '')?.trim() ?? file,
     type: fm.type,
     blockedBy: parseBlockedBy(bodyField(body, 'Blocked by') ?? fm.blocked_by),
     assets: parseAssetRefs(fm.assets),
-    done: hasAnswer, outOfScope: hasRuledOut, claimedBy: fm.claimed_by,
+    done: false, outOfScope: false, claimedBy: fm.claimed_by,
     status: bodyField(body, 'Status') ?? fm.status, date: fm.date, origin: fm.origin,
     session: fm.session, originSession: fm['origin_session'], body,
     qaCases: fm.qa_cases === 'true', qaTested: fm.qa_tested === 'true', qaAccepted: fm.qa_accepted === 'true',
   }
+  // done/outOfScope 唯一真相源 = displayStatus（下方派生函数，含正文 **Status:**
+  // 行路径）。两份判据漂移过两次：进度条/布局读 t.done、状态徽标读 displayStatus，
+  // 同一张票能同时显示「✅ 收口」和「0%」——2026-10-02 qa-skill-merge 首次实测
+  // （当时修法是都走 hasSection）；2026-10-03 novel outline-prototype-consolidation
+  // 二次复发：10-02 载体迁移给 displayStatus 加了第三条 done 路径（正文 Status 行）
+  // 而 t.done 没跟上，11 张 to-tickets 执行票（无 Answer 节）10 张 resolved，
+  // Kanban 头部仍 0%。故不再各写一份判据，构造完直接取 displayStatus 的结论。
+  const st = displayStatus(t)
+  t.done = st === 'done'
+  t.outOfScope = st === 'out_of_scope'
+  return t
 }
 
 // ─── 票态推导（唯一真相源 = plan-protocol §三「票面 status 词表」）──────────────
 //
 // 协议只定义**一种**票态载体（2026-10-02 用户拍板：去掉 frontmatter 兼容识别，
-// 统一按标准协议）：status **不入 frontmatter**，由正文收束节推导——
+// 统一按标准协议）：status 写正文 `**Status:**` 行，收口节派生并行、优先读——
 //   `## Answer` 带正文 = done；`## Ruled out` 带正文 = out_of_scope；
-//   claimed_by 在位 = claimed；其余 = open。
-// 格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`（该文件明写「There is no
-// status: field」——字段会是正文的第二次抄写，两处必然各自过期、互相说谎）。
+//   claimed_by 在位 = claimed；无收口节时按正文行值取态（见 displayStatus）。
+// 格式契约正本 = wayfinder `TRACKER-MARKDOWN.md`（推演票原文：「A ticket's
+// status is not among them — … derived rather than stored」——不设 status 字段，
+// 收口写进票面正文；字段会是正文的第二次抄写，两处必然各自过期、互相说谎）。
 //
 // 本次删除的旧兼容层：DONE_STATUS/OUT_STATUS/CLAIMED_STATUS 三张宽容词表
 // （done/closed/complete/shipped/abandoned/wontfix/doing/wip…）。它们是为
@@ -430,7 +437,7 @@ const TYPE_FALLBACK = { icon: '•', color: '#888' }
 const NO_TYPE = '\u0000no-type'
 const typeTheme = (t: string | undefined) => TYPE_THEME[t ?? ''] ?? TYPE_FALLBACK
 const DOT: Record<string, string> = { open: '#81858c', claimed: '#f7ad31', done: '#4ed17e', out_of_scope: '#61666b' }
-const STATUS_LABELS: Record<TicketStatus, string> = { open: 'Open', claimed: 'Claimed', done: 'Done', out_of_scope: 'Out of scope' }
+const STATUS_LABELS: Record<TicketStatus, string> = { open: 'Open', claimed: 'Claimed', done: 'Resolved', out_of_scope: 'Out of scope' }
 const STATUS_ORDER: TicketStatus[] = ['open', 'claimed', 'done', 'out_of_scope']
 
 // ─── 票面路径（2026-09-29 拍板）：头部显示 + 点击打开 ──────────────────────────
@@ -630,7 +637,7 @@ const MAP_KIND_META: Record<MapKind, { label: string; icon: string }> = {
 // ① **四类单据全计**：分母不再只数工单（`ticket`），`approval` / `ledger` /
 //    `qa-defect` 一并计入。它们各自答不同的问题（见 plan-protocol「四套状态机
 //    互不套用」），故**完成判据按各自坐标系**取，不共用票态词表：
-//      - ticket      → displayStatus(t) === 'done'（## Answer 带正文）
+//      - ticket      → displayStatus(t) === 'done'（收口节或正文 **Status:** 行）
 //      - approval    → 已结案：不是 pending（closed / superseded-by / abandoned）
 //      - ledger      → 已销账：正文 `- 状态:` 为「已销」或「已转票」
 //      - qa-defect   → 已关闭：正文 `- 状态:` 为「已关闭」

@@ -250,18 +250,16 @@ window.__ModuleLoader__.load({
 		}
 		function deriveTicketStatus(file, raw) {
 			const { fm, body } = parseFrontmatter(raw);
-			const hasAnswer = hasSection(body, "Answer");
-			const hasRuledOut = hasSection(body, "Ruled out");
 			const titleMatch = raw.match(/^#\s+(.+)$/m);
-			return {
+			const t = {
 				id: ticketId(file),
 				file,
 				title: titleMatch?.[1]?.replace(/`[^`]*`/g, "")?.trim() ?? file,
 				type: fm.type,
 				blockedBy: parseBlockedBy(bodyField(body, "Blocked by") ?? fm.blocked_by),
 				assets: parseAssetRefs(fm.assets),
-				done: hasAnswer,
-				outOfScope: hasRuledOut,
+				done: false,
+				outOfScope: false,
 				claimedBy: fm.claimed_by,
 				status: bodyField(body, "Status") ?? fm.status,
 				date: fm.date,
@@ -273,6 +271,10 @@ window.__ModuleLoader__.load({
 				qaTested: fm.qa_tested === "true",
 				qaAccepted: fm.qa_accepted === "true"
 			};
+			const st = displayStatus(t);
+			t.done = st === "done";
+			t.outOfScope = st === "out_of_scope";
+			return t;
 		}
 		function stripFences(body) {
 			const out = [];
@@ -549,7 +551,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		const STATUS_LABELS = {
 			open: "Open",
 			claimed: "Claimed",
-			done: "Done",
+			done: "Resolved",
 			out_of_scope: "Out of scope"
 		};
 		const STATUS_ORDER = [
