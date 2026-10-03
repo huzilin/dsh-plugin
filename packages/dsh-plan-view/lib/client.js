@@ -815,7 +815,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				specArchived
 			};
 		}
-		/** 锁区的角标文案与悬停说明（总览卡片条与 Kanban 头部条共用，防两处漂移）。 */
+		/** 锁区的角标文案与悬停说明（总览卡片条与子页头部条共用，防两处漂移）。 */
 		function lockCopy(kind) {
 			return kind === "test" ? {
 				chip: "🔒 缺测试文档 10%",
@@ -824,6 +824,84 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				chip: "🔒 缺测例 20%",
 				title: "缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%"
 			};
+		}
+		/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（四类单据全计＋
+		*  spec 名额＋锁区），与总览卡同一个数；工单/待拍板/缺陷/台账四个子页头部共用。
+		*  prog 为 undefined（「全部地图」聚合态，无单一 effort）时不渲染。 */
+		function EffortProgressBar({ prog, meta }) {
+			const lockTitle = prog.locked ? lockCopy(prog.lockKind).title : "";
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					padding: "8px 16px 0",
+					display: "flex",
+					alignItems: "center",
+					gap: 10
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							flex: 1,
+							height: 6,
+							borderRadius: 3,
+							background: CHIP_BG,
+							border: `1px solid ${BORDER}`,
+							overflow: "hidden",
+							position: "relative"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+							height: "100%",
+							width: `${prog.pct}%`,
+							borderRadius: 3,
+							background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
+						} }), prog.locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							title: lockTitle,
+							style: {
+								position: "absolute",
+								top: 0,
+								right: 0,
+								bottom: 0,
+								width: `${prog.lockPct}%`,
+								background: LOCKED,
+								cursor: "help"
+							}
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						style: {
+							fontSize: 12,
+							fontWeight: 700,
+							color: prog.locked ? LOCKED : "#4ed17e",
+							minWidth: 36,
+							textAlign: "right",
+							fontVariantNumeric: "tabular-nums"
+						},
+						children: [prog.pct, "%"]
+					}),
+					prog.locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						title: lockTitle,
+						style: {
+							fontSize: 10.5,
+							fontWeight: 700,
+							color: LOCKED,
+							background: `${LOCKED}1f`,
+							border: `1px solid ${LOCKED}66`,
+							borderRadius: 4,
+							padding: "1px 5px",
+							whiteSpace: "nowrap",
+							cursor: "help"
+						},
+						children: lockCopy(prog.lockKind).chip
+					}),
+					meta && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							fontSize: 12,
+							color: "#888",
+							whiteSpace: "nowrap"
+						},
+						children: meta
+					})
+				]
+			});
 		}
 		/** Frontmatter `status` marks a document as an approval awaiting a ruling. */
 		function isPending(t) {
@@ -1412,7 +1490,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				})
 			});
 		}
-		function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly, lock }) {
+		function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly, prog }) {
 			const [focus, setFocus] = (0, react.useState)(null);
 			const groups = (0, react.useMemo)(() => {
 				const g = {
@@ -1427,9 +1505,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const waiting = (0, react.useMemo)(() => tickets.filter(isPending).sort((a, b) => (ageDays(b) ?? -1) - (ageDays(a) ?? -1)), [tickets]);
 			const active = tickets.filter((t) => !t.outOfScope);
 			const done = tickets.filter((t) => t.done).length;
-			const pct = active.length > 0 ? Math.round(done / active.length * 100) : 0;
-			const lockTitle = lock !== void 0 ? lockCopy(lock.kind).title : "";
-			const shownPct = lock !== void 0 ? Math.min(pct, 100 - lock.pct) : pct;
+			const aggPct = active.length > 0 ? Math.round(done / active.length * 100) : 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
 					flex: 1,
@@ -1543,68 +1619,41 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						},
 						children: destination
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					prog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, {
+						prog,
+						meta: `${tickets.length} tickets · ${done} done`
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							margin: "8px 16px 0",
 							display: "flex",
 							alignItems: "center",
 							gap: 10
 						},
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								style: {
-									flex: 1,
-									height: 6,
-									borderRadius: 3,
-									background: CHIP_BG,
-									border: `1px solid ${BORDER}`,
-									overflow: "hidden",
-									position: "relative"
-								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
-									height: "100%",
-									width: `${shownPct}%`,
-									borderRadius: 3,
-									background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
-								} }), lock !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									title: lockTitle,
-									style: {
-										position: "absolute",
-										top: 0,
-										right: 0,
-										bottom: 0,
-										width: `${lock.pct}%`,
-										background: LOCKED,
-										cursor: "help"
-									}
-								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								style: {
-									fontSize: 12,
-									fontWeight: 700,
-									color: lock !== void 0 ? LOCKED : "#4ed17e",
-									minWidth: 36,
-									textAlign: "right"
-								},
-								children: [shownPct, "%"]
-							}),
-							lock !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								title: lockTitle,
-								style: {
-									fontSize: 10.5,
-									fontWeight: 700,
-									color: LOCKED,
-									background: `${LOCKED}1f`,
-									border: `1px solid ${LOCKED}66`,
-									borderRadius: 4,
-									padding: "1px 5px",
-									whiteSpace: "nowrap",
-									cursor: "help"
-								},
-								children: lockCopy(lock.kind).chip
-							})
-						]
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								height: 6,
+								borderRadius: 3,
+								background: CHIP_BG,
+								border: `1px solid ${BORDER}`,
+								overflow: "hidden"
+							},
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+								height: "100%",
+								width: `${aggPct}%`,
+								borderRadius: 3,
+								background: `linear-gradient(90deg, #4ed17e, ${ACCENT})`
+							} })
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							style: {
+								fontSize: 12,
+								fontWeight: 700,
+								color: "#4ed17e",
+								minWidth: 36,
+								textAlign: "right"
+							},
+							children: [aggPct, "%"]
+						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						style: {
@@ -3129,7 +3178,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				]
 			});
 		}
-		function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }) {
+		function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount, right }) {
 			const groups = [
 				"speculation",
 				"impl",
@@ -3156,75 +3205,86 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					borderBottom: `1px solid ${BORDER_LIGHT}`,
 					alignItems: "center"
 				},
-				children: [efforts.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					onClick: () => setEffortIdx(-1),
-					style: {
-						fontSize: 11.5,
-						padding: "4px 12px",
-						borderRadius: 999,
-						cursor: "pointer",
-						border: `1px solid ${allOn ? ACCENT : BORDER}`,
-						color: allOn ? ACCENT : TEXT_FAINT,
-						background: allOn ? `${ACCENT}22` : "transparent"
-					},
-					children: ["全部地图 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						style: { opacity: .7 },
-						children: totalCount
-					})]
-				}), groups.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					style: {
-						display: "inline-flex",
-						gap: 6,
-						alignItems: "center",
-						flexWrap: "wrap"
-					},
-					children: [
-						groups.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							style: {
-								fontSize: 10,
-								color: TEXT_FAINT,
-								padding: "3px 2px"
-							},
-							children: g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : "📄 其他"
-						}),
-						g.items.map(({ e, i, kind }) => {
-							const on = effortIdx === i;
-							const done = allAccepted(e.dir);
-							const accent = done ? "#4ed17e" : ACCENT;
-							const specOnly = e.mapRaw === "";
-							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								onClick: () => setEffortIdx(i),
-								title: `${e.dir}${specOnly ? "（spec-only 实施图：无 map.md，凭 spec.md 加载，工单页无 Destination）" : ""}${done ? "（全部工单已验收）" : ""}`,
+				children: [
+					efforts.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						onClick: () => setEffortIdx(-1),
+						style: {
+							fontSize: 11.5,
+							padding: "4px 12px",
+							borderRadius: 999,
+							cursor: "pointer",
+							border: `1px solid ${allOn ? ACCENT : BORDER}`,
+							color: allOn ? ACCENT : TEXT_FAINT,
+							background: allOn ? `${ACCENT}22` : "transparent"
+						},
+						children: ["全部地图 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							style: { opacity: .7 },
+							children: totalCount
+						})]
+					}),
+					groups.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						style: {
+							display: "inline-flex",
+							gap: 6,
+							alignItems: "center",
+							flexWrap: "wrap"
+						},
+						children: [
+							groups.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								style: {
-									fontSize: 11.5,
-									padding: "4px 12px",
-									borderRadius: 999,
-									cursor: "pointer",
-									border: `1px solid ${on ? accent : done ? "#4ed17e55" : BORDER}`,
-									color: on || done ? accent : TEXT_FAINT,
-									background: on ? `${accent}22` : "transparent"
+									fontSize: 10,
+									color: TEXT_FAINT,
+									padding: "3px 2px"
 								},
-								children: [
-									kind ? MAP_KIND_META[kind].icon : "🗺️",
-									" ",
-									e.dir.split("/").pop(),
-									specOnly ? " 📄" : "",
-									" ",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										style: { opacity: .7 },
-										children: countFor(e.dir)
-									})
-								]
-							}, e.dir);
-						}),
-						g !== groups[groups.length - 1] && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
-							width: 1,
-							height: 16,
-							background: BORDER,
-							margin: "0 4px"
-						} })
-					]
-				}, String(g.kind)))]
+								children: g.kind ? `${MAP_KIND_META[g.kind].icon} ${MAP_KIND_META[g.kind].label}` : "📄 其他"
+							}),
+							g.items.map(({ e, i, kind }) => {
+								const on = effortIdx === i;
+								const done = allAccepted(e.dir);
+								const accent = done ? "#4ed17e" : ACCENT;
+								const specOnly = e.mapRaw === "";
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									onClick: () => setEffortIdx(i),
+									title: `${e.dir}${specOnly ? "（spec-only 实施图：无 map.md，凭 spec.md 加载，工单页无 Destination）" : ""}${done ? "（全部工单已验收）" : ""}`,
+									style: {
+										fontSize: 11.5,
+										padding: "4px 12px",
+										borderRadius: 999,
+										cursor: "pointer",
+										border: `1px solid ${on ? accent : done ? "#4ed17e55" : BORDER}`,
+										color: on || done ? accent : TEXT_FAINT,
+										background: on ? `${accent}22` : "transparent"
+									},
+									children: [
+										kind ? MAP_KIND_META[kind].icon : "🗺️",
+										" ",
+										e.dir.split("/").pop(),
+										specOnly ? " 📄" : "",
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: { opacity: .7 },
+											children: countFor(e.dir)
+										})
+									]
+								}, e.dir);
+							}),
+							g !== groups[groups.length - 1] && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
+								width: 1,
+								height: 16,
+								background: BORDER,
+								margin: "0 4px"
+							} })
+						]
+					}, String(g.kind))),
+					right && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							marginLeft: "auto",
+							display: "inline-flex",
+							alignItems: "center"
+						},
+						children: right
+					})
+				]
 			});
 		}
 		function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effortIdx, setEffortIdx, planDir, scope, ctx, sessions, onChanged, readOnly }) {
@@ -4015,14 +4075,37 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const pendingApprovals = (list) => list.filter((t) => ticketKind(t) === "approval" && isPending(t)).length;
 			const specCount = (type) => mapTickets.filter((t) => (t.type ?? "").trim().toLowerCase() === type).length;
 			const selKind = effortIdx >= 0 && selectedDir !== void 0 ? mapKind(selectedDir, mapOwnTickets) : void 0;
-			const selLock = (() => {
+			const selProg = (() => {
 				if (effortIdx < 0 || selectedDir === void 0 || selEffort === void 0) return void 0;
-				const p = effortProgress(mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), selectedDir, cases, qaTests, selKind, selEffort.specRaw);
-				return p.lockPct > 0 ? {
-					pct: p.lockPct,
-					kind: p.lockKind ?? "cases"
-				} : void 0;
+				return effortProgress(all.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), selectedDir, cases, qaTests, selKind, selEffort.specRaw);
 			})();
+			const roundsSelect = rounds.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+				value: round ?? "",
+				onChange: (e) => setRound(e.target.value === "" ? null : e.target.value),
+				title: "按轮查看历史归档（.archive/rounds，只读）",
+				style: {
+					padding: "4px 8px",
+					borderRadius: 6,
+					border: `1px solid ${round !== null ? "#7a4a15" : BORDER}`,
+					background: HEADER_BG,
+					color: round !== null ? "#f7ad31" : TEXT_DIM,
+					fontSize: 12,
+					outline: "none",
+					maxWidth: 280,
+					cursor: "pointer"
+				},
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+					value: "",
+					children: "📍 现行（.scratch + .plan）"
+				}), rounds.map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+					value: r.id,
+					children: [
+						"🗄️ ",
+						r.id,
+						r.topic ? ` · ${r.topic}` : ""
+					]
+				}, r.id))]
+			});
 			const tabs = [
 				{
 					id: "overview",
@@ -4107,79 +4190,49 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								alignItems: "center",
 								gap: 6
 							},
-							children: [
-								rounds.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-									value: round ?? "",
-									onChange: (e) => setRound(e.target.value === "" ? null : e.target.value),
-									title: "按轮查看历史归档（.archive/rounds，只读）",
-									style: {
-										padding: "4px 8px",
-										borderRadius: 6,
-										border: `1px solid ${round !== null ? "#7a4a15" : BORDER}`,
-										background: HEADER_BG,
-										color: round !== null ? "#f7ad31" : TEXT_DIM,
-										fontSize: 12,
-										outline: "none",
-										maxWidth: 280,
-										cursor: "pointer"
-									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-										value: "",
-										children: "📍 现行（.scratch + .plan）"
-									}), rounds.map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-										value: r.id,
-										children: [
-											"🗄️ ",
-											r.id,
-											r.topic ? ` · ${r.topic}` : ""
-										]
-									}, r.id))]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										display: "flex",
-										alignItems: "center",
-										gap: 1,
-										padding: "2px 4px",
-										border: `1px solid ${BORDER}`,
-										borderRadius: 6,
-										background: "transparent"
-									},
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											onClick: () => stepFontScale(-1),
-											disabled: fontScale === FONT_SCALES[0],
-											title: "缩小字号",
-											"aria-label": "缩小字号",
-											style: fontBtn(fontScale === FONT_SCALES[0]),
-											children: "−"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											title: "当前字号（整页等比缩放）",
-											"aria-live": "polite",
-											style: {
-												fontSize: 10.5,
-												color: TEXT_DIM,
-												minWidth: 30,
-												textAlign: "center",
-												fontVariantNumeric: "tabular-nums"
-											},
-											children: [Math.round(fontScale * 100), "%"]
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											onClick: () => stepFontScale(1),
-											disabled: fontScale === FONT_SCALES[FONT_SCALES.length - 1],
-											title: "放大字号",
-											"aria-label": "放大字号",
-											style: fontBtn(fontScale === FONT_SCALES[FONT_SCALES.length - 1]),
-											children: "+"
-										})
-									]
-								}),
-								refreshBtn()
-							]
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: {
+									display: "flex",
+									alignItems: "center",
+									gap: 1,
+									padding: "2px 4px",
+									border: `1px solid ${BORDER}`,
+									borderRadius: 6,
+									background: "transparent"
+								},
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										onClick: () => stepFontScale(-1),
+										disabled: fontScale === FONT_SCALES[0],
+										title: "缩小字号",
+										"aria-label": "缩小字号",
+										style: fontBtn(fontScale === FONT_SCALES[0]),
+										children: "−"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										title: "当前字号（整页等比缩放）",
+										"aria-live": "polite",
+										style: {
+											fontSize: 10.5,
+											color: TEXT_DIM,
+											minWidth: 30,
+											textAlign: "center",
+											fontVariantNumeric: "tabular-nums"
+										},
+										children: [Math.round(fontScale * 100), "%"]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										onClick: () => stepFontScale(1),
+										disabled: fontScale === FONT_SCALES[FONT_SCALES.length - 1],
+										title: "放大字号",
+										"aria-label": "放大字号",
+										style: fontBtn(fontScale === FONT_SCALES[FONT_SCALES.length - 1]),
+										children: "+"
+									})
+								]
+							}), refreshBtn()]
 						})]
 					}),
 					round !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -4213,7 +4266,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							effortIdx,
 							setEffortIdx,
 							countFor: (dir) => mapOwnTickets.filter((t) => inEffort(t, dir)).length,
-							totalCount: mapOwnTickets.length
+							totalCount: mapOwnTickets.length,
+							right: roundsSelect
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							style: {
@@ -4333,7 +4387,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								onChanged,
 								destination,
 								readOnly,
-								lock: selLock
+								prog: selProg
 							}),
 							variant === "D" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ViewD, {
 								tickets: mapTickets,
@@ -4370,30 +4424,54 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							ctx,
 							body: selEffort.specRaw
 						}),
-						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
-							approvals: mapApprovals,
-							scope,
-							ctx,
-							sessions,
-							onChanged,
-							readOnly
+						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								flexDirection: "column",
+								overflow: "hidden"
+							},
+							children: [selProg !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
+								approvals: mapApprovals,
+								scope,
+								ctx,
+								sessions,
+								onChanged,
+								readOnly
+							})]
 						}),
-						mapSub === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
-							ledgers: mapLedgers,
-							mapTickets,
-							scope,
-							ctx,
-							sessions,
-							onChanged,
-							readOnly
+						mapSub === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								flexDirection: "column",
+								overflow: "hidden"
+							},
+							children: [selProg !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
+								ledgers: mapLedgers,
+								mapTickets,
+								scope,
+								ctx,
+								sessions,
+								onChanged,
+								readOnly
+							})]
 						}),
-						mapSub === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
-							defects: mapDefects,
-							scope,
-							ctx,
-							sessions,
-							onChanged,
-							readOnly
+						mapSub === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								flexDirection: "column",
+								overflow: "hidden"
+							},
+							children: [selProg !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
+								defects: mapDefects,
+								scope,
+								ctx,
+								sessions,
+								onChanged,
+								readOnly
+							})]
 						}),
 						mapSub === "chain" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChainView, {
 							tickets: mapTickets,

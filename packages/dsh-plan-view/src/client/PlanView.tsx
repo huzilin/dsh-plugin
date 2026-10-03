@@ -746,11 +746,36 @@ export function effortPct(
   return effortProgress(own, dir, cases, tests, kind, specRaw).pct
 }
 
-/** 锁区的角标文案与悬停说明（总览卡片条与 Kanban 头部条共用，防两处漂移）。 */
+/** 锁区的角标文案与悬停说明（总览卡片条与子页头部条共用，防两处漂移）。 */
 function lockCopy(kind: 'cases' | 'test' | undefined): { chip: string; title: string } {
   return kind === 'test'
     ? { chip: '🔒 缺测试文档 10%', title: '已有测例（qa/cases.md）但没有执行验收记录（qa/test.md）：测过没记录不算收口，上限锁在 90%' }
     : { chip: '🔒 缺测例 20%', title: '缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%' }
+}
+
+/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（四类单据全计＋
+ *  spec 名额＋锁区），与总览卡同一个数；工单/待拍板/缺陷/台账四个子页头部共用。
+ *  prog 为 undefined（「全部地图」聚合态，无单一 effort）时不渲染。 */
+function EffortProgressBar({ prog, meta }: {
+  prog: ReturnType<typeof effortProgress>
+  meta?: string
+}) {
+  const lockTitle = prog.locked ? lockCopy(prog.lockKind).title : ''
+  return (
+    <div style={{ padding: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ height: '100%', width: `${prog.pct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+        {prog.locked && (
+          <div title={lockTitle} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: `${prog.lockPct}%`, background: LOCKED, cursor: 'help' }} />
+        )}
+      </div>
+      <span style={{ fontSize: 12, fontWeight: 700, color: prog.locked ? LOCKED : '#4ed17e', minWidth: 36, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{prog.pct}%</span>
+      {prog.locked && (
+        <span title={lockTitle} style={{ fontSize: 10.5, fontWeight: 700, color: LOCKED, background: `${LOCKED}1f`, border: `1px solid ${LOCKED}66`, borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', cursor: 'help' }}>{lockCopy(prog.lockKind).chip}</span>
+      )}
+      {meta && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{meta}</span>}
+    </div>
+  )
 }
 
 /** Frontmatter `status` marks a document as an approval awaiting a ruling. */
@@ -1141,7 +1166,7 @@ function DetailModal({ ticket, planDir, scope, ctx, sessions, onChanged, onClose
 
 // ─── Variant A: Kanban ───────────────────────────────────────────────────────
 
-function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly, lock }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null; readOnly?: boolean; lock?: { pct: number; kind: 'cases' | 'test' } }) {
+function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination, readOnly, prog }: { tickets: ParsedTicket[]; planDir: string; scope: SessionScope; ctx: any; sessions: Map<string, SessionSummary>; onChanged: () => void; destination: string | null; readOnly?: boolean; prog?: ReturnType<typeof effortProgress> }) {
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const groups = useMemo(() => {
     const g: Record<TicketStatus, ParsedTicket[]> = { done: [], out_of_scope: [], claimed: [], open: [] }
@@ -1155,12 +1180,10 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
   )
   const active = tickets.filter(t => !t.outOfScope)
   const done = tickets.filter(t => t.done).length
-  const pct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
-  // 锁区（2026-10-03 用户拍板）：单图态由 PlanView 传入该图的锁档（缺测例 20 /
-  // 缺测试文档 10）；本条自己的百分比（done/active）也要被锁档压住并画黄区，
-  // 否则数字越过黄区、条宽与数字互相矛盾。「全部地图」态是聚合视图，无单一锁。
-  const lockTitle = lock !== undefined ? lockCopy(lock.kind).title : ''
-  const shownPct = lock !== undefined ? Math.min(pct, 100 - lock.pct) : pct
+  // 头部进度条（2026-10-03 拍板②）：单图态 = effort 全局口径（prog 与总览卡同数，
+  // 四类单据 + spec 名额 + 锁区）；「全部地图」聚合态无单一 effort，退回本页自算
+  // 的 done/active（纯工单口径，无锁）——第二口径仅存于此。
+  const aggPct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
   // minHeight:0：Kanban 列体（下方 overflowY:auto）要在受限高度里才能滚，
   // 列方向 flex 的自动最小高度会把本根撑到内容高、被上层裁掉（同根节点）。
   return (
@@ -1185,18 +1208,16 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
         </div>
       )}
       {destination && <div style={{ margin: '8px 16px 0', padding: '8px 12px', borderRadius: 8, background: HEADER_BG, border: `1px solid ${BORDER}`, color: '#aaa', fontSize: 13 }}>{destination}</div>}
-      <div style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden', position: 'relative' }}>
-          <div style={{ height: '100%', width: `${shownPct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
-          {lock !== undefined && (
-            <div title={lockTitle} style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: `${lock.pct}%`, background: LOCKED, cursor: 'help' }} />
-          )}
-        </div>
-        <span style={{ fontSize: 12, fontWeight: 700, color: lock !== undefined ? LOCKED : '#4ed17e', minWidth: 36, textAlign: 'right' }}>{shownPct}%</span>
-        {lock !== undefined && (
-          <span title={lockTitle} style={{ fontSize: 10.5, fontWeight: 700, color: LOCKED, background: `${LOCKED}1f`, border: `1px solid ${LOCKED}66`, borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', cursor: 'help' }}>{lockCopy(lock.kind).chip}</span>
+      {prog !== undefined
+        ? <EffortProgressBar prog={prog} meta={`${tickets.length} tickets · ${done} done`} />
+        : (
+          <div style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${aggPct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#4ed17e', minWidth: 36, textAlign: 'right' }}>{aggPct}%</span>
+          </div>
         )}
-      </div>
       <div style={{ flex: 1, display: 'flex', gap: 10, padding: '12px 16px', overflowX: 'auto' }}>
         {STATUS_ORDER.filter(s => groups[s].length > 0).map(s => (
           <div key={s} style={{ flex: '1 1 0', minWidth: 200, display: 'flex', flexDirection: 'column', background: BG, border: `1px solid ${BORDER_LIGHT}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -1660,13 +1681,14 @@ function SpeculationTypeView({ kind, tickets, assetFiles, cwd, planDir, scope, c
   )
 }
 
-function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount }: {
+function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCount, right }: {
   efforts: { dir: string; mapRaw: string; specRaw?: string }[]
   all: ParsedTicket[]
   effortIdx: number
   setEffortIdx: (i: number) => void
   countFor: (dir: string) => number
   totalCount: number
+  right?: React.ReactNode   // 行右端槽位（2026-10-03 拍板①：轮次选择器挂这里）
 }) {
   // 分开展示：推演图一组、实施图一组，未判型的垫后（2026-09-20 拍板）。
   const groups = (['speculation', 'impl', undefined] as const)
@@ -1708,6 +1730,7 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
           {g !== groups[groups.length - 1] && <span style={{ width: 1, height: 16, background: BORDER, margin: '0 4px' }} />}
         </span>
       ))}
+      {right && <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center' }}>{right}</span>}
     </div>
   )
 }
@@ -2197,14 +2220,32 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   const specCount = (type: string) => mapTickets.filter(t => (t.type ?? '').trim().toLowerCase() === type).length
   // 选中图的型别：三个票型视图只对推演图显示（拍板「仅 wayfinder 的 map 可见」）。
   const selKind = effortIdx >= 0 && selectedDir !== undefined ? mapKind(selectedDir, mapOwnTickets) : undefined
-  // 选中图的锁档（2026-10-03 用户拍板）：复用 effortProgress 的锁口径（单一真相源），
-  // 只取锁区不取它的 pct——Kanban 头部条的分母仍是自己的 done/active。
-  const selLock = (() => {
+  // effort 全局进度（2026-10-03 拍板②）：单图态一次算好，工单/待拍板/缺陷/台账
+  // 四个子页头部共用；own 用全量单据（含根层全局件），读数与总览卡完全同口径
+  // （effortProgress 单一真相源）——Kanban 自算 done/active 的第二口径退役，
+  // 仅存于「全部地图」聚合态 fallback（无单一 effort，无锁）。
+  const selProg = (() => {
     if (effortIdx < 0 || selectedDir === undefined || selEffort === undefined) return undefined
-    const own = mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)
-    const p = effortProgress(own, selectedDir, cases, qaTests, selKind, selEffort.specRaw)
-    return p.lockPct > 0 ? { pct: p.lockPct, kind: p.lockKind ?? 'cases' } : undefined
+    const own = all.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)
+    return effortProgress(own, selectedDir, cases, qaTests, selKind, selEffort.specRaw)
   })()
+
+  // 轮次选择器（2026-10-03 拍板①：从主头部下移到地图页 effort 行右端——归档轮
+  // 看的是「当时的图」，与 effort 切换同语境）。round 态指示由主头部下方的
+  // 「🗄️ 历史轮次快照」横幅全 tab 兜底，其他页签不会无提示地读到归档数据。
+  const roundsSelect = rounds.length > 0 && (
+    <select
+      value={round ?? ''}
+      onChange={e => setRound(e.target.value === '' ? null : e.target.value)}
+      title="按轮查看历史归档（.archive/rounds，只读）"
+      style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${round !== null ? '#7a4a15' : BORDER}`, background: HEADER_BG, color: round !== null ? '#f7ad31' : TEXT_DIM, fontSize: 12, outline: 'none', maxWidth: 280, cursor: 'pointer' }}
+    >
+      <option value="">📍 现行（.scratch + .plan）</option>
+      {rounds.map(r => (
+        <option key={r.id} value={r.id}>🗄️ {r.id}{r.topic ? ` · ${r.topic}` : ''}</option>
+      ))}
+    </select>
+  )
 
   // 第一行 tab（2026-09-30 拍板拆分与追加）：测例/缺陷各自成 tab 且聚合
   // （各 effort qa/ + .plan/qa/ 全局件）；【ADR】居台账后（知识层相邻，2026-09-30
@@ -2239,19 +2280,6 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
         {/* The files change outside this view — another session writes them, or
             this one does. Re-reading is the only way to see that. */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-          {rounds.length > 0 && (
-            <select
-              value={round ?? ''}
-              onChange={e => setRound(e.target.value === '' ? null : e.target.value)}
-              title="按轮查看历史归档（.archive/rounds，只读）"
-              style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${round !== null ? '#7a4a15' : BORDER}`, background: HEADER_BG, color: round !== null ? '#f7ad31' : TEXT_DIM, fontSize: 12, outline: 'none', maxWidth: 280, cursor: 'pointer' }}
-            >
-              <option value="">📍 现行（.scratch + .plan）</option>
-              {rounds.map(r => (
-                <option key={r.id} value={r.id}>🗄️ {r.id}{r.topic ? ` · ${r.topic}` : ''}</option>
-              ))}
-            </select>
-          )}
           {/* 字号（2026-10-02 用户需求）：只有百分比与加减号，不带「字号」和 A 字符
               ——按钮自带 title/aria-label 说明用途，视觉上不占位。
               根节点 zoom 让整个子树等比缩放（含本控件自身，故调大后控件也跟着
@@ -2294,7 +2322,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {data.efforts.length > 0 && (
             <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
               countFor={dir => mapOwnTickets.filter(t => inEffort(t, dir)).length}
-              totalCount={mapOwnTickets.length} />
+              totalCount={mapOwnTickets.length}
+              right={roundsSelect} />
           )}
           {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
           <div style={{ display: 'flex', gap: 2, padding: '4px 14px 0', borderBottom: `1px solid ${BORDER}`, background: BG, alignItems: 'center' }}>
@@ -2335,7 +2364,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
                 <button type="button" style={subBtn(variant === 'D')} onClick={() => setVariant('D')}>📊 Relation</button>
                 <button type="button" style={subBtn(variant === 'C')} onClick={() => setVariant('C')}>Table</button>
               </div>
-              {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} lock={selLock} />}
+              {variant === 'A' && <ViewA tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} destination={destination} readOnly={readOnly} prog={selProg} />}
               {variant === 'D' && <ViewD tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
               {variant === 'C' && <ViewC tickets={mapTickets} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
             </>
@@ -2348,9 +2377,26 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {mapSub === 'specdoc' && selEffort !== undefined && !!selEffort.specRaw && (
             <DocCard icon="📄" title="spec.md" path={`${selEffort.dir}/spec.md`} scope={scope} ctx={ctx} body={selEffort.specRaw as string} />
           )}
-          {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
-          {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {/* effort 全局进度条（2026-10-03 拍板②）：四个单据子页头部共用，读数同总览卡；
+              「全部地图」态无单一 effort（selProg undefined）自动不渲染。 */}
+          {mapSub === 'approvals' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {selProg !== undefined && <EffortProgressBar prog={selProg} />}
+              <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+            </div>
+          )}
+          {mapSub === 'ledger' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {selProg !== undefined && <EffortProgressBar prog={selProg} />}
+              <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+            </div>
+          )}
+          {mapSub === 'defects' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {selProg !== undefined && <EffortProgressBar prog={selProg} />}
+              <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+            </div>
+          )}
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={mapCases} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} ctx={ctx} readOnly={readOnly} />}
           {mapSub === 'research' && <SpeculationTypeView kind="research" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}

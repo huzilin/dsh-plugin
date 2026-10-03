@@ -113,13 +113,15 @@ test('refresh is icon-only and sits to the right of the font control', async () 
   // 注意不能直接全局 indexOf 比位置：refreshBtn 的 title 只出现在**函数定义**里
   // （在文件靠前处），拿它跟渲染点比必然得出错误结论（实测踩过）。要定位真正的
   // **调用点**，即头部右侧容器内的 refreshBtn()。
-  const autoIdx = b.indexOf('marginLeft: "auto"')
-  assert.ok(autoIdx > 0, '定位头部右侧容器失败')
-  const headerSeg = b.slice(autoIdx, autoIdx + 6000)
-  const refreshCall = headerSeg.indexOf('refreshBtn()')
-  const fontInHeader = headerSeg.indexOf('"aria-label": "放大字号"')
-  assert.ok(refreshCall > 0, '头部容器里找不到 refreshBtn() 调用点')
-  assert.ok(fontInHeader > 0, '头部容器里找不到字号控件')
+  // 2026-10-03 补：`marginLeft: "auto"` 不再唯一（地图页 effort 行右端槽位同款
+  // 样式，且 EffortChips 定义在主头部之前），故遍历所有出现点，取「同时命中
+  // 字号控件与 refreshBtn() 调用」的那段为头部容器。
+  const header = [...b.matchAll(/marginLeft: "auto"/g)]
+    .map(m => b.slice(m.index, m.index + 6000))
+    .find(seg => seg.includes('"aria-label": "放大字号"') && seg.includes('refreshBtn()'))
+  assert.ok(header !== undefined, '头部右侧容器（字号控件＋refreshBtn 调用点）定位失败')
+  const refreshCall = header.indexOf('refreshBtn()')
+  const fontInHeader = header.indexOf('"aria-label": "放大字号"')
   assert.ok(refreshCall > fontInHeader, '刷新按钮应在字号控件右侧（当前顺序反了）')
 })
 
