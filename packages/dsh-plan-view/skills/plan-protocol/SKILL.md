@@ -35,10 +35,12 @@ grill / wayfinder → to-approval → plan-approve      ← ① 决策循环（�
 问题发现（用户反馈 / code review / 走查 / QA 缺陷升级）→ to-approval → plan-approve（结算＋影响域清单） ──清单驱动──> to-tickets → implement / implement-spec → plan-sync
                                              ↑
                                  依据 = 那份待拍板文档本身
-                                 （不追加 spec、不新建 spec）
+                                 （不新建 spec；effort 未关闭且其 spec
+                                 存活时，口径变更回写 spec 走销号分流
+                                 ——2026-10-04 E' 拍板）
 ```
 
-**两条流的分界**：主流程是「**已知要做**，把需求写成 spec 再拆票」；补充流程是「**发现一个问题 / 缺口**，先拍板定论，依据就是拍板文档」。汇合点相同：**拍板结论若要干活，由 plan-approve 在影响域清单登记票项**（`to-approval` 调 `plan-approve`；2026-09-28 拍板——plan-approve **只结算、不落票**），落票由**清单驱动后置**执行：plan-loop「决策已定案但工单未拆」行动行或实施会话按清单项调 `to-tickets`，接回落地链 ②。其余合法落票时机——挂账恢复转票、修复会话按拍板档立返工票——见二·硬规则 1；无论哪个时机，格式一律同源 `to-tickets`。
+**两条流的分界**：主流程是「**已知要做**，把需求写成 spec 再拆票」；补充流程是「**发现一个问题 / 缺口**，先拍板定论，依据就是拍板文档」。汇合点相同：**拍板结论若要干活，由 plan-approve 在影响域清单登记票项**（`to-approval` 调 `plan-approve`；2026-09-28 拍板——plan-approve **只结算、不落票**），落票由**清单驱动后置**执行：plan-loop「决策已定案但工单未拆」行动行或实施会话按清单项调 `to-tickets`，接回落地链 ②。其余合法落票时机——挂账恢复转票、修复会话按拍板档立返工票——见二·硬规则 1；无论哪个时机，格式一律同源 `to-tickets`。**spec 回写例外（2026-10-04 E' 拍板）**：拍板涉口径变更且目标 effort 未关闭（未随轮归档）时，结论**先回写该 effort 的 spec**（改相应节或追加续批节）并当场销号分流权威文档，再拆票——spec 是归档前唯一变更入口，不得直改权威文档绕过 spec。
 
 ### QA 流程（测试与缺陷闭环）
 
@@ -78,7 +80,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 2. **回写发生在两处，是同一件事的两种时机**：`implement*` 在每张票合并落地时**当场**翻状态；`plan-sync` 事后对账补齐。两者不是两套流程。
 3. **执行登记（多 agent 并发防混）**：agent 拿到票开工的那一刻必须回写票面——**正文 `**Status:** claimed`** ＋ frontmatter `claimed_by: <agent 名>` / `session: <会话标识>`（DSH 会话写 `session-<uuid>`；zcode 写 `sess_<id>` 或会话名）；wayfinder 票另加 `claimed_at`（RFC 3339，用于判死会话残留），格式契约见 wayfinder `TRACKER-MARKDOWN.md`。票面 session 是页面跳转/串联展示的唯一凭据：DSH 会话可从计划视图直接跳转；外部会话（zcode 等）页面展示名字并提供恢复命令复制（`zcode --resume <id>`）。完工/弃做时同步把状态改为终态，避免长期滞留「执行中」。
 4. **`plan-approve` 是「决策 → 影响域清单」的结算点**（2026-09-28 拍板：摘除主动落票）：拍板结论是「做 X」时，必须在影响域清单登记票项（条目 → 归宿 + ☐），否则结论只是聊天记录，下次会话丢失；落票由清单驱动后置执行——plan-loop「决策已定案但工单未拆」行动行或实施会话按清单项调 `to-tickets`（格式独占不变）。挂账恢复转票与修复返工票是另外两个合法落票时机（见规则 1），不需要先有拍板文档在手——依据分别是台账「恢复口径」与拍板档结论。
-5. **架构正本（如 `docs/architecture.md`，项目自declare「全局架构唯一正本」者）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，也在末步更新。它不新建——已存在就维护。
+5. **架构正本（如 `docs/architecture.md`，项目自declare「全局架构唯一正本」者）是全局架构唯一最新事实**：`to-spec` 写前读、写完更新；`plan-approve` 拍板若改变了架构事实，**末步改目标 effort 的 spec 相应节并当场销号分流**（2026-10-04 E' 拍板：变更入口单一化为 spec，不再直改权威文档——effort 已归档或无存活 spec 时才直改正本）。它不新建——已存在就维护。
 6. **QA 缺陷环不经过拍板**：缺陷档（`DEF-NN`）是返工依据，修复交 `diagnosing-bugs`（按 E 节「最小复现入口」契约，修复只回写 C 节），**复测按 `- 发现源:` 分流**（QA 轮来源回 `run-qa-testcases` 同命令翻绿；用户来源由 `diagnosing-bugs` 尝试自动复测，跑不通标 `待复测`——2026-10-02 裁定）；票面 `qa_cases` / `qa_tested` / `qa_accepted` 三标记由测试两 skill 写入，验收条件 = AC 全过 + 该票无未关闭缺陷；缺陷暴露需求级分歧时才转 `to-approval`。
 
 ---
@@ -134,16 +136,17 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
   - **需求文档（新文档类，2026-09-27 拍板）**：`type: requirements`；落点 `docs/requirements/<effort>-<主题>.md`；**文件名必须含 effort slug**（＝`.scratch/<slug>/` 目录名，故需求文档与 effort **同名可检索**）。承载**用户故事／Problem／Solution／验收与测法／范围外**。同一 effort 可按主题拆多份，但**每份都带 effort slug**。
   - **横／纵判据（决定写 `arch` 还是领域文档）**：内容回答「**系统各部分怎么相连**」→ **横向** → `arch`；回答「**本域内部怎么定义／怎么算**」→ **垂直** → **领域文档**。同一节常横纵兼有，**故一个归宿可指向多处**；**DDL 归领域文档**（数据模型是领域模型的一部分）。
   - **长期权威自指（修正现状反置）**：**长期文档自身即权威**（它是现行事实），**不得把 `spec` 声明为「真相源」**——spec 一作废，该权威依据即悬空。对 spec 的指针**改称「决策来源」**（记「为什么这么定」；spec 归档后指针指向归档路径）。
-- **`spec` 生命周期与归宿行（2026-09-27 拍板）**：`spec.md` 是**一次性实施文档**，**随 effort 生命周期**——落点 `.scratch/<feature-slug>/spec.md`（2026-09-29 目录迁移）。
-  - **关闭 effort 后，spec 整体作废并归档**；作废前必须先把内容按**五类归宿**分流出去；
+- **`spec` 生命周期与归宿行（2026-09-27 拍板；2026-10-04 E' 拍板修订退役时点与变更入口）**：`spec.md` 是**一次性实施文档**兼 **effort 归档前的变更总线**，**随 effort 生命周期**——落点 `.scratch/<feature-slug>/spec.md`（2026-09-29 目录迁移）。
+  - **关闭 effort（＝随轮归档，G4）后，spec 整体作废并归档**；作废前必须先把内容按**五类归宿**分流出去。**effort 票尽 ≠ effort 关闭**（2026-10-04 E' 拍板取代 2026-09-28「票尽必标」）：票全终态时 spec 合法存活，后续续批拍板/缺陷口径回写 spec；
   - **五类归宿**：①测试决策（接缝／门禁／为什么这么测）→ **需求文档**（附「验收与测法」节）；②Out of Scope → **需求文档**（附「范围外」节）；③实现细节 → **docs**（横向→`arch`／垂直→领域文档）；④数据底座 DDL → **领域文档**；⑤开放项回填记录等过程物 → **归档**（`.archive/`）；
   - **归宿行机制（完成标准）**：spec **每节**须有一行归宿行，取值只能是四种之一——`→ arch §X` ／ `→ docs/<file> §Y` ／ `→ 需求文档 <path> §Z` ／ `→ archive（过程物）`。形态写在该节标题下：
     ```markdown
     > **归宿（<YYYY-MM-DD>）**：→ arch §7.5 ＋ docs/<file> §3
     ```
   - **「更新完成」＝ spec 每节都有归宿行，且指向的目标确实存在。** 语义判断仍要做一次（不可免），但**完成与否由此可机械判定**，且**它同时就是「spec 可否作废」的凭据**——归宿行齐全 ⇒ 可作废；缺失 ⇒ 不可作废；
-  - **取代登记（可作废的第二凭据 · 2026-09-28 拍板 Q1=A/Q2=A，plan-lint 校验[5]）**：effort 票已全终态（`resolved`/`out_of_scope`）⇒ 该 effort 的 `spec.md` 必带 `superseded-by:` 注记**或**已随轮归档——「effort 票尽则必标」。注记写法按文档有无头分两类（2026-10-02 拍板）：**无头 spec**（正本形态）写**首行 HTML 注释** `<!-- superseded-by: <归宿> -->`；有头文档写**正文首部 `**Status:** superseded-by:<归宿>`**（首选）或**头部 10 行内**引用块。**取代声明必须头部机械可检索**，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。未满足即 plan-lint 报 `superseded-register`；存量欠账按拍板 Q2=A 一次性补标；
-  - **时点**：docs 更新钉在「**spec 定稿那一刻**」，与 `to-spec` 现有动作合并——**不等到「关闭 effort 后」**（那时上下文已散）。
+  - **取代登记（2026-10-04 E' 拍板取代 2026-09-28「票尽必标」，plan-lint 校验[5]）**：spec 标 `superseded-by:` 的合法时点＝**effort 归档（G4 前置判据④）**；提前标注而 effort 仍有未终态票＝**中途退役**，plan-lint 报 `premature-supersede`（novel 2026-10-03 事故病灶：spec 死后十票无收纳点，收口票 sweep 清单漏圈权威文档）。注记写法不变（2026-10-02 拍板）：**无头 spec**（正本形态）写**首行 HTML 注释** `<!-- superseded-by: <归宿> -->`；有头文档写**正文首部 `**Status:** superseded-by:<归宿>`**（首选）或**头部 10 行内**引用块。**取代声明必须头部机械可检索**，埋正文深处不算（doc-authority 复盘实证：23% 标记可检索率正是旧病）；正文「提及」他人被取代不算自身已标。销号清单全清的机械校验为加法项待立项；
+  - **时点**：docs 更新钉在「**变更落 spec 那一刻**」——spec 定稿（`to-spec` 现有动作）与后续每次续批变更（E' 销号分流）都当场 apply，**不等到「关闭 effort 后」**（那时上下文已散）。
+  - **变更总线与销号清单（2026-10-04 E' 拍板，novel sweep 漏圈事故闭环）**：effort 未关闭期间，**一切口径变更（续批拍板/缺陷修复方案）先改 spec 相应节（或追加续批节），再当场分流权威文档**——不得直改权威文档绕过 spec（变更入口单一化）。分流动作走**销号清单**：spec 附「分流清单」（节×归宿目标逐行列出），逐项适配、逐项销（形态对齐拍板档影响域清单销号）；清单全清＝spec 可退役凭据（归宿行机制的 checklist 化）。执行归属：`plan-approve` 结算涉架构/领域事实变更时，末步改 spec 并销号（取代「末步直改架构正本」）。
 - **文档头三字段 ＋ 正文状态行**（2026-10-02 拍板「全文档统一走正文行」，Q10=乙）：
   - **frontmatter 保三字段**：`type` / `date` / `origin`。**状态不进 frontmatter。**
   - **状态写正文首部的固定行**：`**Status:** <值>`（票/审批档等）。为什么在正文——状态是读者打开文件第一眼要找的东西，且同一份文档不该让「值」和「载体的形态」分居两处。
@@ -222,7 +225,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 归档单元是**轮**：从输入端（grill / wayfinder / 补充流问题拍板）到落地链收尾的一次完整闭环。轮走完后由 `plan-archive` 把整轮迁入 `.archive/rounds/<round-id>/`。归档**定义**（2026-09-28 triage 定稿）：整轮 `git mv` 进 `.archive/rounds/<round-id>/` ＋ 轮内引用相对化 ＋ 轮外断链巡检 ＋ `.archive/README.md` 两表更新 ＋ 前置判据核验 ＋ **完成即出检索面**（`.zcodeignore` 排 `.archive/`；DSH 侧 `excludedDirectories` 同步——2026-09-28 拍板「归档完成 = 出检索面」）。规则：
 
 - **归档时机 = effort 全消后的轮归档（2026-09-29 G2 裁定）**：不设独立批量归档时机——qa 中缺陷和台账全消、effort 才能翻转，全部解决后才归档；全局 qa/ledger 为**全局件（常驻组）**，常驻 `.plan/qa|ledger/`、**不随轮迁**（非轮成员——随轮走的只是图内 qa/ledger）；**但全局审批档属搭车组，随该轮一并搬**（2026-10-02 裁定，见 §三「全局件」条生命周期表）。
-- **前置判据（G4，全满足才可搬）**：①轮内票全终态（`resolved`/`out_of_scope`）且被测票 `qa_accepted` 齐；②缺陷全关闭；③台账条目全「已销/已转票」（**只清图内台账**；全局台账不在此判据内——全局件常驻组，见 §三「全局件」条）；④spec 已带 `superseded-by:` 注记或归宿行齐备（票 07 校验面）＋审批档全 `closed`/`superseded-by:`/`abandoned` 或已翻 `archived:`。未满足先补标再归档。
+- **前置判据（G4，全满足才可搬）**：①轮内票全终态（`resolved`/`out_of_scope`）且被测票 `qa_accepted` 齐；②缺陷全关闭；③台账条目全「已销/已转票」（**只清图内台账**；全局台账不在此判据内——全局件常驻组，见 §三「全局件」条）；④spec 已带 `superseded-by:` 注记且归宿行齐备（销号清单全清；2026-10-04 E' 拍板：spec 退役只发生在归档）＋审批档全 `closed`/`superseded-by:`/`abandoned` 或已翻 `archived:`。未满足先补标再归档。
 - **整轮 `git mv`，目录结构原样（G3）**：源 = `.scratch/`（tracker 类）——成员相对 `.scratch/` 的路径在轮目录内原样保留，轮目录就是该轮当时 `.scratch/`（＋随轮审批档）的快照，`git log --follow` 可溯。文件搬移只发生在轮归档这一处；`plan-approve` 只翻状态、不搬文件。一轮跨多个 feature-slug 时成员按引用关系归组。
 - **头部归档标识（R1）**：归档成员**必须做头部标识**——frontmatter 增 `archived: <round-id>`（无头文件在首行加 `<!-- archived: <round-id> -->` 注释）；任何 agent 直读该文件第一眼即见「已归档、勿据以实现」。写入动作在归档 `git mv` 同批完成。
 - **轮内互引一律相对路径**：整树搬迁后相对引用原样存活，这是「保持目录完整」的前提（见「文档形态约定」）。
@@ -246,7 +249,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
 | map | `.scratch/<slug>/map.md` | 无状态字段；读正文即状态（Decisions so far 只索引不存态） |
 | 推演票 | `.scratch/<slug>/issues/NN-<slug>.md` | 正文 `**Status:**`（三值）＋**派生**：`## Answer` 有正文=resolved、`## Ruled out` 有正文=out_of_scope、`claimed_by` 在位=claimed、其余=open；frontier = open 且阻塞边全终态（wayfinder `TRACKER-MARKDOWN.md` 为格式契约正本） |
 | 执行票 | 同上 | 读正文 `**Status:**`（词表见「票面 `Status:` 词表」）；frontier = open 且阻塞边全终态 |
-| spec | `.scratch/<slug>/spec.md` | **无头文档**（2026-10-02 拍板；to-spec 原版模板自 `## Problem Statement` 起，无 frontmatter/无状态行）——标记写**首行 HTML 注释** `<!-- superseded-by: <归宿> -->`（或正文首部 10 行内）；void 判据 = 每节归宿行且目标存在 ＋ 票尽必标 superseded-by（「取代登记」条） |
+| spec | `.scratch/<slug>/spec.md` | **无头文档**（2026-10-02 拍板；to-spec 原版模板自 `## Problem Statement` 起，无 frontmatter/无状态行）——标记写**首行 HTML 注释** `<!-- superseded-by: <归宿> -->`（或正文首部 10 行内）；void 判据 = 每节归宿行且目标存在 ＋ 归档时必标 superseded-by（2026-10-04 E' 拍板：票尽不再触发必标，中途退役报 premature-supersede——「取代登记」条） |
 | 审批档 | `.plan/` | 正文 `**Status:**` 五态（`superseded-by:<path>` 写正文首部 10 行内）＋ frontmatter `archived:` 归档标记（双翻标挂点见 §四） |
 | 调研/复盘 | `docs/research/` | 正文 `**Status:** active/closed` |
 | 测例集 / 执行记录 | `.scratch/<slug>/qa/cases.md` / `test.md` | 无 frontmatter——固定名 + H1 形状识别；测例按编号 grep 直达，执行状态记 test.md 按编号逐条（末轮为准） |

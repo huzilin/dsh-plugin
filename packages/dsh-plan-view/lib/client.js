@@ -760,9 +760,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			return false;
 		}
 		/**
-		* spec.md 是否已归档（协议「取代登记」两条凭据之一，2026-10-02 用户需求②）。
-		* 正本 plan-protocol「spec 生命周期与归宿行」：effort 票尽 ⇒ `spec.md` 必带
-		* `superseded-by:` 注记或已随轮归档。注记位置协议限定两种——frontmatter
+		* spec.md 是否已归档（协议「取代登记」，2026-10-02 用户需求②）。
+		* 正本 plan-protocol「spec 生命周期与归宿行」（2026-10-04 E' 拍板：spec 退役
+		* 只发生在 effort 归档，票尽不再触发必标）——`superseded-by:` 注记即退役凭据。
+		* 注记位置协议限定两种——frontmatter
 		* `status: superseded-by:<归宿>`（首选），或**头部 10 行内**引用块。
 		* 「埋正文深处不算」（协议明写，doc-authority 复盘实证 23% 可检索率是旧病），
 		* 故此处只认这两个位置，不做全文正则——否则一份「提及」别人被取代的 spec

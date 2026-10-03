@@ -36,10 +36,12 @@
 #      type 不在上表的文件按说明/杂项解析、不查（研究型票 status 暂不设门，
 #      留观察）。impl 已于 2026-09-27 废弃（存量已于 2026-09-29 全 workdir 回扫
 #      清零，plan-lint-gate 票 07）；再遇即真漂移，本脚本不作拦截。
-#   5. 取代登记：effort 票已全终态（resolved/out_of_scope）⇒ 该 effort 的 spec.md
-#      必带 superseded-by 注记或已随轮归档（2026-09-28 拍板 Q1=A/Q2=A，
-#      票 07；spec 一次性化收口——防走完的 effort 留下无取代声明的 spec
-#      被后续会话当现行权威照做）
+#   5. 取代登记（2026-10-04 E' 拍板取代旧判据）：spec 带 superseded-by 注记 ⇒
+#      该 effort 不得存在未终态票（premature-supersede——spec 中途退役使续批
+#      决策失去收纳点，novel 2026-10-03 事故病灶）。spec 退役只发生在 effort
+#      归档（G4 前置判据④，plan-archive 执行）；旧判据「effort 票尽 ⇒ spec
+#      必标 superseded-by」（2026-09-28 Q1=A/Q2=A）就此取代——票尽时 spec
+#      合法存活，续批口径回写 spec 走销号分流；销号清单机械校验待立项
 #   6. .plan 根层白名单：.plan/ 只放全局件封闭三件套（approval/ 审批档 + qa/ +
 #      ledger/，定义正本 = plan-protocol §三「全局件」条，2026-09-29 拍板；
 #      审批成员 2026-09-30 收拢拍板由根层散放改为 approval/ 目录）；
@@ -364,14 +366,19 @@ for PD in $PLAN_DIRS; do
   echo
 
   # ── 5. 取代登记 ────────────────────────────────────────────────────────────
-  echo "[5] 取代登记（effort 票全终态 ⇒ spec 必带 superseded-by 注记或已归档）"
-  # 判据正本 = 2026-09-28 拍板（Q1=A/Q2=A，plan-lint-gate 票 07）：「effort 票全
-  # resolved ⇒ spec 必带 superseded-by 或已归档」。spec 已归档时整文件随轮搬进
-  # .archive/（本脚本遍历剪枝区），自然不在校验面——留在治理目录的 spec 才查。
-  # 终态词 = resolved/out_of_scope（resolved 允许附日期，2026-10-02 词表三值）；
-  # 存在 open/claimed/空 status 的票 = effort 未走完，不触发。无票目录或零票
-  # = 无「票尽」判据，跳过。
-  unmarked=0
+  echo "[5] 取代登记（spec 带 superseded-by ⇒ effort 不得有未终态票；票尽不再触发必标）"
+  # 判据正本 = 2026-10-04 拍板 E'（spec＝effort 归档前变更总线；审批档
+  # .plan/approval/待拍板-文档sweep范围起草侧漏圈-20261003.md §七）：spec 退役
+  # 只发生在 effort 归档（G4 前置判据④，plan-archive 执行时核销号清单）；
+  # 旧判据「effort 票全 resolved ⇒ spec 必带 superseded-by」（2026-09-28
+  # Q1=A/Q2=A）就此取代——票尽时 spec 合法存活，续批拍板/缺陷口径回写 spec
+  # 走销号分流。本检查反向守门：spec 已标 superseded-by 而 effort 仍有
+  # open/claimed 票 = spec 中途退役（novel 2026-10-03 事故病灶：spec 死后
+  # 十票无收纳点，sweep 清单漏圈权威文档），报 premature-supersede。
+  # 标记检索面同旧判据：正文 `**Status:**` 或头部 10 行内 `superseded-by:`
+  # （覆盖无头 spec 首行 HTML 注释形态），埋正文深处不算。
+  # 销号清单全清的机械校验为加法项，待立项票。
+  nviol=0
   while IFS=$'\t' read -r d id f hh ty st; do
     [ "$id" = "spec" ] || continue
     [ "$d" = "$PD" ] && continue          # 根层散件 spec 不属任何 effort
@@ -380,35 +387,27 @@ for PD in $PLAN_DIRS; do
       [ -d "$d/$tdir" ] && found=1
     done
     [ "$found" -eq 1 ] || continue
-    all_done=1; ntk=0
-    while IFS=$'\t' read -r td tid tf tth tty tst tbby; do
-      case "$td" in "$d/tickets"|"$d/issues") ;; *) continue ;; esac
-      ntk=$((ntk + 1))
-      case "$tst" in
-        resolved|resolved\ *|out_of_scope) : ;;
-        *) all_done=0 ;;
-      esac
-    done < "$TMP/meta.tsv"
-    [ "$ntk" -eq 0 ] && continue
-    [ "$all_done" -eq 1 ] || continue
     marked=0
     case "$(fm_field "$f" status)" in
       superseded-by*) marked=1 ;;
     esac
-    # 头部 10 行内的「superseded-by:」注记也认（取代声明必须头部机械可检索——
-    # 埋正文的标记 agent 读不到，doc-authority 复盘实证 23% 可检索率教训）。
-    # 这一条同时覆盖无头 spec 的首行 HTML 注释形态 `<!-- superseded-by: … -->`
-    # （2026-10-02 拍板：spec 是无头文档，标记一律走注释），因二者都落在头部
-    # 10 行内。不做全文 grep：正文「提及」他人被取代（引用性出现）不算自身已标，
-    # 2026-09-29 实测误放行。
     if [ "$marked" -eq 0 ] && head -10 "$f" | grep -q 'superseded-by' 2>/dev/null; then marked=1; fi
-    if [ "$marked" -eq 0 ]; then
-      note "✗ $f: superseded-register — effort 票已全部终态（resolved/out_of_scope），spec.md 仍无 superseded-by 注记且未归档（按五类归宿分流后补标或归档）"
-      unmarked=$((unmarked + 1))
+    [ "$marked" -eq 1 ] || continue
+    nopen=0
+    while IFS=$'\t' read -r td tid tf tth tty tst tbby; do
+      case "$td" in "$d/tickets"|"$d/issues") ;; *) continue ;; esac
+      case "$tst" in
+        resolved|resolved\ *|out_of_scope) : ;;
+        *) nopen=$((nopen + 1)) ;;
+      esac
+    done < "$TMP/meta.tsv"
+    if [ "$nopen" -gt 0 ]; then
+      note "✗ $f: premature-supersede — spec.md 已带 superseded-by 注记，但该 effort 仍有 $nopen 张未终态票（2026-10-04 E' 拍板：spec 为归档前变更总线，中途退役使续批决策失去收纳点）；撤销注记或先收口票"
+      nviol=$((nviol + 1))
     fi
   done < "$TMP/meta.tsv"
-  [ "$unmarked" -eq 0 ] && note "✓ 无"
-  findings=$((findings + unmarked))
+  [ "$nviol" -eq 0 ] && note "✓ 无"
+  findings=$((findings + nviol))
   echo
 
   # ── 6. .plan 根层白名单 ───────────────────────────────────────────────────
