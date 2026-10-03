@@ -96,4 +96,14 @@ Keep the ordering in mind when numbering: the frontier is any ticket whose block
 
 Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
+**Prototype mount lines travel into tickets（本仓补丁 2026-10-04，票 23 契约）.** When the source spec carries prototype mount lines（`原型：prototype/<name>.html#variant=<k>`，to-spec 的挂载节产出）, each ticket whose scope answers a mounted decision carries that mount line in its own body — right under **What to build**, phrased as a reference, not a copy:
+
+```markdown
+**对照原型:** `prototype/<name>.html#variant=<k>`（<哪条决策>；形态对照物——实施与验收前先打开读胜出变体）
+```
+
+- The mounted prototype is the **shape-of-record** for that slice: the implementer opens it before writing code, and acceptance asks "does it match the winning variant" — not just "does it work".
+- A decision with no mount line has no prototype obligation — do not invent one, and do not mount a prototype to a ticket that only touches non-visual layers（schema/API/后台逻辑）.
+- One mount line per decision it answers; partial adoption（spec 挂了多个文件各取一部分）mounts each file the ticket's slice touches.
+
 Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in that ticket's own file, set its `Status:` line, and commit — then clear context before taking the next ticket.

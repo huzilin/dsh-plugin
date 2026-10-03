@@ -18,6 +18,8 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 1. Read the spec and tickets. Read enough to understand the task graph.
 
+   **If the spec or a ticket mounts a prototype, open it before dispatching implementers（2026-10-04 票 23 契约）.** A mount line（`对照原型:` / `原型：prototype/<name>.html#variant=<k>`）marks the prototype as the **shape-of-record** for that slice: the implementer subagent's brief includes the mount line and the instruction to read the winning variant in a browser before writing UI code（自包含单文件 html，双击可开）. When implementation must diverge from the prototype, the spec's decision text wins——note the divergence on the ticket.
+
 2. **(required) Check the spec is live before implementing it.** A spec (under `.scratch/<slug>/spec.md` — the only legal effort location) is a **one-shot document** — it is voided only when its effort is archived（2026-10-04 E' 拍板：effort 票尽 ≠ effort 关闭；a live spec stays valid across ticket waves and is the sole change bus until archive）. Implementing a spec that has already been superseded or archived means building the *old* decision, which is the single most expensive failure this flow has. Before any implementation work:
 
    - **Look for a supersession notice**: a `superseded-by:` field or an equivalently worded statement in the spec, or in a doc that points at it.
