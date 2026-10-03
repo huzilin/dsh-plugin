@@ -223,8 +223,9 @@ window.__ModuleLoader__.load({
 		* layout + .plan/ — global only: approval/ & global qa/ledger, never an
 		* effort), derives ticket status per the TRACKER-MARKDOWN
 		* contract, and renders the tabbed surface:
-		*   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
-		*   缺陷 · 台账 · ADR · CONTEXT · 说明（2026-09-30 读取契约拍版）
+		*   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec/原型 正文子页）·
+		*   待拍板 · 台账 · 缺陷 · 测例 · ADR · CONTEXT · 说明（2026-09-30 读取契约
+		*   拍版；2026-10-04 拍板补待拍板并按 effort 子页序对齐两层顺序）
 		*
 		* All views share a unified dark theme and markdown-rendered detail panels.
 		* Self-contained: uses its own api module, inline styles, zero CSS deps.
@@ -4129,9 +4130,14 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					count: openTickets(mapOwnTickets)
 				},
 				{
-					id: "cases",
-					label: "🧪 测例",
-					count: cases.length
+					id: "approvals",
+					label: "⏳ 待拍板",
+					count: pendingApprovals(approvals)
+				},
+				{
+					id: "ledger",
+					label: "📒 台账",
+					count: openLedgerCount(globalLedgers)
 				},
 				{
 					id: "defects",
@@ -4139,9 +4145,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 					count: openDefectCount(defects)
 				},
 				{
-					id: "ledger",
-					label: "📒 台账",
-					count: openLedgerCount(globalLedgers)
+					id: "cases",
+					label: "🧪 测例",
+					count: cases.length
 				},
 				{
 					id: "adr",
@@ -4530,6 +4536,39 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							readOnly
 						})
 					] }),
+					top === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							flex: 1,
+							display: "flex",
+							flexDirection: "column",
+							overflow: "hidden"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								padding: "8px 14px",
+								borderBottom: `1px solid ${BORDER}`,
+								fontSize: 11,
+								color: TEXT_FAINT
+							},
+							children: "待拍板聚合（2026-10-04 用户拍板补 tab）：各 effort `approval/` ＋ 全局件 `.plan/approval/`；图内待拍板也在地图页「⏳ 待拍板」子页按图查看。pending 档=status 未翻且未标 archived。"
+						}), approvals.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
+							approvals,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								color: TEXT_FAINT
+							},
+							children: "没有待拍板文档（有决定悬空时 to-approval 落档，这里第一时间看见）。"
+						})]
+					}),
 					top === "cases" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							flex: 1,

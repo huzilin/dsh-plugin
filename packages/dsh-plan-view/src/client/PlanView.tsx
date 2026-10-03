@@ -3,8 +3,9 @@
  * layout + .plan/ — global only: approval/ & global qa/ledger, never an
  * effort), derives ticket status per the TRACKER-MARKDOWN
  * contract, and renders the tabbed surface:
- *   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec 正文子页）· 测例 ·
- *   缺陷 · 台账 · ADR · CONTEXT · 说明（2026-09-30 读取契约拍版）
+ *   总览 · 地图（Kanban / Table / Relation DAG ＋ map/spec/原型 正文子页）·
+ *   待拍板 · 台账 · 缺陷 · 测例 · ADR · CONTEXT · 说明（2026-09-30 读取契约
+ *   拍版；2026-10-04 拍板补待拍板并按 effort 子页序对齐两层顺序）
  *
  * All views share a unified dark theme and markdown-rendered detail panels.
  * Self-contained: uses its own api module, inline styles, zero CSS deps.
@@ -1980,7 +1981,7 @@ function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effort
 
 // ─── Main PlanView ───────────────────────────────────────────────────────────
 
-type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'adr' | 'context' | 'guide'
+type TopView = 'overview' | 'map' | 'approvals' | 'cases' | 'defects' | 'ledger' | 'adr' | 'context' | 'guide'
 // 地图页第二层子页签：一张图的各种切面（2026-09-21 拍板 IA：第一层只留
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
 // mapdoc/specdoc（2026-09-30 拍板）：推演图第 2 子页 = map.md 正文、实施图
@@ -2261,17 +2262,21 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     </select>
   )
 
-  // 第一行 tab（2026-09-30 拍板拆分与追加）：测例/缺陷各自成 tab 且聚合
-  // （各 effort qa/ + .plan/qa/ 全局件）；【ADR】居台账后（知识层相邻，2026-09-30
-  // 拍板①，docs/adr 只读展示）；【CONTEXT】居第一行末位。
+  // 第一行 tab（2026-09-30 拍板拆分与追加；2026-10-04 用户拍板：补【待拍板】
+  // 并按 effort 子页序重排，两层顺序一致——单据类相对序统一为
+  // 待拍板→台账→缺陷→测例，取代 2026-09-30「ADR 居台账后」的位置拍板，
+  // ADR/CONTEXT/说明为全局知识层、effort 无对应，保持尾部）。【待拍板】=
+  // 全量聚合（各 effort approval/ ＋ .plan/approval/ 全局件），计数口径与
+  // 总览一致（pending）；计数橙色沿用 2291 行为 'approvals' 预留的分支。
   const tabs: { id: TopView; label: string; count: number }[] = [
     { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
     // 地图 tab 计数用全局口径（mapOwnTickets），不随 chips 选中图跳变——
     // 随选中变化曾把选中无 open 票的图显示成「地图 0」，读作计数不准（2026-09-30 用户反馈）。
     { id: 'map', label: '🗺️ 地图', count: openTickets(mapOwnTickets) },
-    { id: 'cases', label: '🧪 测例', count: cases.length },
-    { id: 'defects', label: '🐞 缺陷', count: openDefectCount(defects) },
+    { id: 'approvals', label: '⏳ 待拍板', count: pendingApprovals(approvals) },
     { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
+    { id: 'defects', label: '🐞 缺陷', count: openDefectCount(defects) },
+    { id: 'cases', label: '🧪 测例', count: cases.length },
     { id: 'adr', label: '🏛️ ADR', count: adrs.length },
     { id: 'context', label: '📐 CONTEXT', count: 0 },
     { id: 'guide', label: '📖 说明', count: 0 },
@@ -2416,6 +2421,16 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {mapSub === 'prototype' && <SpeculationTypeView kind="prototype" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'grilling' && <SpeculationTypeView kind="grilling" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
         </>
+      )}
+      {top === 'approvals' && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
+            待拍板聚合（2026-10-04 用户拍板补 tab）：各 effort `approval/` ＋ 全局件 `.plan/approval/`；图内待拍板也在地图页「⏳ 待拍板」子页按图查看。pending 档=status 未翻且未标 archived。
+          </div>
+          {approvals.length > 0
+            ? <ApprovalsView approvals={approvals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
+            : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: TEXT_FAINT }}>没有待拍板文档（有决定悬空时 to-approval 落档，这里第一时间看见）。</div>}
+        </div>
       )}
       {top === 'cases' && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
