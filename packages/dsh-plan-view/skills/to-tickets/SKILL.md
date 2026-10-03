@@ -105,6 +105,6 @@ Avoid specific file paths or code snippets — they go stale fast. Exception: if
 - The mounted prototype is the **shape-of-record** for that slice: the implementer opens it before writing code, and acceptance asks "does it match the winning variant" — not just "does it work". **挂载即相关：带挂载行的票，Acceptance 必须落一条形态对照验收项**——对照范围＝该票挂载的原型与其所答决策，偏差留痕.
 - A decision with no mount line has no prototype obligation — do not invent one, and do not mount a prototype to a ticket that only touches non-visual layers（schema/API/后台逻辑）.
 - One mount line per decision it answers; partial adoption（spec 挂了多个文件各取一部分）mounts each file the ticket's slice touches.
-- **定形单形态（spec 挂载行无 `#variant=` 锚时）**：票面挂载行同样不写锚，括号内必须写明「<什么场景>定稿」——场景→原型映射显式，与 spec 挂载行同口径。
+- **variant 锚一律必写**：票面挂载行照抄 spec 挂载行的锚——多形态件 `#variant=<k>`，单形态件 `#variant=1`（唯一形态即定稿）；括号内必须写明「<什么场景>定稿」，场景→原型映射显式，与 spec 挂载行同口径。
 
 Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in that ticket's own file, set its `Status:` line, and commit — then clear context before taking the next ticket.
