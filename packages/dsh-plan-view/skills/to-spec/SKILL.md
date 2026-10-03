@@ -74,7 +74,7 @@ Any further notes about the feature.
 
 </spec-template>
 
-## Mount the prototypes chosen in the conversation（本仓补丁 2026-10-04，plan-lint-gate 票 23 契约）
+## Mount the prototypes chosen in the conversation
 
 If the grill conversation produced prototypes — the `prototype` skill ran, and the effort's `.scratch/<slug>/prototype/` is non-empty — the spec must **mount the winning prototype(s)**. A UI decision made by flipping through variants is encoded by the file, not by prose:
 
@@ -85,8 +85,9 @@ If the grill conversation produced prototypes — the `prototype` skill ran, and
   ```
 
 - **Partial adoption**（「要 B 的头部＋C 的侧栏」）mounts every file that carries a chosen piece, each with one line saying what was taken from which variant.
+- **定形单形态（html 无变体切换）**：不写 `#variant=` 锚——锚指向不存在的变体＝死锚；但挂载行必须带**场景→定稿断言**，写清楚「<什么场景>的原型定稿＝此件」，不许只落「契约载体/形态参照」类含混定性（2026-10-04 用户拍板）。
 - The path is **relative into the effort's own `prototype/` directory**（plan-protocol 检查[8] 白名单成员；文件随 effort 归档，spec 的归宿行与指针随轮可达）。Do **not** inline the html into the spec and do not copy variant code into it — the mount line is a reference to the asset, the asset stays in `prototype/`.
-- mp 原版「inline a decision-rich snippet」例外（模板 Implementation Decisions 节）仍可用——状态机/reducer/schema 等决策性片段照旧转写；但**文件挂载不因其豁免**：snippet 是决策的转写，挂载行是资产的引用，两者并存不互替。
+- 「inline a decision-rich snippet」例外（模板 Implementation Decisions 节）仍可用——状态机/reducer/schema 等决策性片段照旧转写；但**文件挂载不因其豁免**：snippet 是决策的转写，挂载行是资产的引用，两者并存不互替。
 - Prototype files exist but the user never picked a winner → list the files and ask which won (or which parts) **before** writing the mount line; do not guess. No prototypes in the conversation → skip silently.
 
 ## After writing: keep the architecture charter current
@@ -124,9 +125,9 @@ Horizontal vs vertical is the judgment that decides charter-or-domain-doc: **"ho
 
 **A spec section with no disposition line is unfinished work, not a stylistic gap.** When every section carries one and every target exists, the spec is dischargeable and may be voided — that is the mechanical test for "the spec has been fully absorbed". Until then it may not be archived away.
 
-**After discharging: flip the approval docs this spec consumed** (翻标挂点②, plan-lint-gate 票 10). Any approval document under `.plan/` whose items this spec absorbed gets `archived: <spec 落点>` added to its frontmatter at this moment — that mark is what lets `plan-archive` move it with the round while unmarked approvals stay in `.plan/`. Do not touch its `status` (the `archived:` mark sits outside the status machine); `superseded-by:` keeps its own meaning (replaced by a later ruling).
+**After discharging: flip the approval docs this spec consumed** (翻标挂点②). Any approval document under `.plan/` whose items this spec absorbed gets `archived: <spec 落点>` added to its frontmatter at this moment — that mark is what lets `plan-archive` move it with the round while unmarked approvals stay in `.plan/`. Do not touch its `status` (the `archived:` mark sits outside the status machine); `superseded-by:` keeps its own meaning (replaced by a later ruling).
 
-**The spec itself is a headerless document (2026-10-02 拍板).** The template above starts at `## Problem Statement` — no frontmatter, no H1, no status line, and this is verbatim upstream behaviour, so **do not add a header**. When this spec later needs a head mark (its own `superseded-by:` when the effort's tickets all reach a terminal state, or `archived:` at round archiving), write it as an **HTML comment on the first line**: `<!-- superseded-by: <归宿> -->` / `<!-- archived: <round-id> -->`. First line, before any body text — a mark buried in the body is not machine-retrievable and does not count.
+**The spec itself is a headerless document.** The template above starts at `## Problem Statement` — no frontmatter, no H1, no status line — so **do not add a header**. When this spec later needs a head mark (its own `superseded-by:` when the effort's tickets all reach a terminal state, or `archived:` at round archiving), write it as an **HTML comment on the first line**: `<!-- superseded-by: <归宿> -->` / `<!-- archived: <round-id> -->`. First line, before any body text — a mark buried in the body is not machine-retrievable and does not count.
 
 Two prohibitions worth stating outright, because both are how this goes wrong:
 

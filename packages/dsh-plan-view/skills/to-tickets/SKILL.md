@@ -90,20 +90,21 @@ type: task
 
 **Why one file per ticket, not one combined file.** A combined `issues.md` looks tidier in a directory listing, but anything that reads tickets file-by-file counts it as **a single ticket** and silently loses every ticket inside it. That is not hypothetical — it is how a plan view shows "1 ticket" for a file holding nine. One file per ticket is the shape the wayfinder contract uses, so both readers agree.
 
-**Do not create `map.md`.** (2026-09-29 拍板「to-tickets 不自动补 map」，撤销本 skill 旧有的自动建 map 补丁.) The map is the wayfinder's artifact: an effort directory is loaded by the plan view when it contains a `map.md` **or a `spec.md`** (2026-09-29 拍板扩展：有 spec 无 map = spec-only 实施图，同被加载——本 skill 的 spec + issues/ 直出形态即属此类). Only a bare `issues/` directory with neither file is invisible to the view and reported by plan-lint check [2]. If this ticket set needs a map (e.g. it outgrew a spec-only flow), let the user or a wayfinder session create it — do not synthesize one here.
+**Do not create `map.md`.** The map is the wayfinder's artifact: an effort directory is loaded by the plan view when it contains a `map.md` **or a `spec.md`**（有 spec 无 map = spec-only 实施图，同被加载——本 skill 的 spec + issues/ 直出形态即属此类）. Only a bare `issues/` directory with neither file is invisible to the view and reported by plan-lint check [2]. If this ticket set needs a map (e.g. it outgrew a spec-only flow), let the user or a wayfinder session create it — do not synthesize one here.
 
 Keep the ordering in mind when numbering: the frontier is any ticket whose blockers are all resolved. For a purely linear chain that means 01 runs first.
 
 Avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-**Prototype mount lines travel into tickets（本仓补丁 2026-10-04，票 23 契约）.** When the source spec carries prototype mount lines（`原型：prototype/<name>.html#variant=<k>`，to-spec 的挂载节产出）, each ticket whose scope answers a mounted decision carries that mount line in its own body — right under **What to build**, phrased as a reference, not a copy:
+**Prototype mount lines travel into tickets.** When the source spec carries prototype mount lines（`原型：prototype/<name>.html#variant=<k>`，to-spec 的挂载节产出）, each ticket whose scope answers a mounted decision carries that mount line in its own body — right under **What to build**, phrased as a reference, not a copy:
 
 ```markdown
 **对照原型:** `prototype/<name>.html#variant=<k>`（<哪条决策>；形态对照物——实施与验收前先打开读胜出变体）
 ```
 
-- The mounted prototype is the **shape-of-record** for that slice: the implementer opens it before writing code, and acceptance asks "does it match the winning variant" — not just "does it work".
+- The mounted prototype is the **shape-of-record** for that slice: the implementer opens it before writing code, and acceptance asks "does it match the winning variant" — not just "does it work". **挂载即相关：带挂载行的票，Acceptance 必须落一条形态对照验收项**——对照范围＝该票挂载的原型与其所答决策，偏差留痕（2026-10-04 用户拍板）.
 - A decision with no mount line has no prototype obligation — do not invent one, and do not mount a prototype to a ticket that only touches non-visual layers（schema/API/后台逻辑）.
 - One mount line per decision it answers; partial adoption（spec 挂了多个文件各取一部分）mounts each file the ticket's slice touches.
+- **定形单形态（spec 挂载行无 `#variant=` 锚时）**：票面挂载行同样不写锚，括号内必须写明「<什么场景>定稿」——场景→原型映射显式，与 spec 挂载行同口径（2026-10-04 用户拍板）。
 
 Work the frontier one ticket at a time, each in a fresh session: implement the slice, run the project's static checks and tests, review the work (with the `review-code` skill if it's available in your environment), tick off the acceptance criteria in that ticket's own file, set its `Status:` line, and commit — then clear context before taking the next ticket.
