@@ -828,7 +828,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（四类单据全计＋
 		*  spec 名额＋锁区），与总览卡同一个数；工单/待拍板/缺陷/台账四个子页头部共用。
 		*  prog 为 undefined（「全部地图」聚合态，无单一 effort）时不渲染。 */
-		function EffortProgressBar({ prog, meta }) {
+		function EffortProgressBar({ prog }) {
 			const lockTitle = prog.locked ? lockCopy(prog.lockKind).title : "";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: {
@@ -891,14 +891,6 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							cursor: "help"
 						},
 						children: lockCopy(prog.lockKind).chip
-					}),
-					meta && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						style: {
-							fontSize: 12,
-							color: "#888",
-							whiteSpace: "nowrap"
-						},
-						children: meta
 					})
 				]
 			});
@@ -1619,10 +1611,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						},
 						children: destination
 					}),
-					prog !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, {
-						prog,
-						meta: `${tickets.length} tickets · ${done} done`
-					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					prog === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: {
 							margin: "8px 16px 0",
 							display: "flex",
@@ -4349,6 +4338,12 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								})]
 							}, id))
 						}),
+						selProg !== void 0 && [
+							"route",
+							"approvals",
+							"ledger",
+							"defects"
+						].includes(mapSub) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }),
 						mapSub === "route" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								style: {
@@ -4424,54 +4419,30 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							ctx,
 							body: selEffort.specRaw
 						}),
-						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: {
-								flex: 1,
-								display: "flex",
-								flexDirection: "column",
-								overflow: "hidden"
-							},
-							children: [selProg !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
-								approvals: mapApprovals,
-								scope,
-								ctx,
-								sessions,
-								onChanged,
-								readOnly
-							})]
+						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
+							approvals: mapApprovals,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
 						}),
-						mapSub === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: {
-								flex: 1,
-								display: "flex",
-								flexDirection: "column",
-								overflow: "hidden"
-							},
-							children: [selProg !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
-								ledgers: mapLedgers,
-								mapTickets,
-								scope,
-								ctx,
-								sessions,
-								onChanged,
-								readOnly
-							})]
+						mapSub === "ledger" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LedgerView, {
+							ledgers: mapLedgers,
+							mapTickets,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
 						}),
-						mapSub === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							style: {
-								flex: 1,
-								display: "flex",
-								flexDirection: "column",
-								overflow: "hidden"
-							},
-							children: [selProg !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EffortProgressBar, { prog: selProg }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
-								defects: mapDefects,
-								scope,
-								ctx,
-								sessions,
-								onChanged,
-								readOnly
-							})]
+						mapSub === "defects" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(DefectView, {
+							defects: mapDefects,
+							scope,
+							ctx,
+							sessions,
+							onChanged,
+							readOnly
 						}),
 						mapSub === "chain" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChainView, {
 							tickets: mapTickets,

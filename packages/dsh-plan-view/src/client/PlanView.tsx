@@ -756,9 +756,8 @@ function lockCopy(kind: 'cases' | 'test' | undefined): { chip: string; title: st
 /** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（四类单据全计＋
  *  spec 名额＋锁区），与总览卡同一个数；工单/待拍板/缺陷/台账四个子页头部共用。
  *  prog 为 undefined（「全部地图」聚合态，无单一 effort）时不渲染。 */
-function EffortProgressBar({ prog, meta }: {
+function EffortProgressBar({ prog }: {
   prog: ReturnType<typeof effortProgress>
-  meta?: string
 }) {
   const lockTitle = prog.locked ? lockCopy(prog.lockKind).title : ''
   return (
@@ -773,7 +772,6 @@ function EffortProgressBar({ prog, meta }: {
       {prog.locked && (
         <span title={lockTitle} style={{ fontSize: 10.5, fontWeight: 700, color: LOCKED, background: `${LOCKED}1f`, border: `1px solid ${LOCKED}66`, borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', cursor: 'help' }}>{lockCopy(prog.lockKind).chip}</span>
       )}
-      {meta && <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{meta}</span>}
     </div>
   )
 }
@@ -1180,9 +1178,9 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
   )
   const active = tickets.filter(t => !t.outOfScope)
   const done = tickets.filter(t => t.done).length
-  // 头部进度条（2026-10-03 拍板②）：单图态 = effort 全局口径（prog 与总览卡同数，
-  // 四类单据 + spec 名额 + 锁区）；「全部地图」聚合态无单一 effort，退回本页自算
-  // 的 done/active（纯工单口径，无锁）——第二口径仅存于此。
+  // 头部进度条（2026-10-03 拍板②＋用户反馈定位置）：effort 全局条渲染在子页签行
+  // 下方（地图 tab 公共位置），本组件不再渲染单图态条（prog 有值即全局条已在）；
+  // 此处只留「全部地图」聚合态 fallback——纯工单 done/active 口径，无锁。
   const aggPct = active.length > 0 ? Math.round((done / active.length) * 100) : 0
   // minHeight:0：Kanban 列体（下方 overflowY:auto）要在受限高度里才能滚，
   // 列方向 flex 的自动最小高度会把本根撑到内容高、被上层裁掉（同根节点）。
@@ -1208,16 +1206,15 @@ function ViewA({ tickets, planDir, scope, ctx, sessions, onChanged, destination,
         </div>
       )}
       {destination && <div style={{ margin: '8px 16px 0', padding: '8px 12px', borderRadius: 8, background: HEADER_BG, border: `1px solid ${BORDER}`, color: '#aaa', fontSize: 13 }}>{destination}</div>}
-      {prog !== undefined
-        ? <EffortProgressBar prog={prog} meta={`${tickets.length} tickets · ${done} done`} />
-        : (
-          <div style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${aggPct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
-            </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#4ed17e', minWidth: 36, textAlign: 'right' }}>{aggPct}%</span>
+      {/* 「全部地图」聚合态 fallback（单图态全局条在子页签行下，见地图 tab）。 */}
+      {prog === undefined && (
+        <div style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, height: 6, borderRadius: 3, background: CHIP_BG, border: `1px solid ${BORDER}`, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${aggPct}%`, borderRadius: 3, background: `linear-gradient(90deg, #4ed17e, ${ACCENT})` }} />
           </div>
-        )}
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#4ed17e', minWidth: 36, textAlign: 'right' }}>{aggPct}%</span>
+        </div>
+      )}
       <div style={{ flex: 1, display: 'flex', gap: 10, padding: '12px 16px', overflowX: 'auto' }}>
         {STATUS_ORDER.filter(s => groups[s].length > 0).map(s => (
           <div key={s} style={{ flex: '1 1 0', minWidth: 200, display: 'flex', flexDirection: 'column', background: BG, border: `1px solid ${BORDER_LIGHT}`, borderRadius: 10, overflow: 'hidden' }}>
@@ -2357,6 +2354,12 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
               </button>
             ))}
           </div>
+          {/* effort 全局进度条（2026-10-03 拍板②＋用户反馈定位置）：子页签行下、
+              内容区前，四个单据子页共用同一条；「全部地图」态无单一 effort
+              （selProg undefined）不渲染，工单页 fallback 聚合条接手。 */}
+          {selProg !== undefined && ['route', 'approvals', 'ledger', 'defects'].includes(mapSub) && (
+            <EffortProgressBar prog={selProg} />
+          )}
           {mapSub === 'route' && (
             <>
               <div style={{ display: 'flex', gap: 4, padding: '9px 14px', background: BG }}>
@@ -2377,26 +2380,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {mapSub === 'specdoc' && selEffort !== undefined && !!selEffort.specRaw && (
             <DocCard icon="📄" title="spec.md" path={`${selEffort.dir}/spec.md`} scope={scope} ctx={ctx} body={selEffort.specRaw as string} />
           )}
-          {/* effort 全局进度条（2026-10-03 拍板②）：四个单据子页头部共用，读数同总览卡；
-              「全部地图」态无单一 effort（selProg undefined）自动不渲染。 */}
-          {mapSub === 'approvals' && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              {selProg !== undefined && <EffortProgressBar prog={selProg} />}
-              <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
-            </div>
-          )}
-          {mapSub === 'ledger' && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              {selProg !== undefined && <EffortProgressBar prog={selProg} />}
-              <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
-            </div>
-          )}
-          {mapSub === 'defects' && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              {selProg !== undefined && <EffortProgressBar prog={selProg} />}
-              <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />
-            </div>
-          )}
+          {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
+          {mapSub === 'defects' && <DefectView defects={mapDefects} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'chain' && <ChainView tickets={mapTickets} defects={mapDefects} ledgers={mapLedgers} cases={mapCases} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'cases' && <CasesView cases={mapCases} scope={scope} ctx={ctx} readOnly={readOnly} />}
           {mapSub === 'research' && <SpeculationTypeView kind="research" tickets={mapTickets} assetFiles={assetFiles} cwd={cwd} planDir={planDir} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
