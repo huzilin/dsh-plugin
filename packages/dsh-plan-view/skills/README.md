@@ -8,7 +8,7 @@ General-purpose agent skills, adapted from [Matt Pocock's skills](https://github
 
 ## Shared conventions
 
-- **`.scratch/`** — the project's planning memory (tracker layer), committed to version control: wayfinder maps and specs (`.scratch/<slug>/map.md`, `.scratch/<slug>/spec.md`) and ticket breakdowns (`.scratch/<slug>/issues/NN-<slug>.md`, one file per ticket). **`.plan/`** — global approvals (`.plan/approval/待拍板-*.md`, since the 2026-09-30 收拢拍板; the root-level prefix shape is legacy-only) plus the global defect/ledger registers (`.plan/qa/`, `.plan/ledger/`). One-off handoffs go to `.tmp/handoffs/`; closed rounds are archived by `plan-archive` into `.archive/rounds/<round-id>/`.
+- **`.scratch/`** — the project's planning memory (tracker layer), committed to version control: wayfinder maps and specs (`.scratch/<slug>/map.md`, `.scratch/<slug>/spec.md`) and ticket breakdowns (`.scratch/<slug>/issues/NN-<slug>.md`, one file per ticket). **`.plan/`** — global approvals (`.plan/approval/待拍板-*.md`; the root-level prefix shape is legacy-only) plus the global defect/ledger registers (`.plan/qa/`, `.plan/ledger/`). One-off handoffs go to `.tmp/handoffs/`; closed rounds are archived by `plan-archive` into `.archive/rounds/<round-id>/`.
 - **`CONTEXT.md`** at the repo root — the domain glossary; **`docs/adr/`** — architecture decision records. Both created lazily by `domain-modeling`; skills that read them proceed silently when they don't exist.
 
 ## Skills

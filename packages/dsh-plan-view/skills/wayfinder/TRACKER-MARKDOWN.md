@@ -1,6 +1,6 @@
 # Tracker: local markdown
 
-The default adapter for [`wayfinder`](SKILL.md), and the one to use when the repo has no issue tracker wired up. The map and its tickets are files under `.scratch/`, committed to version control — the shared memory that future sessions orient to, so commit map and ticket changes promptly. (2026-09-29 directory migration: the tracker layer moved from `.plan/` to `.scratch/<effort-slug>/`; approval documents stay in `.plan/`.)
+The default adapter for [`wayfinder`](SKILL.md), and the one to use when the repo has no issue tracker wired up. The map and its tickets are files under `.scratch/`, committed to version control — the shared memory that future sessions orient to, so commit map and ticket changes promptly. (Approval documents stay in `.plan/`.)
 
 The skill holds the method. This file holds everything the method defers: where files live, what carries structure, how status is read, what a claim is, and the checklist to run before committing. **A tool that reads a map reads it by this file.**
 

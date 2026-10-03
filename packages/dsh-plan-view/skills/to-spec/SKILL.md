@@ -85,7 +85,7 @@ If the grill conversation produced prototypes — the `prototype` skill ran, and
   ```
 
 - **Partial adoption**（「要 B 的头部＋C 的侧栏」）mounts every file that carries a chosen piece, each with one line saying what was taken from which variant.
-- **定形单形态（html 无变体切换）**：不写 `#variant=` 锚——锚指向不存在的变体＝死锚；但挂载行必须带**场景→定稿断言**，写清楚「<什么场景>的原型定稿＝此件」，不许只落「契约载体/形态参照」类含混定性（2026-10-04 用户拍板）。
+- **定形单形态（html 无变体切换）**：不写 `#variant=` 锚——锚指向不存在的变体＝死锚；但挂载行必须带**场景→定稿断言**，写清楚「<什么场景>的原型定稿＝此件」，不许只落「契约载体/形态参照」类含混定性。
 - The path is **relative into the effort's own `prototype/` directory**（plan-protocol 检查[8] 白名单成员；文件随 effort 归档，spec 的归宿行与指针随轮可达）。Do **not** inline the html into the spec and do not copy variant code into it — the mount line is a reference to the asset, the asset stays in `prototype/`.
 - 「inline a decision-rich snippet」例外（模板 Implementation Decisions 节）仍可用——状态机/reducer/schema 等决策性片段照旧转写；但**文件挂载不因其豁免**：snippet 是决策的转写，挂载行是资产的引用，两者并存不互替。
 - Prototype files exist but the user never picked a winner → list the files and ask which won (or which parts) **before** writing the mount line; do not guess. No prototypes in the conversation → skip silently.

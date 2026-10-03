@@ -25,7 +25,7 @@ disable-model-invocation: false
 
 列出本次测试的全部预期来源，逐源标注「已列入 / 不适用（写明原因）/ 缺失（补齐后才开跑）」，原样写进 cases.md §1：
 
-1. **spec 的 AC**（`.scratch/<effort>/spec.md`——effort 唯一落点，`.plan/` 下无 spec，2026-09-29 拍板）；
+1. **spec 的 AC**（`.scratch/<effort>/spec.md`——effort 唯一落点，`.plan/` 下无 spec）；
 2. **spec 全文行为性明文**——不只 AC 章：状态机行、联动条款、「X 时必须 Y」句式逐条抽成行为清单。AC 章之外的明文要求最容易整类漏测；
 3. **契约真相源**（api proto / openapi）；
 4. **原型 / mockup / 设计稿**——凡有 UI 的需求必列，逐页面、逐元素、逐交互形态；没有这个源，「实现 vs 应有形态」的差距整类不可见；
