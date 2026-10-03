@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { collectSnapshot, upsertFrontmatterKey } from '../lib/server.js'
+import { collectSnapshot, upsertFrontmatterKey, prototypePathError } from '../lib/server.js'
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'planview-snap-'))
@@ -27,6 +27,11 @@ async function fixture() {
   await w('.scratch/wayfinder/qa/DEF-1.md', '---\ntype: qa-defect\n---\n# DEF')
   await w('.scratch/wayfinder/assets/note.md', '推演产物（票 21 起收集，按票面 assets: 字段关联）')
   await w('.scratch/wayfinder/readme.md', '陪伴文档不收')
+  // 原型产物（票 24）：prototype/ 下单层 .html 入 efforts[].prototypes 清单；
+  // md（LOGIC 分支 README 类）与子目录内文件不入。
+  await w('.scratch/wayfinder/prototype/flow.html', '<!-- prototype: flow 三变体 -->')
+  await w('.scratch/wayfinder/prototype/notes.md', 'LOGIC 分支 README 类，不入原型清单')
+  await w('.scratch/wayfinder/prototype/sub/deep.html', '子目录内不收（单层清单）')
   await w('.scratch/spec-only/spec.md', '# spec\n')
   await w('.scratch/spec-only/tickets/01-impl.md', '# 01')
   await w('.scratch/spec-only/fengping/x.md', '契约外孤岛不收')
@@ -67,6 +72,11 @@ test('snapshot collects tracker root + efforts per the read contract', async () 
   const specOnly = snap.efforts.find((e) => e.dir.endsWith('spec-only'))
   assert.equal(specOnly.mapRaw, '')
   assert.equal(specOnly.specRaw, '# spec\n')
+  // 原型清单（票 24）：单层 .html 收、md 与子目录不收；无 prototype/ 的 effort = 空数组。
+  const wfEffort = snap.efforts.find((e) => e.dir.endsWith('wayfinder'))
+  assert.deepEqual(wfEffort.prototypes.map((p) => p.name), ['flow.html'])
+  assert.ok(wfEffort.prototypes[0].path.endsWith('/prototype/flow.html'))
+  assert.deepEqual(specOnly.prototypes, [])
   // 白名单：issues/qa/tickets/assets 收（assets 票 21 起收集）；fengping 不收；
   // NON_TICKET（readme）不收。
   const n = namesOf(snap)
@@ -150,4 +160,17 @@ test('roundtrip: collected file content round-trips through upsert on disk', asy
   assert.match(updated, /^---\ntype: task\nsession: session-x\n---/)
   // 磁盘原文件未被收集器改动（收集是只读面）。
   assert.equal(await readFile(target.path, 'utf8'), target.content)
+})
+
+test('prototypePathError fences to single-layer effort prototype html', () => {
+  const cwd = '/work'
+  // 现行面与历史轮的 effort 原型都放行。
+  assert.equal(prototypePathError(cwd, '/work/.scratch/e1/prototype/flow.html'), null)
+  assert.equal(prototypePathError(cwd, '/work/.archive/rounds/2026-09-01-r1/e1/prototype/flow.html'), null)
+  // 任意文件读拦死：cwd 外、非 prototype 目录、非单层、非 html。
+  assert.match(prototypePathError(cwd, '/etc/passwd'), /outside workspace/)
+  assert.match(prototypePathError(cwd, '/work/.scratch/e1/spec.md'), /not an effort prototype/)
+  assert.match(prototypePathError(cwd, '/work/.scratch/e1/prototype/sub/deep.html'), /not an effort prototype/)
+  assert.match(prototypePathError(cwd, '/work/.scratch/e1/prototype/x.js'), /not an effort prototype/)
+  assert.match(prototypePathError(cwd, '/work/.scratch/e1/prototype'), /not an effort prototype/)
 })

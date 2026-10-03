@@ -21,7 +21,7 @@ interface SessionScope {
 /** One governance snapshot: everything the tab renders, in one response. */
 export interface Snapshot {
   cwd: string
-  efforts: { dir: string; mapRaw: string; specRaw: string | null }[]
+  efforts: { dir: string; mapRaw: string; specRaw: string | null; prototypes: { name: string; path: string }[] }[]
   files: { path: string; name: string; from: string; group: string; content: string }[]
   rounds: { ids: string[]; readmeRaw: string | null }
   contextRaw: string
@@ -52,6 +52,15 @@ export function snapshot(sessionId: string, round?: string): Promise<Snapshot> {
  */
 export function bindTicket(sessionId: string, path: string, key: string, value: string): Promise<void> {
   return planView<void>('write', { sessionId, path, key, value })
+}
+
+/**
+ * 原型预览 URL（2026-10-04 票 24）：iframe src 直接指向服务端只读 GET 端点，
+ * html 内容不进 snapshot（膨胀）。路径围栏在服务端（cwd 内 + /prototype/*.html）；
+ * 变体切换（#variant=…）是文档内 hash 行为，归原型自带的切换器管。
+ */
+export function prototypeUrl(sessionId: string, path: string): string {
+  return `/plan-view/prototype?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`
 }
 
 // ─── /api — harness Typert gateway ───────────────────────────────────────────

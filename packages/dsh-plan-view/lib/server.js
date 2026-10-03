@@ -35,10 +35,16 @@ export const inject = ['webServer', 'sessions']
 
 // ─── 读取契约常量（客户端 PlanView.tsx 的同款判据，双源一致）──────────────────
 
-// 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六；assets 为同日三视图拍板扩面）。
+// 收集白名单（2026-09-30 目录契约拍板，写入矩阵 §六；assets 为同日三视图拍板扩面；
+// prototype 为 2026-10-04 拍板加入——其文件走 efforts[].prototypes 清单（见
+// listPrototypes），html 非 md 不会进票面，登记在案为白名单双源一致）。
 // assets/ 是推演产物不是票：收集仅为按票面 `assets:` 字段关联展示（票 21），
 // 客户端分流不进票面、不计工单数。
-export const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa', 'ledger', 'assets', 'impl', 'impl-fe'])
+export const COLLECT_DIR_NAMES = new Set(['issues', 'tickets', 'approval', 'qa', 'ledger', 'assets', 'prototype', 'impl', 'impl-fe'])
+
+// effort 原型产物形状（2026-10-04 拍板，票 23 契约）：prototype/ 下自包含
+// 单文件 html（LOGIC 分支脚本/README 不入清单——视图只预览 html）。
+export const PROTO_FILE = /\.html$/i
 
 // `.plan` 根层审批档形状（2026-09-30 票 18 引入）：收拢拍板后新落点 =
 // `.plan/approval/`，根层仅存量兼容（未迁移仓审批档不从视图消失）。
@@ -107,6 +113,18 @@ async function collectTicketFiles(effortDir) {
 
 // 单治理根（.scratch=effortScan true / .plan=false / 归档轮目录=true）。
 // 形状对齐客户端原 loadPlan：efforts + 根层件 + 全局 ledger/qa + 各 effort 票面。
+
+// effort 原型产物清单（2026-10-04 拍板，票 23 契约）：prototype/ 下的
+// 自包含单文件 html，只列清单不内联内容（html 体积大，按需走
+// /plan-view/prototype 端点取）。目录缺失 = 无原型，容缺返回空。
+async function listPrototypes(effortDir) {
+  const t = await listDir(join(effortDir, 'prototype'))
+  return (t ?? [])
+    .filter((f) => !f.isDir && PROTO_FILE.test(f.name))
+    .map((f) => ({ name: f.name, path: f.path }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 async function collectRoot(planDir, effortScan) {
   const rootTree = await listDir(planDir)
   if (rootTree === null) return null
@@ -122,6 +140,7 @@ async function collectRoot(planDir, effortScan) {
     dir,
     mapRaw: (await readText(join(dir, 'map.md'))) ?? '',
     specRaw: (await readText(join(dir, 'spec.md'))) ?? null,
+    prototypes: await listPrototypes(dir),
   })))
 
   const files = []
@@ -204,6 +223,18 @@ export async function collectSnapshot(cwd, round = null) {
 }
 
 /**
+ * 原型预览路径围栏（2026-10-04 票 24）：realpath 后必须仍落会话 cwd 内，
+ * 且命中 effort 原型形状（任意 `/prototype/` 目录段下的单层 .html 文件——
+ * 现行 `.scratch/<effort>/prototype/` 与历史轮 `.archive/rounds/<id>/…/prototype/`
+ * 都放行，其余一律拒）。返回 null = 放行；返回字符串 = 拒因。
+ */
+export function prototypePathError(realCwd, realPath) {
+  if (!(realPath === realCwd || realPath.startsWith(`${realCwd}/`))) return `path "${realPath}" is outside workspace`
+  if (!/\/prototype\/[^/]+\.html$/.test(realPath)) return `path "${realPath}" is not an effort prototype html`
+  return null
+}
+
+/**
  * B1 绑定写回的原文变换：upsert 一个 frontmatter 键，其余原样保留。
  * 服务端做 read-modify-write，客户端免「读原文」往返（fsRead 已随解耦清退）。
  */
@@ -282,8 +313,30 @@ export function apply(ctx) {
     path: '/plan-view',
     handler: async (req, res) => {
       if (!fenced(req, trustedHosts())) { writeJson(res, 403, { ok: false, error: { message: 'forbidden' } }); return }
-      if (req.method !== 'POST') { writeJson(res, 405, { ok: false, error: { message: 'method not allowed' } }); return }
       const method = new URL(req.url ?? '/', 'http://dsh.internal').pathname
+      // 原型预览（2026-10-04 票 24）：唯一的 GET 面——iframe src 直接指它，
+      // fragment（#variant=…）归文档内切换器管。fence 照跑；路径围栏见
+      // prototypePathError（cwd 内 + effort 原型形状，任意文件读拦死）。
+      if (req.method === 'GET' && method === '/plan-view/prototype') {
+        const url = new URL(req.url ?? '/', 'http://dsh.internal')
+        const filePath = url.searchParams.get('path') ?? ''
+        try {
+          const sessionId = url.searchParams.get('sessionId') ?? ''
+          if (!isAbsolute(filePath)) throw new Error('missing or invalid "path"')
+          const cwd = await cwdOf(ctx, sessionId)
+          if (cwd === null) throw new Error(`session "${sessionId}" has no resolvable working directory`)
+          const [realCwd, realPath] = await Promise.all([realpath(cwd), realpath(filePath)])
+          const rejected = prototypePathError(realCwd, realPath)
+          if (rejected !== null) { writeJson(res, 403, { ok: false, error: { message: rejected } }); return }
+          const html = await readFile(realPath, 'utf8')
+          res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+          res.end(html)
+        } catch (error) {
+          writeJson(res, 404, { ok: false, error: { message: error instanceof Error ? error.message : String(error) } })
+        }
+        return
+      }
+      if (req.method !== 'POST') { writeJson(res, 405, { ok: false, error: { message: 'method not allowed' } }); return }
       try {
         const payload = await readJsonBody(req)
         if (method === '/plan-view/snapshot') {

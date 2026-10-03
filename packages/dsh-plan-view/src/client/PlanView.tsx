@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  snapshot, bindTicket, sessionAlive, sessionList,
+  snapshot, bindTicket, sessionAlive, sessionList, prototypeUrl,
   type SessionScope, type SessionSummary, type Snapshot,
 } from './api'
 import { deliverDraft, isBridged } from './input-bridge'
@@ -873,7 +873,7 @@ interface PlanData {
   assetFiles: ParsedTicket[]   // assets/ 推演产物（票 21 三视图归组数据源，不当票）
   effortDir: string
   mapRaw: string | null
-  efforts: { dir: string; mapRaw: string; specRaw?: string }[]  // every effort (map.md, or spec.md as a spec-only effort)
+  efforts: { dir: string; mapRaw: string; specRaw?: string; prototypes: { name: string; path: string }[] }[]  // every effort (map.md, or spec.md as a spec-only effort)
 }
 
 function classify(t: ParsedTicket): TicketKind { return ticketKind(t) }
@@ -898,7 +898,7 @@ function assemblePlanData(snap: Snapshot): PlanData {
   // 执行验收记录在进票面前截走（同 cases.md 的「不当票」拍板，2026-09-20）：
   // 文件名与 cases 契约对称（test.md / test-*.md），只留存在性给进度锁判据。
   const qaTests = parsed.filter(t => t.group === 'qa' && (t.file === 'test.md' || /^test-/.test(t.file)))
-  const efforts = snap.efforts.map(e => ({ dir: e.dir, mapRaw: e.mapRaw, specRaw: e.specRaw ?? undefined }))
+  const efforts = snap.efforts.map(e => ({ dir: e.dir, mapRaw: e.mapRaw, specRaw: e.specRaw ?? undefined, prototypes: e.prototypes ?? [] }))
   // The route view's banner shows the first effort that actually has a map body.
   const primary = efforts.find(e => e.mapRaw !== '') ?? efforts[0]
   return { tickets, qaTests, adrs, assetFiles, effortDir: primary?.dir ?? snap.cwd, mapRaw: primary?.mapRaw ?? null, efforts }
@@ -1985,7 +1985,7 @@ type TopView = 'overview' | 'map' | 'cases' | 'defects' | 'ledger' | 'adr' | 'co
 // 总览/地图/台账/说明，图相关内容全部收进地图页，顶部 chips 切图）。
 // mapdoc/specdoc（2026-09-30 拍板）：推演图第 2 子页 = map.md 正文、实施图
 //（spec-only）第 2 子页 = spec.md 正文——按选中 effort 的文件有无互斥显示。
-	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'research' | 'prototype' | 'grilling'
+	type MapSub = 'route' | 'mapdoc' | 'specdoc' | 'protodoc' | 'approvals' | 'ledger' | 'defects' | 'chain' | 'cases' | 'research' | 'prototype' | 'grilling'
 
 /**
  * 字号缩放（2026-10-02 用户需求：右上角可调字号）。
@@ -2349,6 +2349,13 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
               ...(selEffort === undefined ? [] : selEffort.mapRaw !== ''
                 ? [['mapdoc', '🗺️ map', 0] as [MapSub, string, number]]
                 : selEffort.specRaw ? [['specdoc', '📄 spec', 0] as [MapSub, string, number]] : []),
+              // 原型产物子页（2026-10-04 票 24）：effort 的 prototype/ 自包含
+              // html 预览。仅选中 effort 且目录非空时插入（同 mapdoc/specdoc
+              // 模式）；「全部地图」态无单一 effort 不显示。id 用 protodoc——
+              // 'prototype' 已被推演票型子页占用。
+              ...(selEffort !== undefined && selEffort.prototypes.length > 0
+                ? [['protodoc', '🖥️ 原型', selEffort.prototypes.length] as [MapSub, string, number]]
+                : []),
               // 原「🎫 工单」独立子页已移除（2026-09-30 拍板②）并入本页（Table
               // 变体即原工单表）；2026-10-03 拍板：本页由「路线」更名「工单」。
               ['approvals', '⏳ 待拍板', pendingApprovals(mapApprovals)],
@@ -2396,6 +2403,9 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           )}
           {mapSub === 'specdoc' && selEffort !== undefined && !!selEffort.specRaw && (
             <DocCard icon="📄" title="spec.md" path={`${selEffort.dir}/spec.md`} scope={scope} ctx={ctx} body={selEffort.specRaw as string} />
+          )}
+          {mapSub === 'protodoc' && selEffort !== undefined && selEffort.prototypes.length > 0 && (
+            <ProtoView prototypes={selEffort.prototypes} scope={scope} />
           )}
           {mapSub === 'approvals' && <ApprovalsView approvals={mapApprovals} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
           {mapSub === 'ledger' && <LedgerView ledgers={mapLedgers} mapTickets={mapTickets} scope={scope} ctx={ctx} sessions={sessions} onChanged={onChanged} readOnly={readOnly} />}
@@ -3401,6 +3411,39 @@ function edgesRelated(key: string, active: string | null, treeEdges: ChainEdge[]
 //
 // path 走字符串而非 ticket：effort 对象只有 dir，没有 FilePath 需要的
 // path/file 字段；点击打开仍复用宿主侧边栏（openFileInSidebar）同一通路。
+
+// 原型产物子页（2026-10-04 票 24）：effort `prototype/` 下自包含单文件 html
+// 的预览面。文件 pill 行（多文件时）＋ iframe 预览——src 指服务端只读 GET 端点
+// （html 不进 snapshot，膨胀；路径围栏在服务端 prototypePathError）。
+// iframe 带 key：切文件重挂 iframe（src 变了但同域 hash 不触发跨文档重载）；
+// 变体切换（#variant=）是文档内 hash 行为，原型自带切换条管它，预览面不干预。
+// 会话无 id（理论不可达——tab 上下文必绑会话）时给提示态而不是空 iframe。
+function ProtoView({ prototypes, scope }: { prototypes: { name: string; path: string }[]; scope: SessionScope }) {
+  const [sel, setSel] = useState(prototypes[0]?.path ?? '')
+  const current = prototypes.find(p => p.path === sel) ?? prototypes[0]
+  if (current === undefined) return null
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      {prototypes.length > 1 && (
+        <div style={{ display: 'flex', gap: 4, padding: '9px 14px', background: BG, flexWrap: 'wrap' }}>
+          {prototypes.map(p => (
+            <button key={p.path} type="button" style={subBtnLike(current.path === p.path)} onClick={() => setSel(p.path)}>{p.name}</button>
+          ))}
+        </div>
+      )}
+      {scope.sessionId
+        ? <iframe key={current.path} src={prototypeUrl(scope.sessionId, current.path)} title={current.name}
+            style={{ flex: 1, border: 'none', background: '#fff', minHeight: 0 }} />
+        : <div style={{ padding: 14, fontSize: 12, color: TEXT_FAINT }}>无会话绑定，原型预览不可用（可在右栏直接打开 {displayPath(current.path, scope.cwd)}）。</div>}
+    </div>
+  )
+}
+
+// ProtoView 的文件 pill 样式：与地图 route 子页的变体按钮（subBtn）同语言，但
+// 那是主组件作用域内的闭包函数，这里复用不了——按同款参数本地复刻一份。
+function subBtnLike(active: boolean): React.CSSProperties {
+  return { padding: '6px 14px', border: `1px solid ${active ? BORDER : 'transparent'}`, borderRadius: 7, cursor: 'pointer', background: active ? HEADER_BG : 'transparent', color: active ? TEXT : '#888', fontSize: 11.5, fontWeight: active ? 700 : 400 }
+}
 
 function DocCard({ icon, title, path, scope, ctx, body }: {
   icon: string; title: string; path: string; scope: SessionScope; ctx: any; body: string

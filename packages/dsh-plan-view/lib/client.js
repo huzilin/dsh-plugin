@@ -37,6 +37,14 @@ window.__ModuleLoader__.load({
 				value
 			});
 		}
+		/**
+		* 原型预览 URL（2026-10-04 票 24）：iframe src 直接指向服务端只读 GET 端点，
+		* html 内容不进 snapshot（膨胀）。路径围栏在服务端（cwd 内 + /prototype/*.html）；
+		* 变体切换（#variant=…）是文档内 hash 行为，归原型自带的切换器管。
+		*/
+		function prototypeUrl(sessionId, path) {
+			return `/plan-view/prototype?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`;
+		}
 		async function rpc(method, args) {
 			const resp = await fetch(`/api/${method}`, {
 				method: "POST",
@@ -980,7 +988,8 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const efforts = snap.efforts.map((e) => ({
 				dir: e.dir,
 				mapRaw: e.mapRaw,
-				specRaw: e.specRaw ?? void 0
+				specRaw: e.specRaw ?? void 0,
+				prototypes: e.prototypes ?? []
 			}));
 			const primary = efforts.find((e) => e.mapRaw !== "") ?? efforts[0];
 			return {
@@ -4295,6 +4304,11 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 									"📄 spec",
 									0
 								]] : [],
+								...selEffort !== void 0 && selEffort.prototypes.length > 0 ? [[
+									"protodoc",
+									"🖥️ 原型",
+									selEffort.prototypes.length
+								]] : [],
 								[
 									"approvals",
 									"⏳ 待拍板",
@@ -4431,6 +4445,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							scope,
 							ctx,
 							body: selEffort.specRaw
+						}),
+						mapSub === "protodoc" && selEffort !== void 0 && selEffort.prototypes.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProtoView, {
+							prototypes: selEffort.prototypes,
+							scope
 						}),
 						mapSub === "approvals" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ApprovalsView, {
 							approvals: mapApprovals,
@@ -6793,6 +6811,67 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			if (active === null) return true;
 			for (const e of [...treeEdges, ...crossEdges]) if (e.from === key && e.to === active || e.from === active && e.to === key) return true;
 			return false;
+		}
+		function ProtoView({ prototypes, scope }) {
+			const [sel, setSel] = (0, react.useState)(prototypes[0]?.path ?? "");
+			const current = prototypes.find((p) => p.path === sel) ?? prototypes[0];
+			if (current === void 0) return null;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					display: "flex",
+					flexDirection: "column",
+					overflow: "hidden",
+					minHeight: 0
+				},
+				children: [prototypes.length > 1 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					style: {
+						display: "flex",
+						gap: 4,
+						padding: "9px 14px",
+						background: BG,
+						flexWrap: "wrap"
+					},
+					children: prototypes.map((p) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						style: subBtnLike(current.path === p.path),
+						onClick: () => setSel(p.path),
+						children: p.name
+					}, p.path))
+				}), scope.sessionId ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("iframe", {
+					src: prototypeUrl(scope.sessionId, current.path),
+					title: current.name,
+					style: {
+						flex: 1,
+						border: "none",
+						background: "#fff",
+						minHeight: 0
+					}
+				}, current.path) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					style: {
+						padding: 14,
+						fontSize: 12,
+						color: TEXT_FAINT
+					},
+					children: [
+						"无会话绑定，原型预览不可用（可在右栏直接打开 ",
+						displayPath(current.path, scope.cwd),
+						"）。"
+					]
+				})]
+			});
+		}
+		function subBtnLike(active) {
+			return {
+				padding: "6px 14px",
+				border: `1px solid ${active ? BORDER : "transparent"}`,
+				borderRadius: 7,
+				cursor: "pointer",
+				background: active ? HEADER_BG : "transparent",
+				color: active ? TEXT : "#888",
+				fontSize: 11.5,
+				fontWeight: active ? 700 : 400
+			};
 		}
 		function DocCard({ icon, title, path, scope, ctx, body }) {
 			const open = () => openFileInSidebar(ctx, scope, path, path);
