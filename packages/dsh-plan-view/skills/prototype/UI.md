@@ -28,25 +28,36 @@ The sections below spell this out for the web, the most common case. For other p
 
 In every case, gate the switcher behind the project's debug/dev mechanism (a build flag, `#ifdef`, env check) so it can't reach production.
 
-## Two sub-shapes — strongly prefer sub-shape A
+## 本仓形态：独立自包含单文件 html（2026-10-04 拍板，取代 mp 原版 sub-shapes）
 
-A UI prototype is much easier to judge when it's **butting up against the rest of the app** — real header, real sidebar, real data, real density. A throwaway route on its own is a vacuum: every variant looks fine in isolation. Default to sub-shape A whenever there's a plausible existing page or screen to host the variants. Only reach for sub-shape B if the prototype genuinely has no nearby home.
+**mp 原版**的 sub-shape A（变体嵌进现有页面路由）/ sub-shape B（新 throwaway 路由）都把原型挂进项目前端工程——**本仓拍板退役两者**：原型不得挂接当前项目的前端项目，一律生成**自包含单文件 html**（inline CSS/JS、零外部依赖、浏览器双击直开），落 `.scratch/<effort-slug>/prototype/<name>.html`。
 
-### Sub-shape A — adjustment to an existing page (preferred)
+mp 原版三条不变式全部保留，宿主换成了单文件：
 
-The route or screen already exists. Variants are rendered **on the same route**, gated by a `?variant=` URL search param (or the platform's equivalent switch). The existing data fetching, params, and auth all stay — only the rendering swaps. This is the default; pick it unless there's a specific reason not to.
+1. **All variants live behind one entry point** — 一个 html 文件即全部变体。
+2. **Switching is cheap and stateless** — `#variant=b` hash 切换（`file://` 下 query/search 与 hash 均可读，hash 免刷新、可分享、reload 稳定）；切换条显示当前变体名。
+3. **The switcher is obviously not part of the design** — 底部浮动高对比切换条照旧（mp 原版第 4 步的形态与键盘 ←/→ 行为全保留；「production gate」在独立 html 下不适用——它本来就永远不进工程构建）。
 
-If the prototype is for something that doesn't yet have a page but *would naturally live inside one* (a new section of the dashboard, a new card on the settings screen, a new step in an existing flow) — that's still sub-shape A. Mount the variants inside the host page.
+**单文件多变体骨架**（原生 JS，不用框架；变体可以是纯 CSS 换肤、也可以是 DOM 结构级差异）：
 
-### Sub-shape B — a new page (last resort)
+```html
+<!-- prototype/three-step-flow.html — 三变体：分步布局 A/B/C，#variant= 切换 -->
+<style> /* 全部样式 inline */ </style>
+<main id="app"></main>
+<nav id="switcher" style="position:fixed;bottom:16px;left:50%;transform:translateX(-50%)">
+  <!-- ← A — 分步向导 →   高对比 pill，明显不属于设计本体 -->
+</nav>
+<script>
+  const VARIANTS = { a: renderWizard, b: renderSingleColumn, c: renderTabs };
+  const current = () => (location.hash.match(/variant=(\w)/) ?? [,'a'])[1];
+  function render() { VARIANTS[current()](document.getElementById('app')); }
+  addEventListener('hashchange', render); render();
+</script>
+```
 
-Only use this when the thing being prototyped genuinely has no existing page to live inside — e.g. an entirely new top-level surface, or a flow that can't be embedded anywhere sensible.
+「butting up against the rest of the app」的告诫（真空环境看不出密度问题）以**造数**方式补偿：html 内置贴近真实的假数据量（表格 20 行而非 3 行、真实长度的中文文案），别用 lorem ipsum。
 
-Create a **throwaway route** following whatever routing convention the project already uses — don't invent a new top-level structure. Name it so it's obviously a prototype (e.g. include the word `prototype` in the path or filename). Same `?variant=` pattern.
-
-Before committing to sub-shape B, sanity-check: is there really no existing page this could be embedded in? An empty route hides design problems that a populated one would expose.
-
-In both sub-shapes the floating bottom bar is identical.
+非 web 平台（TUI/桌面/游戏）的翻译表照 mp 原版不变——本仓形态只改 web 宿主。
 
 ## Process
 
@@ -72,24 +83,7 @@ Variants must be **structurally different** — different layout, different info
 
 ### 3. Wire them together
 
-Create a single switcher component on the route:
-
-```tsx
-// pseudo-code — adapt to the project's framework
-const variant = searchParams.get('variant') ?? 'A';
-return (
-  <>
-    {variant === 'A' && <VariantA {...data} />}
-    {variant === 'B' && <VariantB {...data} />}
-    {variant === 'C' && <VariantC {...data} />}
-    <PrototypeSwitcher variants={['A','B','C']} current={variant} />
-  </>
-);
-```
-
-For sub-shape A (existing page): keep all the existing data fetching above the switcher; only the rendered subtree changes per variant.
-
-For sub-shape B (new page): the throwaway route under `/prototype/<name>` mounts the same switcher.
+用上面的**单文件多变体骨架**把变体接进一个 html：`VARIANTS` 表注册各变体渲染函数，hash 驱动切换，切换条调 `location.hash`。变体间共享的数据/文案直接写在文件顶部的 `DATA` 常量里——自包含单文件没有外部 fetch。（mp 原版的 React switcher 组件与 sub-shape A/B 路由接线随宿主改造一并退役。）
 
 ### 4. Build the floating switcher
 
@@ -104,7 +98,7 @@ Behaviour:
 - Clicking an arrow updates the URL search param (use the framework's router — `router.replace` on Next, `navigate` on React Router, etc) so the variant is shareable and reload-stable.
 - Keyboard: `←` and `→` arrow keys also cycle. Don't intercept arrow keys when an `<input>`, `<textarea>`, or `[contenteditable]` is focused.
 - Visually distinct from the page (e.g. high-contrast pill, subtle shadow) so it's obviously not part of the design being evaluated.
-- Hidden in production builds — gate on `process.env.NODE_ENV !== 'production'` or the platform's equivalent check, so a stray prototype merge can't ship the bar to users.
+- **Production gate**：独立 html 不进任何工程构建，无 production 泄漏面——mp 原版的 `NODE_ENV` 门控在本仓形态下自然不需要。（非 web 平台照旧走各自的 debug 门控。）
 
 Put the switcher in a single shared component so both sub-shapes can reuse it. Locate it wherever shared UI lives in the project.
 
@@ -116,12 +110,10 @@ Surface the URL (and the `?variant=` keys) — or the flag/key binding on other 
 
 ### 6. Capture the answer and clean up
 
-Once a variant has won, write down which one and why (commit message, ADR, spec, or a `NOTES.md` next to the prototype if running AFK and the user hasn't responded yet). Then:
+Once a variant has won, write down which one and why (commit message, ADR, spec, or a `NOTES.md` next to the prototype if running AFK and the user hasn't responded yet). Then, per the 本仓落点契约（SKILL.md）:
 
-- **Sub-shape A** — delete the losing variants and the switcher; fold the winner into the existing page.
-- **Sub-shape B** — promote the winning variant to a real route, delete the throwaway route and the switcher.
-
-Don't leave variant components or the switcher lying around. They rot fast and confuse the next reader.
+- **胜出决策**回填 spec/ADR——口径变更走 E' 销号分流，spec 引用胜出变体（`prototype/<name>.html` 相对路径＋`#variant=` 键）。
+- **原型文件不删**：随 effort 归档留痕（归档即出视图）；mp 原版「删除落选变体与切换器」的 cleanup 由**文件本体整体归档**替代——单文件多变体形态下变体共居一文件，无「落选变体散落工程」的腐烂面。
 
 ## Anti-patterns
 

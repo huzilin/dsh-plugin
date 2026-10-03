@@ -111,7 +111,7 @@ to-qa-testcases → run-qa-testcases ──全绿──→ 票写 qa_accepted �
   - **全局件推进入口（2026-10-02 裁定）**：全局件不属于任何图，**图收口时天然被跳过**，故**唯一认领方 = `plan-loop` 的全局件行动行**（全局缺陷、全局台账、全局测例各一行，与图内同类同池排序、同规推进）。这是对上一条「独立驱动」的归属补全——此前协议说了纪律却没说谁执行。
 - **一票一文件**：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`。**禁止**把多票写进一个 `tickets.md`／`issues.md`——按文件读取的一方会把合并文件当成**一张票**，里面所有票丢失。
 - **目录契约守门（plan-lint 检查[8][9] · 2026-09-30 拍板，plan-lint-gate 票 16；判据正本 = 各仓 `docs/research/梳理-plan目录写入矩阵-20260930.md` 两层 tree）**：
-  - **检查[8] effort 目录白名单**：effort（`.scratch/<slug>/` 含 map.md 或 spec.md）的直接子目录封闭清单 = `issues / assets / approval / qa / ledger` ＋ 存量只读兼容 `tickets / impl / impl-fe`（历史路径不得清理）；清单外自建子目录报 `effort-dir-whitelist`——视图按契约不收集，产物按写入矩阵归 `assets/` 等合法落点。
+  - **检查[8] effort 目录白名单**：effort（`.scratch/<slug>/` 含 map.md 或 spec.md）的直接子目录封闭清单 = `issues / assets / approval / qa / ledger / prototype` ＋ 存量只读兼容 `tickets / impl / impl-fe`（历史路径不得清理）；清单外自建子目录报 `effort-dir-whitelist`——视图按契约不收集，产物按写入矩阵归 `assets/` 等合法落点。**`prototype/`＝原型产物目录（2026-10-04 拍板）**：prototype skill 的产物（UI 自包含单文件 html／LOGIC 脚本＋README）落此，随 effort 整轮归档；spec／票面按相对路径 `prototype/<name>.html` 引用；plan-view effort「原型」tab 展示（视图侧 = plan-lint-gate 票 24）。
   - **检查[9] `.plan` 根层文件形状**：全局审批档正本落点 = `.plan/approval/`（2026-09-30 收拢拍板），根层 `.md` 一律违例（README 层级说明档豁免），报 `plan-root-shape`——审批档入 `approval/`，其余按写入矩阵分流 `docs/research/`、`docs/requirements/`、`.tmp/`、effort `assets/`。子目录白名单归检查[6]管。
 - **状态以正文行为准**（2026-10-02 拍板 Q10=乙，取代旧「frontmatter 是权威」条）：票的 `Status:` **写在正文首部**；`type` 留 frontmatter；**阻塞边写正文 `**Blocked by:**`**。解析方一律读正文行。
   - **唯一例外是 `type`**：它不回答「走到哪了」，只回答「这是什么单据」，且视图靠它分流（`type: approval` / `qa-defect` 等），故留 frontmatter。

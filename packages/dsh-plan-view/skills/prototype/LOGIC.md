@@ -62,6 +62,8 @@ Add a script or target to the project's existing task runner (`Makefile`, `justf
 
 If the host project has no task runner, just put the command at the top of the prototype's README.
 
+**（本仓落点：产物归 `.scratch/<effort-slug>/prototype/`——2026-10-04 拍板，见 SKILL.md「本仓落点契约」。脚本、README、NOTES.md 同置该目录，命令写 README 顶部即可，不要求挂接项目 task runner；「可移植 logic module 用后并入真实代码」纪律不变，TUI 壳随 effort 归档留痕。）**
+
 ### 6. Hand it over
 
 Give the user the run command. They'll drive it themselves; the interesting moments are when they say "wait, that shouldn't be possible" or "huh, I assumed X would be different" — those are the bugs in the _idea_, which is the whole point. If they want new actions added, add them. Prototypes evolve.

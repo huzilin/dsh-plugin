@@ -58,7 +58,8 @@
 #   8. effort 目录白名单（2026-09-30 拍板，plan-lint-gate 票 16；判据正本 =
 #      docs/research/梳理-plan目录写入矩阵-20260930.md 两层 tree）：effort
 #      （.scratch/ 下含 map.md 或 spec.md 的目录）的直接子目录封闭清单 =
-#      issues / assets / approval / qa / ledger ＋ 存量只读兼容 tickets /
+#      issues / assets / approval / qa / ledger / prototype（prototype=
+#      2026-10-04 拍板新增：原型产物目录，票 23）＋ 存量只读兼容 tickets /
 #      impl / impl-fe（协议「impl 不是票型」条：历史路径不得清理）；清单外
 #      自建子目录（fengping/specs/briefs 类）报 effort-dir-whitelist——视图
 #      不收集、产物按写入矩阵归 assets/ 等合法落点。
@@ -446,11 +447,12 @@ for PD in $PLAN_DIRS; do
   # 判据正本 = docs/research/梳理-plan目录写入矩阵-20260930.md 两层 tree
   # （2026-09-30 用户拍板「那就按这个来」）：effort（含 map.md 或 spec.md，
   # 与视图加载判据一致）的直接子目录封闭清单 = issues / assets / approval /
-  # qa / ledger ＋ 存量只读 tickets / impl / impl-fe（历史路径不得清理）。
-  # 清单外自建子目录 = 视图不收集的孤岛（fengping/specs/briefs 类），报出
-  # 供迁移施工；只对 PD=.scratch 生效。tree 之外的目录即违例——「结构即契约」。
+  # qa / ledger / prototype（prototype=2026-10-04 拍板新增：原型产物目录，
+  # plan-lint-gate 票 23）＋ 存量只读 tickets / impl / impl-fe（历史路径不得
+  # 清理）。清单外自建子目录 = 视图不收集的孤岛（fengping/specs/briefs 类），
+  # 报出供迁移施工；只对 PD=.scratch 生效。tree 之外的目录即违例——「结构即契约」。
   case "${PD##*/}" in .scratch)
-    echo "[8] effort 目录白名单（封闭：issues assets approval qa ledger；存量只读：tickets impl impl-fe）"
+    echo "[8] effort 目录白名单（封闭：issues assets approval qa ledger prototype；存量只读：tickets impl impl-fe）"
     stray8=0
     for d in "$PD"/*/; do
       [ -d "$d" ] || continue
@@ -459,7 +461,7 @@ for PD in $PLAN_DIRS; do
         [ -d "$sub" ] || continue
         name=$(basename "$sub")
         case "$name" in
-          issues|assets|approval|qa|ledger|tickets|impl|impl-fe|node_modules) continue ;;
+          issues|assets|approval|qa|ledger|prototype|tickets|impl|impl-fe|node_modules) continue ;;
           .*) continue ;;
         esac
         stray8=$((stray8 + 1))
