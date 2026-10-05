@@ -59,6 +59,21 @@ test('every cell has a floor width so columns stop crushing', async () => {
   assert.match(rule(css, '.pvm-table td'), /min-width:\s*\d+px/, 'td 缺最小格宽')
 })
 
+test('the floor is at least ten CJK characters wide', async () => {
+  const css = await loadMdCss()
+  // 2026-10-05 用户反馈：两列表格的两列都被压到两三个字、完全不可读，要求最小格宽
+  // 至少 10 个字。字号 12.5px（1 汉字 ≈ 12.5px）＋左右各 10px 内边距 → 10 字 ≈ 145px，
+  // 取 150px。下限一旦被调回两位数 px，这张表就重新变回不可读，故钉住数值。
+  const px = (sel) => {
+    const m = rule(css, sel).match(/min-width:\s*(\d+)px/)
+    assert.ok(m, `${sel} 缺 min-width`)
+    return Number(m[1])
+  }
+  for (const sel of ['.pvm-table th', '.pvm-table td']) {
+    assert.ok(px(sel) >= 145, `${sel} 最小格宽 ${px(sel)}px < 10 个汉字宽（145px）`)
+  }
+})
+
 test('long cells are capped and allowed to break instead of stretching one column', async () => {
   const css = await loadMdCss()
   const td = rule(css, '.pvm-table td')
