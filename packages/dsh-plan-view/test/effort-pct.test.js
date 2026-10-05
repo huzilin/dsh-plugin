@@ -57,7 +57,7 @@ async function loadImpl() {
     'ticketKind', 'isSettled', 'isSpecArchived', 'effortProgress',
     // 2026-10-02 载体迁移新增：票的 status 现从正文读取，解析链需要这两个。
     'bodyField']) code += grab(n) + '\n'
-  code += 'return { effortPct: (o,d,c,t,k,s) => effortProgress(o,d,c,t,k,s).pct, effortProgress, displayStatus, ticketKind, hasSection, isSpecArchived, bodyField }'
+  code += 'return { effortPct: (o,d,c,t,k,s) => effortProgress(o,d,c,t,k,s).pct, effortProgress, displayStatus, ticketKind, hasSection, isSpecArchived, bodyField, isSettled }'
   return new Function(code)()
 }
 
@@ -276,3 +276,67 @@ test('locked flag marks a structural ceiling that cannot be reached', async () =
   assert.equal(lowTest.pct, 67, '进度 2/3 低于 90% 封顶，数值不被改写')
   assert.equal(lowTest.locked, true, '低于上限同样标出缺测试文档的结构性缺口')
 })
+
+// ─── 2026-10-04 新增：全局件不进图分母 ──────────────────────────────────────
+//
+// 缺陷成因（用户 2026-10-04 实测指出）：effortProgress 的两处调用点旧写法
+// `t.effort === e.dir || t.effort === ROOT_GROUP` 把 `.plan/` 根层的全局件
+// （全局台账 / 全局缺陷 / 根层审批档）算进了每一张图的分母，导致图进度被
+// 与图无关的全局存量稀释。协议依据＝plan-protocol「全局件」条·判据归属：
+// 「全局件目录（approval/ qa/ ledger/）不参与 effort 判据」＋ 2026-09-25 拍板
+// 「全局台账不进地图页」。修法＝收窄写在 effortProgress 函数内部，调用点
+// 即便仍传含全局件的集合也不会再被污染（本测试即钉这一点）。
+
+test('global-scope documents (ROOT_GROUP) never enter a map denominator', async () => {
+  const M = await loadImpl()
+  const ROOT = '\u0000root'
+  // status 走与生产同一套规则（正文 `**Status:**` 优先）——不要在这里手写
+  // status 字段：生产对象的 t.status 是 deriveTicketStatus 解析出来的，测试若
+  // 直接塞 undefined 会绕过解析链，把「未结案」单据误判成已结案。
+  const T = (type, body, effort) => ({
+    file: 'x.md', id: 'x', title: 'x', type, status: M.bodyField(body, 'Status'),
+    body, claimedBy: undefined, outOfScope: false, effort, blockedBy: [], assets: [],
+  })
+  const ANS = T('task', '# t\n\n## Answer\n\nx', 'D')
+  const cases = [{ effort: 'D' }], tests = [{ effort: 'D' }]
+
+  // 全局件三种形态各一（全局台账在挂 / 全局缺陷待修复 / 根层审批档 pending），
+  // 全部「未结案」——旧口径会拉到极低。
+  const globalDocs = [
+    T('ledger', '# 挂账-01 x\n- 状态: 在挂\n- 卡点: y\n', ROOT),
+    T('qa-defect', '# DEF-01 x\n- 状态: 待修复\n', ROOT),
+    T('approval', '# 待拍板-x\n\n**Status:** pending\n', ROOT),
+  ]
+  // 前置自检：三种全局件必须确实是「未结案」形态，否则本用例证明不了剔除行为。
+  for (const d of globalDocs) {
+    assert.equal(M.isSettled(d, M.ticketKind(d)), false, `${d.type} 构造为未结案，前置自检`)
+  }
+  // 调用点仍按旧写法传入含全局件的集合（回归防线：函数内部必须兜底剔除）。
+  const withGlobals = M.effortProgress([ANS, ...globalDocs], 'D', cases, tests, 'impl', SPEC_ARCHIVED)
+  assert.equal(withGlobals.pct, 100, '3 个全局件不得计入本图分母（1 票 done + spec 已归档 = 1/1）')
+
+  // 对照：全局件换成同样形态但归属本图的单据，就必须计入（证明剔除的是归属、不是类型）。
+  // 分母 = 1 done + 3 未结案 + 1 spec 名额 = 5；分子 = 1 done + 1 spec 已归档 = 2 → 40%。
+  const localDocs = [
+    T('ledger', '# 挂账-01 x\n- 状态: 在挂\n- 卡点: y\n', 'D'),
+    T('qa-defect', '# DEF-01 x\n- 状态: 待修复\n', 'D'),
+    T('approval', '# 待拍板-x\n\n**Status:** pending\n', 'D'),
+  ]
+  for (const d of localDocs) {
+    assert.equal(M.isSettled(d, M.ticketKind(d)), false, `${d.type} 构造为未结案，前置自检`)
+  }
+  const withLocals = M.effortProgress([ANS, ...localDocs], 'D', cases, tests, 'impl', SPEC_ARCHIVED)
+  assert.equal(withLocals.pct, 40, '本图自有的未结案单据必须计入（2/5 = 40%）')
+
+  // 已结案的全局件同样不进分母——剔除是双向的，不只看它扣不扣分。
+  const settledGlobals = [
+    T('ledger', '# 挂账-01 x\n- 状态: 已销\n', ROOT),
+    T('qa-defect', '# DEF-01 x\n- 状态: 已关闭\n', ROOT),
+  ]
+  for (const d of settledGlobals) {
+    assert.equal(M.isSettled(d, M.ticketKind(d)), true, `${d.type} 构造为已结案，前置自检`)
+  }
+  const mixed = M.effortProgress([ANS, ...settledGlobals], 'D', cases, tests, 'impl', SPEC_ARCHIVED)
+  assert.equal(mixed.pct, 100, '已结案的全局件也不得被算作本图成绩')
+})
+

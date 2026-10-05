@@ -788,11 +788,19 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		/**
 		* 一张图的完成度。返回 `pct` 与锁区两个读数。
 		*
-		* 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加）：
+		* 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加，2026-10-04 全局件剔除）：
 		*  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
+		*  - **全局件（ROOT_GROUP）不计入**（2026-10-04 用户拍板 A 案）：`.plan/` 根层的
+		*    全局台账/全局缺陷/根层审批档不属于任何图，协议明文「不参与 effort 判据」。
+		*    调用方仍按旧写法传含全局件的集合也无妨——本函数内部统一剔除。
+		*    历史误读：2026-10-03 为消除总览卡与 Kanban 的双口径而把 own 改「全量单据
+		*    （含根层全局件）」，目的（两处同数）达成但顺带把全局件固定进了分母，导致
+		*    图进度被与图无关的全局存量稀释（master-outline-realign 实测 44% → 剔除后
+		*    45%，方向可为升可为降：全局件未结案多则压低、已结案多则抬高）。
 		*  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
 		*    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
-		*    变为 100%。推演图无 spec.md，不加项。
+		*    变为 100%。推演图无 spec.md，不加项。（spec.md 是图内文件、非全局件，
+		*    2026-10-04 拍板确认不受剔除影响。）
 		*  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**；有测例但缺执行验收记录
 		*    （`qa/test.md`）⇒ **封顶 90%**。`lockPct`（20/10）标出「够不到的那一段」，
 		*    供进度条把右端画成黄色锁区（2026-10-03 用户拍板的展示要求）。
@@ -810,6 +818,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 		*/
 		function effortProgress(own, dir, cases, tests, kind, specRaw) {
 			const countable = own.filter((t) => {
+				if (t.effort === ROOT_GROUP) return false;
 				const k = ticketKind(t);
 				if (k === "note" || k === "cases") return false;
 				if (k === "ticket" && t.outOfScope) return false;
@@ -847,8 +856,9 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				title: "缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%"
 			};
 		}
-		/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（四类单据全计＋
-		*  spec 名额＋锁区），与总览卡同一个数；工单/待拍板/缺陷/台账四个子页头部共用。
+		/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（本图四类单据全计
+		*  ＋ spec 名额＋锁区；**不含全局件**，2026-10-04 拍板 A 案），与总览卡同一个数；
+		*  工单/待拍板/缺陷/台账四个子页头部共用。
 		*  prog 为 undefined（「全部地图」聚合态，无单一 effort）时不渲染。 */
 		function EffortProgressBar({ prog }) {
 			const lockTitle = prog.locked ? lockCopy(prog.lockKind).title : "";
@@ -3449,7 +3459,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 								flexWrap: "wrap"
 							},
 							children: g.items.map(({ e }) => {
-								const own = tickets.filter((t) => t.effort === e.dir || t.effort === ROOT_GROUP);
+								const own = tickets.filter((t) => t.effort === e.dir);
 								const kind = mapKind(e.dir, tickets);
 								const prog = effortProgress(own, e.dir, cases, tests, kind, e.specRaw);
 								const { pct, locked, lockPct, lockKind } = prog;
@@ -4089,7 +4099,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const selKind = effortIdx >= 0 && selectedDir !== void 0 ? mapKind(selectedDir, mapOwnTickets) : void 0;
 			const selProg = (() => {
 				if (effortIdx < 0 || selectedDir === void 0 || selEffort === void 0) return void 0;
-				return effortProgress(all.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), selectedDir, cases, qaTests, selKind, selEffort.specRaw);
+				return effortProgress(all.filter((t) => t.effort === selectedDir), selectedDir, cases, qaTests, selKind, selEffort.specRaw);
 			})();
 			const roundsSelect = rounds.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 				value: round ?? "",

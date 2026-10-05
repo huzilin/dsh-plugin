@@ -705,11 +705,19 @@ export function isSpecArchived(specRaw: string | undefined): boolean {
 /**
  * 一张图的完成度。返回 `pct` 与锁区两个读数。
  *
- * 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加）：
+ * 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加，2026-10-04 全局件剔除）：
  *  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
+ *  - **全局件（ROOT_GROUP）不计入**（2026-10-04 用户拍板 A 案）：`.plan/` 根层的
+ *    全局台账/全局缺陷/根层审批档不属于任何图，协议明文「不参与 effort 判据」。
+ *    调用方仍按旧写法传含全局件的集合也无妨——本函数内部统一剔除。
+ *    历史误读：2026-10-03 为消除总览卡与 Kanban 的双口径而把 own 改「全量单据
+ *    （含根层全局件）」，目的（两处同数）达成但顺带把全局件固定进了分母，导致
+ *    图进度被与图无关的全局存量稀释（master-outline-realign 实测 44% → 剔除后
+ *    45%，方向可为升可为降：全局件未结案多则压低、已结案多则抬高）。
  *  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
  *    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
- *    变为 100%。推演图无 spec.md，不加项。
+ *    变为 100%。推演图无 spec.md，不加项。（spec.md 是图内文件、非全局件，
+ *    2026-10-04 拍板确认不受剔除影响。）
  *  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**；有测例但缺执行验收记录
  *    （`qa/test.md`）⇒ **封顶 90%**。`lockPct`（20/10）标出「够不到的那一段」，
  *    供进度条把右端画成黄色锁区（2026-10-03 用户拍板的展示要求）。
@@ -729,6 +737,14 @@ export function effortProgress(
   own: ParsedTicket[], dir: string, cases: ParsedTicket[], tests: ParsedTicket[], kind: MapKind | undefined, specRaw: string | undefined,
 ): { pct: number; locked: boolean; lockPct: number; lockKind: 'cases' | 'test' | undefined; hasCases: boolean; hasTest: boolean; specCounted: boolean; specArchived: boolean } {
   const countable = own.filter(t => {
+    // 全局件不进本图分母（2026-10-04 用户拍板 A 案）。ROOT_GROUP 单据住在
+    // `.plan/` 根层（全局台账 / 全局缺陷 / 根层审批档），它们**不属于任何图**。
+    // 收窄写在本函数内而非调用点：调用点各自拼集合正是本缺陷的成因（同屏的
+    // 台账/缺陷子页列表早已按 `!== ROOT_GROUP` 剔除，只有进度条漏了过滤，两处
+    // 调用点还把 `=== ROOT_GROUP` 硬编码了两遍）。协议依据=plan-protocol
+    // 「全局件」条·判据归属：「全局件目录（approval/ qa/ ledger/）不参与 effort
+    // 判据——它们是全局件锚点不是图」＋ 2026-09-25 拍板「全局台账不进地图页」。
+    if (t.effort === ROOT_GROUP) return false
     const k = ticketKind(t)
     // note（说明/杂项）不是单据；cases/test 单独作封顶条件、不进分母。
     if (k === 'note' || k === 'cases') return false
@@ -768,8 +784,9 @@ function lockCopy(kind: 'cases' | 'test' | undefined): { chip: string; title: st
     : { chip: '🔒 缺测例 20%', title: '缺 qa/cases.md：测例是实施图的验收前提，上限锁在 80%，补齐前到不了 100%' }
 }
 
-/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（四类单据全计＋
- *  spec 名额＋锁区），与总览卡同一个数；工单/待拍板/缺陷/台账四个子页头部共用。
+/** effort 全局进度条（2026-10-03 拍板②）：读数 = effortProgress（本图四类单据全计
+ *  ＋ spec 名额＋锁区；**不含全局件**，2026-10-04 拍板 A 案），与总览卡同一个数；
+ *  工单/待拍板/缺陷/台账四个子页头部共用。
  *  prog 为 undefined（「全部地图」聚合态，无单一 effort）时不渲染。 */
 function EffortProgressBar({ prog }: {
   prog: ReturnType<typeof effortProgress>
@@ -1849,7 +1866,10 @@ function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effort
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               {g.items.map(({ e }) => {
-                const own = tickets.filter(t => t.effort === e.dir || t.effort === ROOT_GROUP)
+                // 本图自有单据——**不含全局件**（2026-10-04 拍板 A 案）：三段读数
+                // （进度条 / 在途数 / 阶段词）同源同集合，剔除口径一次生效，
+                // 不会出现「进度条剔了、在途数没剔」的新一轮双口径。
+                const own = tickets.filter(t => t.effort === e.dir)
                 const kind = mapKind(e.dir, tickets)
                 const prog = effortProgress(own, e.dir, cases, tests, kind, e.specRaw)
                 const { pct, locked, lockPct, lockKind } = prog
@@ -2236,12 +2256,15 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // 选中图的型别：三个票型视图只对推演图显示（拍板「仅 wayfinder 的 map 可见」）。
   const selKind = effortIdx >= 0 && selectedDir !== undefined ? mapKind(selectedDir, mapOwnTickets) : undefined
   // effort 全局进度（2026-10-03 拍板②）：单图态一次算好，工单/待拍板/缺陷/台账
-  // 四个子页头部共用；own 用全量单据（含根层全局件），读数与总览卡完全同口径
-  // （effortProgress 单一真相源）——Kanban 自算 done/active 的第二口径退役，
-  // 仅存于「全部地图」聚合态 fallback（无单一 effort，无锁）。
+  // 四个子页头部共用；own 只取**本图自有单据**（2026-10-04 拍板 A 案起剔除全局件
+  // ——参见 effortProgress 注释），读数与总览卡完全同口径（effortProgress 单一
+  // 真相源）——Kanban 自算 done/active 的第二口径退役，仅存于「全部地图」聚合态
+  // fallback（无单一 effort，无锁）。
   const selProg = (() => {
     if (effortIdx < 0 || selectedDir === undefined || selEffort === undefined) return undefined
-    const own = all.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)
+    // 只取本图自有单据（不含全局件，2026-10-04 拍板 A 案）——与总览卡同一口径，
+    // 两处读数必须相等（单一真相源）。函数内亦会兜底剔除 ROOT_GROUP。
+    const own = all.filter(t => t.effort === selectedDir)
     return effortProgress(own, selectedDir, cases, qaTests, selKind, selEffort.specRaw)
   })()
 
