@@ -427,10 +427,15 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
    上时表格依旧会压缩以适配容器，永远不溢出、也就永远不出现横向滚动。
    th/td 的 min-width 是「最小格宽」本体：列窄到这个下限即止，不再压缩到只剩表头
    文字宽（旧样式下短列被压到 45px，读作挤压变形）。td 的 max-width + break-word
-   给超长单元格封顶并允许折行，避免单列无限伸长把表推成一条长带。 */
+   给超长单元格封顶并允许折行，避免单列无限伸长把表推成一条长带。
+
+   下限取 150px（2026-10-05 用户反馈：两列表格的两列都被压到两三个字、完全
+   不可读）。12.5px 字号下 1 汉字约 12.5px 宽，150px 扣掉左右各 10px 内边距
+   ≈ 10 个汉字一行——即「至少 10 个字宽」的换算结果。压过这条线就读不出内容，
+   宁可让宽表在 .pvm-tw 里横向滚动。 */
 .pvm-table{border-collapse:collapse;width:max-content;min-width:100%;font-size:12.5px}
-.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap;min-width:72px}
-.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top;min-width:72px;max-width:320px;word-break:break-word}
+.pvm-table th{background:${RAISED};color:${TEXT};font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid ${BORDER};white-space:nowrap;min-width:150px}
+.pvm-table td{padding:7px 10px;border-bottom:1px solid ${BORDER_LIGHT};color:${TEXT_DIM};vertical-align:top;min-width:150px;max-width:320px;word-break:break-word}
 .pvm-table tr:last-child td{border-bottom:none}
 .pvm-a{color:${ACCENT_SOFT};text-decoration:none}
 .pvm-a:hover{text-decoration:underline}
@@ -705,7 +710,8 @@ export function isSpecArchived(specRaw: string | undefined): boolean {
 /**
  * 一张图的完成度。返回 `pct` 与锁区两个读数。
  *
- * 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加，2026-10-04 全局件剔除）：
+ * 口径（2026-10-02 用户拍板，10% 档 2026-10-03 追加，2026-10-04 全局件剔除，
+ * 2026-10-05 spec 退出进度）：
  *  - 四类单据全计（ticket/approval/ledger/qa-defect），完成判据各按自己坐标系。
  *  - **全局件（ROOT_GROUP）不计入**（2026-10-04 用户拍板 A 案）：`.plan/` 根层的
  *    全局台账/全局缺陷/根层审批档不属于任何图，协议明文「不参与 effort 判据」。
@@ -714,17 +720,21 @@ export function isSpecArchived(specRaw: string | undefined): boolean {
  *    （含根层全局件）」，目的（两处同数）达成但顺带把全局件固定进了分母，导致
  *    图进度被与图无关的全局存量稀释（master-outline-realign 实测 44% → 剔除后
  *    45%，方向可为升可为降：全局件未结案多则压低、已结案多则抬高）。
- *  - **实施图**的 `spec.md` 占**一个名额**：未归档 ⇒ 分母 +1 且该项未完成，
- *    故「票全做完但 spec 没归档」= n/(n+1)，永远到不了 100%。spec 归档后满分
- *    变为 100%。推演图无 spec.md，不加项。（spec.md 是图内文件、非全局件，
- *    2026-10-04 拍板确认不受剔除影响。）
+ *  - **spec.md 不进进度**（2026-10-05 用户拍板，翻转 2026-10-02 的「占一个名额」）：
+ *    进度只由票决定，实施图「票全做完」即 100%，spec 归档与否不再影响读数。
+ *    被翻转的旧口径：spec.md 曾占一个名额，未归档 ⇒ 分母 +1 且该项未完成，
+ *    于是票全做完也永远停在 n/(n+1)（4 票 = 80%）——用户判定「spec 不算在进度里」。
+ *    注意与全局件剔除的区别：spec 是**图内文件**，2026-10-04 拍板确认它不受全局件
+ *    剔除影响；本次是它自己从进度里退出，两条口径互不派生。
+ *    `specCounted`/`specArchived` 仍计算，供卡片那行「📄 spec 未归档」提醒使用——
+ *    提醒保留、但与百分比解耦（2026-10-05 用户选择「保留提示、不影响百分比」）。
  *  - 实施图缺 `qa/cases.md` ⇒ 完成度**封顶 80%**；有测例但缺执行验收记录
  *    （`qa/test.md`）⇒ **封顶 90%**。`lockPct`（20/10）标出「够不到的那一段」，
  *    供进度条把右端画成黄色锁区（2026-10-03 用户拍板的展示要求）。
  *
  * `locked` 为 true 表示**存在结构性缺口导致上不去 100%**（缺测例 / 缺测试文档
- * 两种），供卡片在进度右侧显示锁死标识；spec 未归档不置 locked——它是分母里的
- * 正常一项，属于「还有活没干」，与「条件缺失、干了也到不了」是两回事。
+ * 两种），供卡片在进度右侧显示锁死标识。spec 未归档既不进分母、也不置 locked
+ * ——它已完全退出进度坐标系。
  *
  * @param own     该图自有单据 + 根层松散件（与卡片其它计数同口径）
  * @param dir     图目录（判断 qa/cases.md、qa/test.md 与 spec.md 归属）
@@ -753,11 +763,13 @@ export function effortProgress(
     return true
   })
   const settled = countable.filter(t => isSettled(t, ticketKind(t))).length
-  // 实施图的 spec 占一个名额（推演图无 spec.md，不加）。
+  // spec **不进进度**（2026-10-05 用户拍板：spec 不算在进度里）。分子分母同去：
+  // 票全做完就是 100%，不再被 spec 归档与否牵住。两个字段仍要算——卡片那行
+  // 「📄 spec 未归档」提醒还用它，只是提醒与百分比彻底解耦。
   const specCounted = kind === 'impl' && !!specRaw
   const specArchived = isSpecArchived(specRaw)
-  const denom = countable.length + (specCounted ? 1 : 0)
-  const numer = settled + (specCounted && specArchived ? 1 : 0)
+  const denom = countable.length
+  const numer = settled
   let pct = denom > 0 ? Math.round((numer / denom) * 100) : 0
   const hasCases = cases.some(c => c.effort === dir)
   const hasTest = tests.some(t => t.effort === dir)
@@ -1911,10 +1923,11 @@ function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effort
                     </div>
                     <div style={{ fontSize: 11, color: TEXT_FAINT, marginTop: 5 }}>
                       {unsettled} 项在途 · {own.filter(t => ticketKind(t) === 'approval' && isPending(t)).length} 待拍板
-                      {/* spec 占一个名额（实施图）：未归档时明示「还差这一项」，
-                          否则用户看到 n/(n+1) 的百分比会以为票没做完。 */}
+                      {/* spec 不进进度（2026-10-05 拍板），这行只是提醒：spec.md 该归档
+                          了。提醒与百分比彻底解耦——票全做完时进度就是 100%，本行不改变
+                          任何数字，故不动用「还差这一项」的措辞。 */}
                       {prog.specCounted && !prog.specArchived && (
-                        <span title="spec.md 是 effort 的一次性实施文档：随 effort 关闭作废归档（带 superseded-by: 注记或随轮归档）。未归档前本图到不了 100%。" style={{ color: '#f7ad31', marginLeft: 6 }}>
+                        <span title="提醒：spec.md 是 effort 的一次性实施文档，随 effort 关闭作废归档（带 superseded-by: 注记或随轮归档）。它不参与进度计算——百分比只由票决定。" style={{ color: '#f7ad31', marginLeft: 6 }}>
                           📄 spec 未归档
                         </span>
                       )}
@@ -2965,6 +2978,25 @@ function LedgerCard({ entry: e }: { entry: LedgerEntry }) {
 // 作用域细到 map——由调用方按当前选中的图过滤后传入，与挂账台账（plan 级
 // 跨图）有意不同。条目解析走文档里的「清单总览」markdown 表格。
 
+// 缺陷字段 chip（2026-10-06 用户反馈：页面被撑爆、内容挤成竖排）。
+//
+// 症状：这些字段其实是**整句**而非短值（如状态「已关闭（2026-10-04 票 09
+// `fff9bce1` 上下文装配＋票 10 `6a753bcc` 步 0/5 收敛单提交落地——断口 a…」，
+// 实测 200+ 字）。chip 是不换行的 pill，`flexWrap` 只能整块换行——一个 chip
+// 即宽几百像素，同行的标题被挤到只剩几个像素、竖排成一条，整页横向溢出。
+//
+// 修法：值超过 `maxW` 即截断加省略号，**完整原文挂在 title 上**（悬停可读）。
+// 字段本身不丢，只是不再由它决定整页宽度。`minWidth: 0` 让 flex 子项真的能
+// 收缩——缺它时 flex 项的下限是内容宽，截断不会生效。
+function FieldChip({ label, value, maxW, style }: { label: string; value: string; maxW: number; style?: any }) {
+  if (!value) return null
+  return (
+    <span title={`${label} ${value}`} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888', display: 'inline-block', maxWidth: maxW, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle', ...style }}>
+      {label} {value}
+    </span>
+  )
+}
+
 interface DefectEntry {
   id: string       // 缺陷号
   title: string
@@ -3049,7 +3081,9 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
       <div style={{ padding: '8px 14px', borderBottom: `1px solid ${BORDER}`, fontSize: 11, color: TEXT_FAINT }}>
         缺陷挂在具体图下（按当前选中的图过滤，切图联动）；一缺陷一文件（`qa/DEF-NN-*.md`），点卡片看全文。
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* minWidth:0：flex 子项默认下限是内容宽，缺它时超宽内容会把这一列连同父容器一起撑宽
+          （2026-10-06 实测：长字段 chip 撑爆整页、相邻列被挤成竖排）。 */}
+      <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
         {defects.map(t => {
           const single = parseDefectFile(t)
           if (single !== undefined) {
@@ -3064,14 +3098,15 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
                 <FilePath ticket={t} scope={scope} ctx={ctx} />
                 <div onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: closed ? CARD_DARK : CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', opacity: closed ? 0.75 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{single.state}</span>
-                    <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{single.title}</span>
+                    {/* 状态是长句（实测 200+ 字）：必须截断，否则撑爆整行、标题被挤成竖排。 */}
+                    <span title={single.state} style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{single.state}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{single.title}</span>
                     <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, flexShrink: 0 }}>{single.id}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                    {single.severity && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>严重度 {single.severity}</span>}
-                    {single.kind && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>类型 {single.kind}</span>}
-                    {single.source && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>发现源 {single.source}</span>}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6, minWidth: 0 }}>
+                    <FieldChip label="严重度" value={single.severity} maxW={300} />
+                    <FieldChip label="类型" value={single.kind} maxW={300} />
+                    <FieldChip label="发现源" value={single.source} maxW={300} />
                   </div>
                 </div>
               </div>
@@ -3095,14 +3130,14 @@ function DefectView({ defects, scope, ctx, sessions, onChanged, readOnly }: { de
                 return (
                   <div key={e.id} onClick={() => setFocus(t)} style={{ padding: '10px 12px', borderRadius: 10, background: closed ? CARD_DARK : CARD, border: `1px solid ${BORDER}`, cursor: 'pointer', opacity: closed ? 0.75 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0 }}>{e.state || '待修复'}</span>
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: TEXT }}>{e.title}</span>
+                      <span title={e.state || '待修复'} style={{ fontSize: 10, padding: '1px 8px', borderRadius: 999, background: closed ? '#2ecc7122' : '#ffa94d22', color: closed ? '#4ed17e' : '#f7ad31', flexShrink: 0, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.state || '待修复'}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: TEXT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</span>
                       <span style={{ fontSize: 10, fontFamily: 'monospace', color: TEXT_FAINT, flexShrink: 0 }}>{e.id}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                      {e.severity && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>严重度 {e.severity}</span>}
-                      {e.kind && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>类型 {e.kind}</span>}
-                      {e.source && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 999, background: CHIP_BG, color: '#888' }}>发现源 {e.source}</span>}
+                      <FieldChip label="严重度" value={e.severity} maxW={300} />
+                      <FieldChip label="类型" value={e.kind} maxW={300} />
+                      <FieldChip label="发现源" value={e.source} maxW={300} />
                     </div>
                   </div>
                 )

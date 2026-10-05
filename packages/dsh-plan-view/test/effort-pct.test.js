@@ -195,12 +195,12 @@ test('hasSection ignores headings quoted inside fenced code blocks', async () =>
   assert.equal(M.hasSection(fencedBody, 'Answer'), true, '收束节整块为围栏仍算写过')
 })
 
-// ─── 2026-10-02 新增两条 ────────────────────────────────────────────────────
+// ─── 2026-10-02 新增两条（第一条口径已于 2026-10-05 翻转） ──────────────────
 
 const SPEC_ARCHIVED = '---\ntype: spec\ndate: 2026-09-27\nstatus: superseded-by:docs/architecture.md\norigin: retrospective\n---\n\n# spec\n'
 const SPEC_OPEN = '# spec\n\n## Problem Statement\n正文\n'
 
-test('implementation map counts spec.md as one slot until it is archived', async () => {
+test('spec.md never enters the progress reading, archived or not', async () => {
   const M = await loadImpl()
   const T = (body) => ({
     file: 'x.md', id: 'x', title: 'x', type: 'task', status: undefined, body,
@@ -211,13 +211,18 @@ test('implementation map counts spec.md as one slot until it is archived', async
   const tests = [{ effort: 'D' }]
   const p = (n, spec) => M.effortProgress(Array.from({ length: n }, () => ANS), 'D', cases, tests, 'impl', spec).pct
 
-  // 票全做完但 spec 未归档 → 差一项，到不了 100%
-  assert.equal(p(4, SPEC_OPEN), 80, '4 票全完 + spec 未归档 = 4/5')
-  assert.equal(p(4, SPEC_ARCHIVED), 100, 'spec 归档后才是 5/5')
-  assert.equal(p(2, SPEC_OPEN), 67, '2 票全完 + spec 未归档 = 2/3')
-  // 没有 spec.md 时不占名额（spec-only 之外的图、或未写 spec 的图）
-  assert.equal(p(2, undefined), 100, '无 spec 文件则不占名额')
-  // 推演图不计 spec（推演图本就没有 spec.md）
+  // 2026-10-05 用户拍板「spec 不算在进度里」，翻转 2026-10-02 的「占一个名额」：
+  // 分子分母同去，票全做完即 100%，与 spec 归档与否无关。
+  assert.equal(p(4, SPEC_OPEN), 100, '4 票全完 + spec 未归档 = 4/4（spec 不进进度）')
+  assert.equal(p(4, SPEC_ARCHIVED), 100, 'spec 归档与否同读数')
+  assert.equal(p(2, SPEC_OPEN), 100, '2 票全完 = 2/2')
+  assert.equal(p(2, undefined), 100, '无 spec 文件同样不占名额')
+  // 提醒仍在：字段保留供卡片那行「📄 spec 未归档」使用，只是不再影响百分比。
+  const open = M.effortProgress([ANS], 'D', cases, tests, 'impl', SPEC_OPEN)
+  assert.equal(open.specCounted, true, '实施图有 spec 时 specCounted=true（提醒要用）')
+  assert.equal(open.specArchived, false, '未归档')
+  assert.equal(open.pct, 100, '提醒不得回灌进度')
+  // 推演图无 spec.md，字段恒 false。
   const spec = M.effortProgress([ANS, ANS], 'D', cases, tests, 'speculation', SPEC_OPEN)
   assert.equal(spec.pct, 100, '推演图不计 spec')
   assert.equal(spec.specCounted, false, '推演图 specCounted 应为 false')
@@ -267,13 +272,14 @@ test('locked flag marks a structural ceiling that cannot be reached', async () =
   assert.equal(spec.lockPct, 0, '推演图锁区为 0')
   // 当前进度低于上限时，locked 仍应为 true——它标的是「结构性缺口存在」，
   // 而非「此刻被截断」；后者会让标识在半途忽然消失，读作问题已解决。
-  // 1 done + 1 open 且 spec 已归档 ⇒ 分子 1(done)+1(spec) / 分母 2+1 = 67%。
+  // 1 done + 1 open ⇒ 分子 1 / 分母 2 = 50%（spec 自 2026-10-05 起不进进度，
+  // 故不再是旧的 2/3——分子里那 1 分曾来自「已归档的 spec」）。
   const low = M.effortProgress([ANS, T('# t\n\n正文')], 'D', [], [], 'impl', SPEC_ARCHIVED)
-  assert.equal(low.pct, 67, '已归档的 spec 也计入分子，故是 2/3 而非 1/2')
+  assert.equal(low.pct, 50, '1/2：spec 归档与否都不再充数')
   assert.equal(low.locked, true, '进度低于上限也要标出结构性缺口')
-  // 10% 档同理：进度 67% 低于 90 上限时锁区仍要标出
+  // 10% 档同理：进度 50% 低于 90 上限时锁区仍要标出
   const lowTest = M.effortProgress([ANS, T('# t\n\n正文')], 'D', [{ effort: 'D' }], [], 'impl', SPEC_ARCHIVED)
-  assert.equal(lowTest.pct, 67, '进度 2/3 低于 90% 封顶，数值不被改写')
+  assert.equal(lowTest.pct, 50, '进度 1/2 低于 90% 封顶，数值不被改写')
   assert.equal(lowTest.locked, true, '低于上限同样标出缺测试文档的结构性缺口')
 })
 
@@ -316,7 +322,7 @@ test('global-scope documents (ROOT_GROUP) never enter a map denominator', async 
   assert.equal(withGlobals.pct, 100, '3 个全局件不得计入本图分母（1 票 done + spec 已归档 = 1/1）')
 
   // 对照：全局件换成同样形态但归属本图的单据，就必须计入（证明剔除的是归属、不是类型）。
-  // 分母 = 1 done + 3 未结案 + 1 spec 名额 = 5；分子 = 1 done + 1 spec 已归档 = 2 → 40%。
+  // 分母 = 1 done + 3 未结案 = 4；分子 = 1 done = 1 → 25%（spec 不进进度后不再是 2/5）。
   const localDocs = [
     T('ledger', '# 挂账-01 x\n- 状态: 在挂\n- 卡点: y\n', 'D'),
     T('qa-defect', '# DEF-01 x\n- 状态: 待修复\n', 'D'),
@@ -326,7 +332,7 @@ test('global-scope documents (ROOT_GROUP) never enter a map denominator', async 
     assert.equal(M.isSettled(d, M.ticketKind(d)), false, `${d.type} 构造为未结案，前置自检`)
   }
   const withLocals = M.effortProgress([ANS, ...localDocs], 'D', cases, tests, 'impl', SPEC_ARCHIVED)
-  assert.equal(withLocals.pct, 40, '本图自有的未结案单据必须计入（2/5 = 40%）')
+  assert.equal(withLocals.pct, 25, '本图自有的未结案单据必须计入（1/4 = 25%）')
 
   // 已结案的全局件同样不进分母——剔除是双向的，不只看它扣不扣分。
   const settledGlobals = [
