@@ -3039,7 +3039,10 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			};
 		}
 		function inEffort(t, dir) {
-			return t.effort === dir || t.effort === ROOT_GROUP;
+			return t.effort === dir;
+		}
+		function inMapLayer(t, effortIdx, selectedDir) {
+			return t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir);
 		}
 		const isDshSession = (id) => id.startsWith("session-");
 		function SpeculationTypeView({ kind, tickets, assetFiles, cwd, planDir, scope, ctx, sessions, onChanged, readOnly }) {
@@ -3429,7 +3432,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 						effortIdx,
 						setEffortIdx,
 						countFor: (dir) => tickets.filter((t) => inEffort(t, dir) && ticketKind(t) === "ticket").length,
-						totalCount: tickets.filter((t) => ticketKind(t) === "ticket").length
+						totalCount: tickets.filter((t) => ticketKind(t) === "ticket" && t.effort !== ROOT_GROUP).length
 					}),
 					[
 						"speculation",
@@ -3952,28 +3955,28 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 			const qaTests = (0, react.useMemo)(() => data?.qaTests ?? [], [data?.qaTests]);
 			const mapOwnTickets = routeTickets;
 			const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : void 0;
-			const mapTickets = (0, react.useMemo)(() => effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter((t) => t.effort === selectedDir || t.effort === ROOT_GROUP), [
+			const mapTickets = (0, react.useMemo)(() => mapOwnTickets.filter((t) => inMapLayer(t, effortIdx, selectedDir)), [
 				mapOwnTickets,
 				effortIdx,
 				selectedDir
 			]);
-			const mapDefects = (0, react.useMemo)(() => defects.filter((t) => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)), [
+			const mapDefects = (0, react.useMemo)(() => defects.filter((t) => inMapLayer(t, effortIdx, selectedDir)), [
 				defects,
 				effortIdx,
 				selectedDir
 			]);
-			const mapApprovals = (0, react.useMemo)(() => effortIdx < 0 ? approvals : approvals.filter((t) => selectedDir !== void 0 && inEffort(t, selectedDir)), [
+			const mapApprovals = (0, react.useMemo)(() => approvals.filter((t) => inMapLayer(t, effortIdx, selectedDir)), [
 				approvals,
 				effortIdx,
 				selectedDir
 			]);
 			const globalLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort === ROOT_GROUP), [ledgers]);
-			const mapLedgers = (0, react.useMemo)(() => ledgers.filter((t) => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)), [
+			const mapLedgers = (0, react.useMemo)(() => ledgers.filter((t) => inMapLayer(t, effortIdx, selectedDir)), [
 				ledgers,
 				effortIdx,
 				selectedDir
 			]);
-			const mapCases = (0, react.useMemo)(() => effortIdx < 0 ? cases : cases.filter((t) => t.effort === selectedDir), [
+			const mapCases = (0, react.useMemo)(() => cases.filter((t) => inMapLayer(t, effortIdx, selectedDir)), [
 				cases,
 				effortIdx,
 				selectedDir
@@ -4146,7 +4149,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 				{
 					id: "map",
 					label: "🗺️ 地图",
-					count: openTickets(mapOwnTickets)
+					count: openTickets(mapOwnTickets.filter((t) => t.effort !== ROOT_GROUP))
 				},
 				{
 					id: "approvals",
@@ -4302,7 +4305,7 @@ h4.pvm-h{font-size:13.5px;color:${TEXT_DIM}}
 							effortIdx,
 							setEffortIdx,
 							countFor: (dir) => mapOwnTickets.filter((t) => inEffort(t, dir)).length,
-							totalCount: mapOwnTickets.length,
+							totalCount: mapOwnTickets.filter((t) => t.effort !== ROOT_GROUP).length,
 							right: roundsSelect
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {

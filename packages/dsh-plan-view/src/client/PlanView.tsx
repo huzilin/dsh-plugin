@@ -1665,8 +1665,24 @@ function effortStage(own: ParsedTicket[]): { stage: string; color: string } {
 // maps on one page switches them everywhere; only the per-chip count differs
 // per page (tickets, approvals, defects…), via countFor/totalCount.
 
+// 图归属判据（2026-10-07 用户口径修正）：**选中一张图 = 只见该图自有的件**。
+// 全局件（`.plan` 侧：审批档 / qa / ledger / adr，effort=ROOT_GROUP）不属于任何
+// 图，只在第一层全局 tab 可见——与「缺陷」「测例」两页的既有口径一致（全局缺陷、
+// 全局测例同样不进地图页）。
+//
+// 这里曾对 ROOT_GROUP 恒真（`t.effort === dir || t.effort === ROOT_GROUP`）：那是
+// 2026-09-19 为「挂账台账在 `.plan/` 根层」开的通行证，属遗留。2026-09-25 台账/
+// 缺陷分层、2026-09-29「全局件」封闭清单落地后，同一通行证只留在待拍板/测例两处，
+// 表现就是「一张图的待拍板，在另外两张图下也看得见」——2026-10-07 用户裁定收回。
 function inEffort(t: ParsedTicket, dir: string): boolean {
-  return t.effort === dir || t.effort === ROOT_GROUP
+  return t.effort === dir
+}
+
+// 地图页可见集判据（2026-10-07 用户口径）：**全局件不进地图页**——选中某图 → 该图
+// 自有件；`effortIdx < 0`（「全部地图」）→ 各图合计，仍不含全局件。五处子页
+// （工单/待拍板/台账/缺陷/测例）共用本判据，形状与缺陷、台账两页的既有口径一致。
+function inMapLayer(t: ParsedTicket, effortIdx: number, selectedDir: string | undefined): boolean {
+  return t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)
 }
 
 // session 字段双格式：DSH 会话是 `session-<uuid>`，可跳转、可查存活；
@@ -1739,9 +1755,10 @@ function EffortChips({ efforts, all, effortIdx, setEffortIdx, countFor, totalCou
     .map(kind => ({ kind, items: efforts.map((e, i) => ({ e, i, kind: mapKind(e.dir, all) })).filter(w => w.kind === kind) }))
     .filter(g => g.items.length > 0)
   const allOn = effortIdx < 0
-  // 全部验收通过（2026-09-22 增）：图内工单（含根层松散票，与计数同口径）
-  // 至少一张，且每张都 qa_accepted（🏁 已验收）。out_of_scope（Ruled out）票
-  // 不算未验收工作，不阻塞绿色（推断口径，与总览进度条的在途口径一致）。
+  // 全部验收通过（2026-09-22 增）：图内工单至少一张，且每张都 qa_accepted
+  // （🏁 已验收）。out_of_scope（Ruled out）票不算未验收工作，不阻塞绿色
+  // （推断口径，与总览进度条的在途口径一致）。口径随 inEffort 修正收窄为
+  // 「本图自有票」——全局件/根层散票不属该图，不再参与本图的验收判断。
   const allAccepted = (dir: string): boolean => {
     const work = all.filter(t => inEffort(t, dir) && ticketKind(t) === 'ticket' && !t.outOfScope)
     return work.length > 0 && work.every(t => t.qaAccepted)
@@ -1798,7 +1815,8 @@ function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effort
   const [focus, setFocus] = useState<ParsedTicket | null>(null)
   const byId = new Map(tickets.map(t => [t.id, t]))
   // 页内筛选（2026-09-21 拍板）：绑定全局 effortIdx——选中某图后，卡片与
-  // 下方三个聚合区都只看该图；根层松散文档与工单页同语义保持可见。
+  // 下方三个聚合区都只看该图；全局件不属任何图，不随「选中某图」出现
+  // （2026-10-07 用户口径修正；口径正本 = 本文件 inEffort 注释）。
   const selectedDir = effortIdx >= 0 ? efforts[effortIdx]?.dir : undefined
   const shownEfforts = effortIdx < 0 ? efforts : efforts.filter((_, i) => i === effortIdx)
   const visible = useMemo(
@@ -1865,7 +1883,7 @@ function OverviewView({ tickets, efforts, cases, tests, defects, ledgers, effort
     <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <EffortChips efforts={efforts} all={tickets} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
         countFor={dir => tickets.filter(t => inEffort(t, dir) && ticketKind(t) === 'ticket').length}
-        totalCount={tickets.filter(t => ticketKind(t) === 'ticket').length} />
+        totalCount={tickets.filter(t => ticketKind(t) === 'ticket' && t.effort !== ROOT_GROUP).length} />
       {/* 阶段指示 — one card per effort, 推演图/实施图分两组（2026-09-20 拍板） */}
       {(['speculation', 'impl', undefined] as const)
         .map(kind => ({ kind, items: shownEfforts.map((e, i) => ({ e, i })).filter(({ e }) => mapKind(e.dir, tickets) === kind) }))
@@ -2152,14 +2170,17 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   const mapOwnTickets = routeTickets
 
   // Route view: one map at a time, showing only that map's tickets. `effortIdx`
-  // of -1 means "all maps". Files read from .plan's own top level stay visible
-  // under any map, since a ticket loose there belongs to the plan, not a map.
+  // of -1 means "all maps"。
+  //
+  // 地图页各子页共用的可见集（2026-10-07 用户口径）：全局件不属任何图，一律不进
+  // 地图页——选中某图 → 该图自有件；「全部地图」→ 各图合计（仍不含全局件，与
+  // mapDefects/mapLedgers 既有形状一致）。全局件只在第一层全局 tab 可见。
   // ⚠️ 声明顺序契约：所有引用 selectedDir 的派生状态（mapTickets/mapDefects/
   // mapApprovals/mapLedgers/mapCases…）必须声明在本行之后——useMemo 依赖数组
   // 会在渲染时立即求值，提前引用就是 TDZ 崩溃（已两次踩坑）。
   const selectedDir = effortIdx >= 0 ? data?.efforts[effortIdx]?.dir : undefined
   const mapTickets = useMemo(
-    () => (effortIdx < 0 ? mapOwnTickets : mapOwnTickets.filter(t => t.effort === selectedDir || t.effort === ROOT_GROUP)),
+    () => mapOwnTickets.filter(t => inMapLayer(t, effortIdx, selectedDir)),
     [mapOwnTickets, effortIdx, selectedDir],
   )
   // 缺陷挂在具体图下（.scratch/<effort>/qa/），按当前选中的图过滤——与工单页共用
@@ -2167,14 +2188,15 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // 无图归属）不进地图页——2026-09-25 拍板：地图页只看图归属缺陷，全局缺陷
   // 只进第一层「测例&缺陷」tab。
   const mapDefects = useMemo(
-    () => defects.filter(t => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)),
+    () => defects.filter(t => inMapLayer(t, effortIdx, selectedDir)),
     [defects, effortIdx, selectedDir],
   )
-  // 待拍板同语义随图切换（2026-09-21 拍板：筛选后看到的都是同一张图）；
-  // 全局审批档（.plan/approval/，2026-09-30 收拢拍板起为正本落点，inEffort 对
-  // ROOT_GROUP 恒真）与工单页松散票同语义保持可见。
+  // 待拍板同语义随图切换（2026-09-21 拍板：筛选后看到的都是同一张图）——含全局
+  // 审批档（.plan/approval/，2026-09-30 收拢拍板起为正本落点）在内，地图页只看
+  // 图内档（2026-10-07 用户口径修正；此前 inEffort 对 ROOT_GROUP 恒真，导致全局
+  // 档在每张图下都出现——一张图的决策跑到别的图里，本轮即由此暴露）。
   const mapApprovals = useMemo(
-    () => (effortIdx < 0 ? approvals : approvals.filter(t => selectedDir !== undefined && inEffort(t, selectedDir))),
+    () => approvals.filter(t => inMapLayer(t, effortIdx, selectedDir)),
     [approvals, effortIdx, selectedDir],
   )
   // 台账两级（2026-09-21 拍板拆分）：根层全局台账（.plan/ledger/*.md，一账一文件，
@@ -2183,11 +2205,14 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
   // 台账——2026-09-25 拍板：全部地图态聚合各图图内台账，全局台账不进地图页。
   const globalLedgers = useMemo(() => ledgers.filter(t => t.effort === ROOT_GROUP), [ledgers])
   const mapLedgers = useMemo(
-    () => ledgers.filter(t => t.effort !== ROOT_GROUP && (effortIdx < 0 || t.effort === selectedDir)),
+    () => ledgers.filter(t => inMapLayer(t, effortIdx, selectedDir)),
     [ledgers, effortIdx, selectedDir],
   )
+  // 测例同规（2026-10-07 用户口径修正）：全局回测测例（.plan/qa/cases-*.md）只进
+  // 第一层「测例」tab；地图页测例子页只看图内 cases.md（「全部地图」态此前会带入
+  // 全局测例，与 mapDefects/mapLedgers 口径不一致，一并收窄）。
   const mapCases = useMemo(
-    () => (effortIdx < 0 ? cases : cases.filter(t => t.effort === selectedDir)),
+    () => cases.filter(t => inMapLayer(t, effortIdx, selectedDir)),
     [cases, effortIdx, selectedDir],
   )
 
@@ -2308,7 +2333,8 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
     { id: 'overview', label: '🧭 总览', count: pendingApprovals(approvals) },
     // 地图 tab 计数用全局口径（mapOwnTickets），不随 chips 选中图跳变——
     // 随选中变化曾把选中无 open 票的图显示成「地图 0」，读作计数不准（2026-09-30 用户反馈）。
-    { id: 'map', label: '🗺️ 地图', count: openTickets(mapOwnTickets) },
+    // 口径与地图页子页一致：不含全局件/根层散件（2026-10-07 用户口径）。
+    { id: 'map', label: '🗺️ 地图', count: openTickets(mapOwnTickets.filter(t => t.effort !== ROOT_GROUP)) },
     { id: 'approvals', label: '⏳ 待拍板', count: pendingApprovals(approvals) },
     { id: 'ledger', label: '📒 台账', count: openLedgerCount(globalLedgers) },
     { id: 'defects', label: '🐞 缺陷', count: openDefectCount(defects) },
@@ -2377,7 +2403,7 @@ export function PlanView(props: { ctx: any; sessionId?: string }) {
           {data.efforts.length > 0 && (
             <EffortChips efforts={data.efforts} all={all} effortIdx={effortIdx} setEffortIdx={setEffortIdx}
               countFor={dir => mapOwnTickets.filter(t => inEffort(t, dir)).length}
-              totalCount={mapOwnTickets.length}
+              totalCount={mapOwnTickets.filter(t => t.effort !== ROOT_GROUP).length}
               right={roundsSelect} />
           )}
           {/* 第二层子页签：当前选中图（或全部）的各类切面 */}
