@@ -1,231 +1,340 @@
 /**
- * dsh-mobile-door 的行为测例：签出的 cookie 必须与 dsh-client-connection 的
- * 校验规则逐项对齐，并且只能提供那一个固定页面。
+ * dsh-mobile-door 的行为测例。
  *
- * 这里独立实现一遍验收侧（cookie 名、签名、载荷约束），用来验证被测实现，
- * 而不是复用被测代码去验证自己。
+ * 被测对象是「认证 + 反向代理」：没有有效凭据给页面，有就把请求转发给回环上的
+ * DSH。这里用一个真实的回环上游来观察转发出去的样子，而不是断言实现细节。
  */
 import assert from 'node:assert/strict'
 import { createHash, createHmac } from 'node:crypto'
 import http from 'node:http'
-import { connect as nodeConnect } from 'node:net'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-import { createDoor, respondToDoor } from '../lib/index.js'
+import {
+  canonicalAuthority, cookieName, createDoor, doorPage, isSignedHere, mintCookie, readSigningSecret,
+} from '../lib/index.js'
 
 const SECRET = Buffer.from('0123456789abcdef0123456789abcdef', 'utf8')
 const DAYS = 400
-const DSH_PORT = 51234
 
 /** 写一份最小的 .credentials.yaml，形状与 DSH 自己写出的一致。 */
-function writeCredentials(secret, records = ['client-connection/browser-session']) {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-mobile-door-'))
+function writeCredentials(home, secret, records = ['client-connection/browser-session']) {
   const lines = ['records:']
   for (const record of records) {
-    lines.push(`  ${record}:`)
-    lines.push('    kind: grant')
-    lines.push('    payload:')
-    lines.push('      version: 1')
-    lines.push(`      secret: ${secret.toString('base64url')}`)
+    lines.push(`  ${record}:`, '    kind: grant', '    payload:', '      version: 1',
+      `      secret: ${secret.toString('base64url')}`)
   }
-  writeFileSync(join(dir, '.credentials.yaml'), `${lines.join('\n')}\n`)
-  return dir
+  writeFileSync(join(home, '.credentials.yaml'), `${lines.join('\n')}\n`)
+  return home
 }
 
-/** 只承接日志、提供 DSH 端口的运行期依赖替身。 */
-function stubDoor(webPort = DSH_PORT) {
-  const logs = []
-  return { logs, webPort: () => webPort, log: (message) => { logs.push(message) } }
+/** 起一个假 DSH，记录每次收到的请求。 */
+async function startUpstream() {
+  const seen = []
+  const server = http.createServer((request, response) => {
+    seen.push({ method: request.method, url: request.url, headers: request.headers })
+    response.writeHead(200, { 'content-type': 'text/plain', 'x-upstream': 'yes' })
+    response.end('from dsh')
+  })
+  await new Promise(resolve => { server.listen(0, '127.0.0.1', resolve) })
+  const address = server.address()
+  return {
+    port: typeof address === 'object' && address !== null ? address.port : 0,
+    seen,
+    close: () => { server.close() },
+  }
 }
 
-/** 起一个进门服务并等它监听完成。 */
-async function startDoor(home, overrides = {}, webPort = DSH_PORT) {
-  process.env.DSH_HOME = home
-  const door = createDoor(
-    { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0, ...overrides },
-    stubDoor(webPort),
-  )
-  await new Promise((resolve) => { setTimeout(resolve, 50) })
-  return door
-}
-
-/** 发一个 GET，返回状态码与响应头/正文。 */
-async function get(port, path, headers = {}) {
-  // 用原始 http 请求，才能自定义与 socket 地址不一致的 Host（web 的 fetch 会覆盖 Host）。
-  const requestUrl = `http://127.0.0.1:${String(port)}${path}`
+/** 发一个请求到代理入口。 */
+async function call(port, path = '/', options = {}) {
   return await new Promise((resolve, reject) => {
-    http.get(requestUrl, { headers }, (response) => {
+    const request = http.request({
+      host: '127.0.0.1',
+      port,
+      path,
+      method: options.method ?? 'GET',
+      headers: {
+        host: options.host ?? `127.0.0.1:${String(port)}`,
+        ...(options.cookie === undefined ? {} : { cookie: options.cookie }),
+        ...options.headers,
+      },
+    }, (response) => {
       const chunks = []
       response.on('data', chunk => chunks.push(chunk))
       response.on('end', () => resolve({
-        status: response.statusCode,
+        status: response.statusCode ?? 0,
         headers: { get: name => response.headers[name.toLowerCase()] ?? null },
         body: Buffer.concat(chunks).toString('utf8'),
       }))
-    }).on('error', reject)
+    })
+    request.on('error', reject)
+    request.end()
   })
-}
-
-/** 直接驱动一次请求处理，返回状态码与正文（用于构造真实服务器拿不到的情形）。 */
-async function drive(respond) {
-  const request = { method: 'GET', url: '/', headers: { host: '127.0.0.1:8899' } }
-  return await new Promise((resolve) => {
-    const chunks = []
-    const response = {
-      status: 0,
-      writeHead(status) { this.status = status },
-      end(body) { chunks.push(body ?? ''); resolve({ status: this.status, body: chunks.join('') }) },
-    }
-    respond(request, response)
-  })
-}
-
-/** 验收侧复算：authority 对应的 cookie 名。 */
-function expectedCookieName(authority) {
-  return 'dsh-auth-' + createHash('sha256').update(authority).digest('base64url')
 }
 
 /** 从页面里取出要写入的 cookie 名值对。 */
 function pageCookie(body) {
-  const assignment = /document\.cookie = "([^"]+)"/.exec(body)?.[1]
+  const assignment = /document\.cookie = "([^"]+)"/u.exec(body)?.[1]
   assert.ok(assignment, '页面里应有 cookie 赋值')
   return assignment.split('; ')[0]
 }
 
-describe('dsh-mobile-door', () => {
-  let door
-  before(async () => { door = await startDoor(writeCredentials(SECRET)) })
-  after(() => { door.close() })
-
-  it('根路径返回自动签名的页面，并跳到 DSH 端口', async () => {
-    const { status, headers, body } = await get(door.port(), '/')
-    assert.equal(status, 200)
-    assert.equal(headers.get('content-type'), 'text/html; charset=utf-8')
-    assert.equal(headers.get('cache-control'), 'no-store')
-    assert.equal(headers.get('referrer-policy'), 'no-referrer')
-    assert.match(body, new RegExp(`location\\.replace\\("http://127\\.0\\.0\\.1:${String(DSH_PORT)}/"\\)`))
+describe('凭据签发与 DSH 的规则一致', () => {
+  it('cookie 名是 authority 的 sha256', () => {
+    const authority = '192.168.3.197:8899'
+    assert.equal(cookieName(authority),
+      'dsh-auth-' + createHash('sha256').update(authority).digest('base64url'))
   })
 
-  it('页面写入的 cookie 与连接插件的校验规则一致', async () => {
-    const { body } = await get(door.port(), '/')
-    const pair = pageCookie(body)
-    const at = pair.indexOf('=')
-    const name = pair.slice(0, at)
-    const value = pair.slice(at + 1)
-
-    const authority = `127.0.0.1:${String(DSH_PORT)}`
-    assert.equal(name, expectedCookieName(authority))
-
-    const [version, encodedBody, encodedSignature] = value.split('.')
+  it('签名、载荷与有效期都对得上', () => {
+    const authority = '192.168.3.197:8899'
+    const { name, value } = mintCookie(authority, SECRET, DAYS)
+    const [version, body, signature] = value.split('.')
+    assert.equal(name, cookieName(authority))
     assert.equal(version, 'v1')
-    assert.deepEqual(Buffer.from(encodedSignature, 'base64url'), createHmac('sha256', SECRET).update(encodedBody).digest())
-
-    const payload = JSON.parse(Buffer.from(encodedBody, 'base64url').toString('utf8'))
-    assert.equal(payload.version, 1)
+    assert.deepEqual(Buffer.from(signature, 'base64url'),
+      createHmac('sha256', SECRET).update(body).digest())
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
     assert.equal(payload.authority, authority)
     assert.equal(payload.expiresAt - payload.issuedAt, DAYS * 24 * 60 * 60 * 1000)
-    assert.ok(payload.issuedAt <= Date.now() && payload.expiresAt > Date.now())
   })
 
-  it('访问者用什么主机名来，就签给那个主机名的 DSH 端口', async () => {
-    const lan = await get(door.port(), '/', { host: '192.168.3.197:8899' })
-    assert.equal(pageCookie(lan.body).split('=')[0], expectedCookieName(`192.168.3.197:${String(DSH_PORT)}`))
-    assert.match(lan.body, new RegExp(`location\\.replace\\("http://192\\.168\\.3\\.197:${String(DSH_PORT)}/"\\)`))
-
-    const named = await get(door.port(), '/', { host: 's-mac-mini.tail3b3293.ts.net:8899' })
-    assert.equal(pageCookie(named.body).split('=')[0], expectedCookieName(`s-mac-mini.tail3b3293.ts.net:${String(DSH_PORT)}`))
+  it('换了 authority、密钥或改过签名都不认', () => {
+    const { value } = mintCookie('a:1', SECRET, DAYS)
+    assert.equal(isSignedHere(value, 'a:1', SECRET), true)
+    assert.equal(isSignedHere(value, 'b:1', SECRET), false)
+    assert.equal(isSignedHere(value, 'a:1', Buffer.alloc(32, 9)), false)
+    assert.equal(isSignedHere(`${value}x`, 'a:1', SECRET), false)
+    assert.equal(isSignedHere(undefined, 'a:1', SECRET), false)
+    assert.equal(isSignedHere('garbage', 'a:1', SECRET), false)
   })
 
-  it('已持有该地址的凭据时直接跳转，不重新签发', async () => {
-    const first = await get(door.port(), '/', { host: '192.168.3.197:8899' })
-    const cookie = pageCookie(first.body)
-    const again = await get(door.port(), '/', { host: '192.168.3.197:8899', cookie })
-    assert.equal(again.status, 303)
-    assert.equal(again.headers.get('location'), `http://192.168.3.197:${String(DSH_PORT)}/`)
+  it('过期的凭据不认', () => {
+    const signed = mintCookie('a:1', SECRET, 0)
+    assert.equal(isSignedHere(signed.value, 'a:1', SECRET), false)
   })
 
-  it('别的主机名的凭据不算数，会重新签发', async () => {
-    const other = await get(door.port(), '/', { host: '10.0.0.7:8899' })
-    const cookie = pageCookie(other.body)
-    const here = await get(door.port(), '/', { host: '192.168.3.197:8899', cookie })
-    assert.equal(here.status, 200)
-    assert.match(here.body, /document\.cookie = /)
-  })
-
-  it('伪造或被篡改的凭据不会被当成已登录', async () => {
-    const first = await get(door.port(), '/')
-    const [name, value] = pageCookie(first.body).split('=')
-    const [version, body, signature] = value.split('.')
-    const tampered = `${name}=${version}.${body}.${signature.slice(0, -2)}AA`
-    assert.equal((await get(door.port(), '/', { cookie: tampered })).status, 200)
-    assert.equal((await get(door.port(), '/', { cookie: `${name}=garbage` })).status, 200)
-  })
-
-  it('任何路径都只给这一页，非 GET 一律拒绝', async () => {
-    assert.equal((await get(door.port(), '/anything')).status, 200)
-    const post = await fetch(`http://127.0.0.1:${String(door.port())}/`, { method: 'POST' })
-    assert.equal(post.status, 405)
-  })
-
-  it('Host 是空串时拒绝', async () => {
-    // Node 客户端不会发出空 Host，这里直接用裸 socket 写一行请求。
-    const status = await new Promise((resolve, reject) => {
-      const socket = nodeConnect(door.port(), '127.0.0.1', () => {
-        socket.write('GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n')
-      })
-      let text = ''
-      socket.on('data', (chunk) => { text += chunk.toString('utf8') })
-      socket.on('end', () => { resolve(Number(text.split(' ')[1])) })
-      socket.on('error', reject)
-    })
-    assert.equal(status, 400)
-  })
-
-  it('DSH 端口未知时明确报错，不签错地址', async () => {
-    // 直接驱动请求处理：真实服务器在监听回调里才拿得到端口，无法构造这个情形。
-    process.env.DSH_HOME = writeCredentials(SECRET)
-    const config = { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }
-    const secret = Buffer.from('0123456789abcdef0123456789abcdef', 'utf8')
-    const response = await drive((request, response) => {
-      respondToDoor(request, response, config, { ...stubDoor(undefined), webPort: () => undefined }, secret)
-    })
-    assert.equal(response.status, 503)
-    assert.match(response.body, /找不到 DSH 的端口/u)
-  })
-
-  it('配置指定端口时优先用它', async () => {
-    const pinned = await startDoor(writeCredentials(SECRET), { targetPort: 6000 })
-    const { body } = await get(pinned.port(), '/')
-    assert.match(body, /location\.replace\("http:\/\/127\.0\.0\.1:6000\/"\)/)
-    pinned.close()
+  it('authority 归一化与 DSH 一致', () => {
+    assert.equal(canonicalAuthority('Example.COM:0080'), 'example.com:80')
+    assert.equal(canonicalAuthority('[::1]:8899'), '[::1]:8899')
+    assert.throws(() => { canonicalAuthority('no-port') }, /不是合法的 authority/u)
   })
 })
 
-describe('dsh-mobile-door 签名密钥来源', () => {
-  it('凭据文件里没有该条目时启动失败', async () => {
-    process.env.DSH_HOME = writeCredentials(SECRET, ['other/record'])
-    assert.throws(
-      () => createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }, stubDoor()),
-      /没有 client-connection\/browser-session 条目/u,
-    )
+describe('签名密钥只从凭据文件取', () => {
+  it('正常读取', () => {
+    process.env.DSH_HOME = writeCredentials(mkdtempSync(join(tmpdir(), 'door-')), SECRET)
+    assert.deepEqual(readSigningSecret(), SECRET)
   })
 
-  it('凭据文件不存在时启动失败', async () => {
-    process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-mobile-door-empty-'))
-    assert.throws(
-      () => createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }, stubDoor()),
-      /读不到凭据文件/u,
-    )
+  it('条目缺失时报错', () => {
+    process.env.DSH_HOME = writeCredentials(mkdtempSync(join(tmpdir(), 'door-')), SECRET, ['other/record'])
+    assert.throws(() => readSigningSecret(), /没有 client-connection\/browser-session 条目/u)
   })
 
-  it('密钥不是 32 字节时报错', async () => {
-    process.env.DSH_HOME = writeCredentials(Buffer.from('short', 'utf8'))
-    assert.throws(
-      () => createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }, stubDoor()),
-      /不是 32 字节/u,
+  it('文件不存在时报错', () => {
+    process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'door-empty-'))
+    assert.throws(() => readSigningSecret(), /读不到凭据文件/u)
+  })
+
+  it('密钥长度不对时报错', () => {
+    process.env.DSH_HOME = writeCredentials(mkdtempSync(join(tmpdir(), 'door-')), Buffer.from('short'))
+    assert.throws(() => readSigningSecret(), /不是 32 字节/u)
+  })
+})
+
+describe('代理入口', () => {
+  let upstream
+  let door
+  let cookie
+
+  before(async () => {
+    upstream = await startUpstream()
+    process.env.DSH_HOME = writeCredentials(mkdtempSync(join(tmpdir(), 'door-')), SECRET)
+    door = createDoor(
+      { door: true, doorPort: 0, days: DAYS, targetPort: upstream.port },
+      { webPort: () => upstream.port, log: () => {} },
     )
+    await new Promise(resolve => setTimeout(resolve, 60))
+  })
+  after(() => { door.close(); upstream.close() })
+
+  it('没有凭据时给页面，并把凭据写给当前主机', async () => {
+    const port = door.port() ?? 0
+    const { status, headers, body } = await call(port, '/', { host: `192.168.3.197:${String(port)}` })
+    assert.equal(status, 200)
+    assert.equal(headers.get('content-type'), 'text/html; charset=utf-8')
+    assert.equal(headers.get('cache-control'), 'no-store')
+    assert.equal(pageCookie(body).split('=')[0], cookieName(`192.168.3.197:${String(port)}`))
+    assert.match(body, new RegExp(`location\\.replace\\("http://192\\.168\\.3\\.197:${String(port)}/"\\)`))
+    assert.equal(upstream.seen.length, 0, '没有凭据的请求不应该打到 DSH')
+  })
+
+  it('带上凭据后转发，并把 Host / Origin / Referer 改写成回环', async () => {
+    const port = door.port() ?? 0
+    const host = `192.168.3.197:${String(port)}`
+    const page = await call(port, '/', { host })
+    cookie = pageCookie(page.body)
+    const forwarded = await call(port, '/api/thing?x=1', {
+      host,
+      cookie: `${cookie}; other=1`,
+      headers: { origin: `http://${host}`, referer: `http://${host}/somewhere` },
+    })
+    assert.equal(forwarded.status, 200)
+    assert.equal(forwarded.body, 'from dsh')
+    assert.equal(forwarded.headers.get('x-upstream'), 'yes')
+
+    const seen = upstream.seen.at(-1)
+    assert.ok(seen)
+    assert.equal(seen.url, '/api/thing?x=1')
+    assert.equal(seen.headers.host, `127.0.0.1:${String(upstream.port)}`)
+    assert.equal(seen.headers.origin, `http://127.0.0.1:${String(upstream.port)}`)
+    assert.equal(seen.headers.referer, `http://127.0.0.1:${String(upstream.port)}/api/thing?x=1`)
+    // 浏览器带来的插件凭据要摘掉，换成回环 authority 的凭据 DSH 才认。
+    const relayed = seen.headers.cookie.split('; ').find(part => part.startsWith('dsh-auth-'))
+    assert.ok(relayed, '要带上回环凭据')
+    assert.equal(relayed.split('=')[0], cookieName(`127.0.0.1:${String(upstream.port)}`))
+    assert.match(seen.headers.cookie, /other=1/, '其余 cookie 照常转发')
+  })
+
+  it('POST 也会转发', async () => {
+    const port = door.port() ?? 0
+    const host = `192.168.3.197:${String(port)}`
+    const result = await call(port, '/api/submit', { method: 'POST', host, cookie })
+    assert.equal(result.status, 200)
+    assert.equal(upstream.seen.at(-1)?.method, 'POST')
+  })
+
+  it('凭据不对就不转发', async () => {
+    const port = door.port() ?? 0
+    const host = `192.168.3.197:${String(port)}`
+    const before = upstream.seen.length
+    const result = await call(port, '/api/thing', { method: 'POST', host, cookie: `${cookieName(host)}=v1.bad.bad` })
+    assert.equal(result.status, 403)
+    assert.equal(upstream.seen.length, before)
+  })
+
+  it('别的主机的凭据不算数', async () => {
+    const port = door.port() ?? 0
+    const { status, body } = await call(port, '/', { host: `10.0.0.7:${String(port)}`, cookie })
+    assert.equal(status, 200)
+    assert.match(body, /document\.cookie = /u)
+  })
+
+  it('HEAD 请求没有凭据也回页面', async () => {
+    const result = await call(door.port() ?? 0, '/', { method: 'HEAD' })
+    assert.equal(result.status, 200)
+  })
+
+  it('找不到 DSH 端口时明确报错，不转发', async () => {
+    const orphan = createDoor(
+      { door: true, doorPort: 0, days: DAYS, targetPort: 0 },
+      { webPort: () => undefined, log: () => {} },
+    )
+    await new Promise(resolve => setTimeout(resolve, 60))
+    const result = await call(orphan.port() ?? 0, '/')
+    assert.equal(result.status, 503)
+    orphan.close()
+  })
+
+  it('Host 不合法时拒绝', async () => {
+    const port = door.port() ?? 0
+    assert.equal((await call(port, '/', { host: 'no-port' })).status, 400)
+    assert.equal((await call(port, '/', { host: 'a:0' })).status, 400)
+    assert.equal((await call(port, '/', { host: 'a:99999' })).status, 400)
+  })
+})
+
+describe('WebSocket 升级', () => {
+  let upstream
+  let door
+  let cookie
+
+  before(async () => {
+    // 上游只接受带正确回环凭据的升级，并回一段数据。
+    upstream = http.createServer((_request, response) => { response.writeHead(200); response.end('plain') })
+    upstream.on('upgrade', (request, socket) => {
+      const relayed = (request.headers.cookie ?? '').split('; ')
+        .find(part => part.startsWith('dsh-auth-'))
+      const authority = `127.0.0.1:${String(upstream.address().port)}`
+      const ok = relayed !== undefined
+        && relayed.split('=')[0] === cookieName(authority)
+        && request.headers.host === authority
+        && request.headers.origin === `http://${authority}`
+      if (!ok) { socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\n\r\n`)
+      setTimeout(() => { socket.write('hello-from-dsh') }, 50)
+    })
+    await new Promise(resolve => { upstream.listen(0, '127.0.0.1', resolve) })
+    process.env.DSH_HOME = writeCredentials(mkdtempSync(join(tmpdir(), 'door-ws-')), SECRET)
+    door = createDoor(
+      { door: true, doorPort: 0, days: DAYS, targetPort: upstream.address().port },
+      { webPort: () => upstream.address().port, log: () => {} },
+    )
+    await new Promise(resolve => setTimeout(resolve, 60))
+    const page = await call(upstream.address().port === 0 ? 0 : door.port(), '/', {
+      host: `192.168.3.197:${String(door.port())}`,
+    })
+    cookie = pageCookie(page.body)
+  })
+  after(() => { door.close(); upstream.close() })
+
+  it('带凭据时升级成功并双向通', async () => {
+    const port = door.port()
+    const result = await new Promise((resolve, reject) => {
+      const request = http.request({
+        host: '127.0.0.1', port, path: '/api/remote.mux',
+        headers: {
+          host: `192.168.3.197:${String(port)}`,
+          cookie,
+          origin: `http://192.168.3.197:${String(port)}`,
+          connection: 'Upgrade', upgrade: 'websocket',
+          'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+        },
+      })
+      request.on('upgrade', (response, socket) => {
+        const chunks = []
+        socket.on('data', chunk => chunks.push(chunk))
+        setTimeout(() => { socket.destroy(); resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }) }, 500)
+      })
+      request.on('response', response => {
+        const chunks = []
+        response.on('data', chunk => chunks.push(chunk))
+        response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString('utf8') }))
+      })
+      request.on('error', reject)
+      request.end()
+    })
+    assert.equal(result.status, 101, JSON.stringify(result))
+    assert.equal(result.body, 'hello-from-dsh')
+  })
+
+  it('没有凭据时拒绝升级', async () => {
+    const port = door.port()
+    const status = await new Promise((resolve, reject) => {
+      const request = http.request({
+        host: '127.0.0.1', port, path: '/api/remote.mux',
+        headers: {
+          host: `192.168.3.197:${String(port)}`,
+          connection: 'Upgrade', upgrade: 'websocket',
+          'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==',
+        },
+      })
+      request.on('upgrade', response => resolve(response.statusCode))
+      request.on('response', response => resolve(response.statusCode))
+      request.on('error', reject)
+      request.end()
+    })
+    assert.equal(status, 401)
+  })
+})
+
+describe('页面模板', () => {
+  it('把目标与凭据都按字面写进页面', () => {
+    const html = doorPage('h:1', { name: 'n', value: 'v' }, 1)
+    assert.match(html, /document\.cookie = "n=v; path=\/; max-age=86400/u)
+    assert.match(html, /location\.replace\("http:\/\/h:1\/"\)/u)
   })
 })

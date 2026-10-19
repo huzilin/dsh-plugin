@@ -1,5 +1,5 @@
-# dsh-mobile-door bundle patch —— 挂载 host 半。默认关闭；需要时在 profile 的
-# cordis.patch.yml 里同 id 覆盖 config 打开。
+# dsh-mobile-door bundle patch —— 挂载 host 半（认证 + 反向代理）。默认关闭；
+# 需要时在 profile 的 cordis.patch.yml 里同 id 覆盖 config 打开。
 - insert:
     - id: dsh-mobile-door
       name: dsh-mobile-door

@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "outDir": "lib",
+    "rootDir": "src",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "types": ["node"],
+    "typeRoots": ["../../../../workdir/deepseek-harness/node_modules/@types"],
+    "paths": {
+      "@deepseek-ai/cordis": ["../../../../workdir/deepseek-harness/vendor/cordis/packages/core/src/index.ts"],
+      "@deepseek-ai/dsh-host-webserver": ["../../../../workdir/deepseek-harness/packages/host/webserver/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}
