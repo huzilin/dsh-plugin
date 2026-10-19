@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict'
 import { createHash, createHmac } from 'node:crypto'
+import http from 'node:http'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -51,8 +52,20 @@ async function startDoor(home) {
 
 /** 发一个 GET，返回状态码与响应头/正文。 */
 async function get(port, path, headers = {}) {
-  const response = await fetch(`http://127.0.0.1:${String(port)}${path}`, { headers, redirect: 'manual' })
-  return { status: response.status, headers: response.headers, body: await response.text() }
+  // 用原始 http 请求，才能自定义与 socket 地址不一致的 Host（web 的 fetch 会覆盖 Host）。
+  const requestUrl = `http://127.0.0.1:${String(port)}${path}`
+  const { status, headers: responseHeaders, body } = await new Promise((resolve, reject) => {
+    http.get(requestUrl, { headers }, (response) => {
+      const chunks = []
+      response.on('data', chunk => chunks.push(chunk))
+      response.on('end', () => resolve({
+        status: response.statusCode,
+        headers: { get: name => response.headers[name.toLowerCase()] ?? null },
+        body: Buffer.concat(chunks).toString('utf8'),
+      }))
+    }).on('error', reject)
+  })
+  return { status, headers: responseHeaders, body }
 }
 
 /** 验收侧复算：authority 对应的 cookie 名。 */
@@ -97,6 +110,15 @@ describe('dsh-mobile-door', () => {
     assert.equal(payload.authority, authority)
     assert.equal(payload.expiresAt - payload.issuedAt, DAYS * 24 * 60 * 60 * 1000)
     assert.ok(payload.issuedAt <= Date.now() && payload.expiresAt > Date.now())
+  })
+
+  it('authority 按验收侧规则归一（小写、去零填充端口）', async () => {
+    const upper = await get(door.port(), '/door', { host: 'LOCALHOST:8899' })
+    assert.match(upper.body, /location\.replace\("http:\/\/localhost:51234\/"\)/)
+    const padded = await get(door.port(), '/door', { host: '127.0.0.1:008899' })
+    assert.match(padded.body, /http:\/\/127\.0\.0\.1:51234\//)
+    const body = /document\.cookie = "([^"]+)"/.exec(upper.body)[1]
+    assert.equal(body.split('=')[0], expectedCookieName('localhost:51234'))
   })
 
   it('已持有有效通行证时直接跳转，不重新签发', async () => {

@@ -31,13 +31,16 @@ cookie 只会得到 401：
 | 项 | 规则 |
 | --- | --- |
 | 签名密钥 | 凭据记录 `client-connection/browser-session` 的 `payload.secret`（32 字节 base64url） |
-| cookie 名 | `dsh-auth-` + base64url(sha256(authority))，authority = `主机:端口` |
+| cookie 名 | `dsh-auth-` + base64url(sha256(authority))，authority = `主机:端口`（按验收侧规则归一：小写、去零填充端口） |
 | cookie 值 | `v1.<base64url(JSON 载荷)>.<base64url(HMAC-SHA256 签名)>` |
 | 载荷 | `{ version: 1, authority, issuedAt, expiresAt }`，有效期上限 = 连接插件的 `cookieMaxAgeDays` |
 
-密钥优先从凭据服务读（与连接插件同一份记录）；凭据服务不可用时退回读
-`$DSH_HOME/.credentials.yaml`。两条路都失败就不监听端口，只在日志里报错——绝不
-用错误密钥签发一张永远 401 的 cookie。
+密钥优先从凭据服务读（与连接插件同一份记录 `client-connection/browser-session`）；
+凭据服务不可用时退回读 `$DSH_HOME/.credentials.yaml`。两条路都失败就不监听端口，
+只在日志里报错——绝不用错误密钥签发一张永远 401 的 cookie。
+
+插件对宿主包零运行时依赖：记录键与 `credentialKey()` 产出的字符串相同，写成字面量
+而不是运行时 `import`，这样在没装该包的宿主里也能正常取到密钥。
 
 已经持有有效通行证的设备再次打开进门页时直接跳转，不重新签发。
 

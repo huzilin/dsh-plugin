@@ -11,6 +11,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/opt/homebrew/bin/node' '/Users/huzilin/workdir/dsh-plugin/packages/dsh-report-hook/scripts/leak-retry-hook.mjs'",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

@@ -29,7 +29,7 @@ import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-credentials'
+import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
 export const name = 'dsh-mobile-door'
@@ -42,6 +42,11 @@ export const inject = {
 
 const AUTH_RECORD_SCOPE = 'client-connection'
 const AUTH_RECORD_ID = 'browser-session'
+/**
+ * 凭据记录键（`<scope>/<id>`，`dsh-credentials` 的 `credentialKey()` 产出同一字符串）。
+ * 写成字面量而非运行时 `import` 该包：插件要能在没装它的宿主里加载，值完全一致。
+ */
+const AUTH_RECORD_KEY = `${AUTH_RECORD_SCOPE}/${AUTH_RECORD_ID}` as CredentialKey
 const STORED_SECRET_VERSION = 1
 const SECRET_BYTES = 32
 const COOKIE_PREFIX = 'dsh-auth-'
@@ -100,6 +105,24 @@ function decodeBase64Url(value: string): Buffer | undefined {
 }
 
 /**
+ * 把请求里的 Host 归一成验收侧使用的 authority。
+ *
+ * 验收侧（browser-auth）用 WHATWG URL 解析 Host 后取 `.host`：小写化、去掉零填充端口的
+ * 前导零、缺省端口省略。凭据名与载荷都绑定这个归一形态，所以要按同一规则构造，
+ * 否则手机用 `192.168.001.5:19387` 之类写法访问时会签出一张永远验不过的 cookie。
+ * @param host - 原始 Host 头。
+ * @returns 归一后的 authority；无法解析时为 undefined。
+ */
+function canonicalAuthority(host: string): string | undefined {
+  try {
+    // http: 是 WHATWG 的 special scheme，解析成功必有非空主机名。
+    return new URL(`http://${host}`).host
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * 从凭据记录的载荷里取出签名密钥。
  * @param payload - 记录的 payload。
  * @returns 32 字节密钥。
@@ -154,7 +177,10 @@ function readSecretFromFile(): Buffer {
 }
 
 /**
- * 取签名密钥：优先走凭据服务（与连接插件同一份记录），不可用时读凭据文件。
+ * 取签名密钥：优先走凭据服务（与连接插件的同一份记录），不可用时读凭据文件。
+ *
+ * 两条路读到的都是「连接插件实际用于签发」的那把密钥，因此换存储实现也不会
+ * 签出对方不认的 cookie。
  * @param ctx - 插件上下文。
  * @returns 32 字节密钥。
  */
@@ -162,8 +188,7 @@ async function loadSecret(ctx: Context): Promise<Buffer> {
   const credentials = ctx.get('credentials')
   if (credentials !== undefined) {
     try {
-      const { credentialKey } = await import('@deepseek-ai/dsh-credentials')
-      const record = await credentials.readRecord(credentialKey(AUTH_RECORD_SCOPE, AUTH_RECORD_ID))
+      const record = await credentials.readRecord(AUTH_RECORD_KEY)
       if (record !== undefined && record.kind === 'grant') return secretFromPayload(record.payload)
     } catch (error) {
       // 凭据服务不可用或记录形状不符时退回文件读取；两条路径都失败才向上抛。
@@ -328,13 +353,13 @@ export function handleDoor(
     response.end('not found\n')
     return
   }
-  const host = (request.headers.host ?? '').split(':')[0]
-  if (host === '') {
+  const hostname = (request.headers.host ?? '').split(':')[0]
+  const authority = hostname === '' ? undefined : canonicalAuthority(`${hostname}:${String(config.targetPort)}`)
+  if (authority === undefined) {
     response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
     response.end('missing host\n')
     return
   }
-  const authority = `${host}:${String(config.targetPort)}`
   if (hasValidPass(request, authority, secret, config.days)) {
     response.writeHead(303, { 'cache-control': 'no-store', location: `http://${authority}/` })
     response.end()
