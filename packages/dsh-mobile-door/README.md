@@ -66,6 +66,15 @@ cookie 只会得到 401：
 
 `targetPort` 一般留 0：插件用自己的 `webServer.port` 作为目标端口的默认值。
 
+## 构建
+
+`lib/` 与源码一起提交（与仓库里其他插件一致），安装时不跑构建脚本：
+
+```sh
+node /path/to/deepseek-harness/node_modules/typescript/bin/tsc -p tsconfig.json
+node --test tests/*.test.mjs
+```
+
 ## 安装
 
 ```sh

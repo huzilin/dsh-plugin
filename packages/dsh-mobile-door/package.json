@@ -43,25 +43,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node -e \"fs.rmSync('lib',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test tests/*.test.mjs",
-    "prepublishOnly": "pnpm run build"
+    "test": "node --test tests/*.test.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-credentials": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.2-rc.1"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/cordis": { "optional": true },
-    "@deepseek-ai/dsh-credentials": { "optional": true },
-    "@deepseek-ai/dsh-host-webserver": { "optional": true }
+    "@deepseek-ai/cordis": "^4.0.1"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-credentials": "^0.1.2-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.1.2-rc.1",
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-credentials": "^0.2.1-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.1-rc.1",
     "@types/node": "^24.0.0",
     "typescript": "^5.6.0"
   }
