@@ -10,6 +10,7 @@ dsh-plugin/
 ├── pnpm-workspace.yaml   # packages/*
 └── packages/
     ├── dsh-approve/      # 命令白名单插件
+    ├── dsh-mobile-door/  # 手机 / iPad 进门页（局域网自动登录）
     ├── dsh-plan-view/    # Plan 标签页（客户端）
     └── dsh-tool-deny/    # 预设级工具裁剪（省 token）
 ```
@@ -21,7 +22,7 @@ dsh-plugin/
 - `package.json`：声明 `dsh.bundle.patch`（宿主激活补丁，如有）；客户端半区另声明
   `dsh.client`（`platform: "web"`、`inject` 只列启动清单里真实存在的包、
   `immediately: true`）。
-- **宿主入口**（Node）：`lib/server.js`，并让 `main` / `exports["."]` 指向它
+- **宿主入口**（Node）：`lib/index.js`（纯 Node 插件可用 `lib/server.js`），并让 `main` / `exports["."]` 指向它
   —— 绝不能让 tsdown 客户端构建覆盖同名文件。
 - **客户端半区**（浏览器）：`src/client/` + tsdown 构建到 `lib/client.js`，
   `exports["./client"]` 指向它。构建用
