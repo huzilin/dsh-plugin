@@ -8,16 +8,17 @@
 import assert from 'node:assert/strict'
 import { createHash, createHmac } from 'node:crypto'
 import http from 'node:http'
+import { connect as nodeConnect } from 'node:net'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
-import { createDoor } from '../lib/index.js'
+import { createDoor, respondToDoor } from '../lib/index.js'
 
 const SECRET = Buffer.from('0123456789abcdef0123456789abcdef', 'utf8')
 const DAYS = 400
-const TARGET_PORT = 51234
+const DSH_PORT = 51234
 
 /** 写一份最小的 .credentials.yaml，形状与 DSH 自己写出的一致。 */
 function writeCredentials(secret, records = ['client-connection/browser-session']) {
@@ -28,25 +29,26 @@ function writeCredentials(secret, records = ['client-connection/browser-session'
     lines.push('    kind: grant')
     lines.push('    payload:')
     lines.push('      version: 1')
-    lines.push(`      secret: ${secret.toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')}`)
+    lines.push(`      secret: ${secret.toString('base64url')}`)
   }
   writeFileSync(join(dir, '.credentials.yaml'), `${lines.join('\n')}\n`)
   return dir
 }
 
-/** 只看日志、不提供凭据服务的上下文替身。 */
-function stubContext() {
-  return {
-    get: () => undefined,
-    logger: { info: () => {}, warn: () => {} },
-  }
+/** 只承接日志、提供 DSH 端口的运行期依赖替身。 */
+function stubDoor(webPort = DSH_PORT) {
+  const logs = []
+  return { logs, webPort: () => webPort, log: (message) => { logs.push(message) } }
 }
 
-/** 起一个只挂进门逻辑的服务器。 */
-async function startDoor(home) {
+/** 起一个进门服务并等它监听完成。 */
+async function startDoor(home, overrides = {}, webPort = DSH_PORT) {
   process.env.DSH_HOME = home
-  const door = createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: TARGET_PORT }, stubContext())
-  await door.listen()
+  const door = createDoor(
+    { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0, ...overrides },
+    stubDoor(webPort),
+  )
+  await new Promise((resolve) => { setTimeout(resolve, 50) })
   return door
 }
 
@@ -54,7 +56,7 @@ async function startDoor(home) {
 async function get(port, path, headers = {}) {
   // 用原始 http 请求，才能自定义与 socket 地址不一致的 Host（web 的 fetch 会覆盖 Host）。
   const requestUrl = `http://127.0.0.1:${String(port)}${path}`
-  const { status, headers: responseHeaders, body } = await new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     http.get(requestUrl, { headers }, (response) => {
       const chunks = []
       response.on('data', chunk => chunks.push(chunk))
@@ -65,13 +67,32 @@ async function get(port, path, headers = {}) {
       }))
     }).on('error', reject)
   })
-  return { status, headers: responseHeaders, body }
+}
+
+/** 直接驱动一次请求处理，返回状态码与正文（用于构造真实服务器拿不到的情形）。 */
+async function drive(respond) {
+  const request = { method: 'GET', url: '/', headers: { host: '127.0.0.1:8899' } }
+  return await new Promise((resolve) => {
+    const chunks = []
+    const response = {
+      status: 0,
+      writeHead(status) { this.status = status },
+      end(body) { chunks.push(body ?? ''); resolve({ status: this.status, body: chunks.join('') }) },
+    }
+    respond(request, response)
+  })
 }
 
 /** 验收侧复算：authority 对应的 cookie 名。 */
 function expectedCookieName(authority) {
-  return 'dsh-auth-' + createHash('sha256').update(authority).digest('base64')
-    .replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
+  return 'dsh-auth-' + createHash('sha256').update(authority).digest('base64url')
+}
+
+/** 从页面里取出要写入的 cookie 名值对。 */
+function pageCookie(body) {
+  const assignment = /document\.cookie = "([^"]+)"/.exec(body)?.[1]
+  assert.ok(assignment, '页面里应有 cookie 赋值')
+  return assignment.split('; ')[0]
 }
 
 describe('dsh-mobile-door', () => {
@@ -79,31 +100,28 @@ describe('dsh-mobile-door', () => {
   before(async () => { door = await startDoor(writeCredentials(SECRET)) })
   after(() => { door.close() })
 
-  it('GET /door 返回自动进门的页面，并给出目标地址', async () => {
+  it('根路径返回自动签名的页面，并跳到 DSH 端口', async () => {
     const { status, headers, body } = await get(door.port(), '/')
     assert.equal(status, 200)
     assert.equal(headers.get('content-type'), 'text/html; charset=utf-8')
     assert.equal(headers.get('cache-control'), 'no-store')
-    assert.match(body, new RegExp(`location\\.replace\\("http://127\\.0\\.0\\.1:${String(TARGET_PORT)}/"\\)`))
-    assert.match(body, /document\.cookie = /)
+    assert.equal(headers.get('referrer-policy'), 'no-referrer')
+    assert.match(body, new RegExp(`location\\.replace\\("http://127\\.0\\.0\\.1:${String(DSH_PORT)}/"\\)`))
   })
 
   it('页面写入的 cookie 与连接插件的校验规则一致', async () => {
     const { body } = await get(door.port(), '/')
-    const assignment = /document\.cookie = "([^"]+)"/.exec(body)?.[1]
-    assert.ok(assignment, '页面里应有 cookie 赋值')
-    const [pair] = assignment.split('; ')
+    const pair = pageCookie(body)
     const at = pair.indexOf('=')
     const name = pair.slice(0, at)
     const value = pair.slice(at + 1)
 
-    const authority = `127.0.0.1:${String(TARGET_PORT)}`
+    const authority = `127.0.0.1:${String(DSH_PORT)}`
     assert.equal(name, expectedCookieName(authority))
 
     const [version, encodedBody, encodedSignature] = value.split('.')
     assert.equal(version, 'v1')
-    const signature = Buffer.from(encodedSignature, 'base64url')
-    assert.deepEqual(signature, createHmac('sha256', SECRET).update(encodedBody).digest())
+    assert.deepEqual(Buffer.from(encodedSignature, 'base64url'), createHmac('sha256', SECRET).update(encodedBody).digest())
 
     const payload = JSON.parse(Buffer.from(encodedBody, 'base64url').toString('utf8'))
     assert.equal(payload.version, 1)
@@ -112,118 +130,102 @@ describe('dsh-mobile-door', () => {
     assert.ok(payload.issuedAt <= Date.now() && payload.expiresAt > Date.now())
   })
 
-  it('authority 按验收侧规则归一（小写、去零填充端口）', async () => {
-    const upper = await get(door.port(), '/', { host: 'LOCALHOST:8899' })
-    assert.match(upper.body, /location\.replace\("http:\/\/localhost:51234\/"\)/)
-    const padded = await get(door.port(), '/', { host: '127.0.0.1:008899' })
-    assert.match(padded.body, /http:\/\/127\.0\.0\.1:51234\//)
-    const body = /document\.cookie = "([^"]+)"/.exec(upper.body)[1]
-    assert.equal(body.split('=')[0], expectedCookieName('localhost:51234'))
+  it('访问者用什么主机名来，就签给那个主机名的 DSH 端口', async () => {
+    const lan = await get(door.port(), '/', { host: '192.168.3.197:8899' })
+    assert.equal(pageCookie(lan.body).split('=')[0], expectedCookieName(`192.168.3.197:${String(DSH_PORT)}`))
+    assert.match(lan.body, new RegExp(`location\\.replace\\("http://192\\.168\\.3\\.197:${String(DSH_PORT)}/"\\)`))
+
+    const named = await get(door.port(), '/', { host: 's-mac-mini.tail3b3293.ts.net:8899' })
+    assert.equal(pageCookie(named.body).split('=')[0], expectedCookieName(`s-mac-mini.tail3b3293.ts.net:${String(DSH_PORT)}`))
   })
 
-  it('已持有有效通行证时直接跳转，不重新签发', async () => {
-    const first = await get(door.port(), '/')
-    const assignment = /document\.cookie = "([^"]+)"/.exec(first.body)[1]
-    const cookie = assignment.split('; ')[0]
-    const again = await get(door.port(), '/', { cookie })
+  it('已持有该地址的凭据时直接跳转，不重新签发', async () => {
+    const first = await get(door.port(), '/', { host: '192.168.3.197:8899' })
+    const cookie = pageCookie(first.body)
+    const again = await get(door.port(), '/', { host: '192.168.3.197:8899', cookie })
     assert.equal(again.status, 303)
-    assert.equal(again.headers.get('location'), `http://127.0.0.1:${String(TARGET_PORT)}/`)
+    assert.equal(again.headers.get('location'), `http://192.168.3.197:${String(DSH_PORT)}/`)
   })
 
-  it('伪造或被篡改的通行证不会放行', async () => {
+  it('别的主机名的凭据不算数，会重新签发', async () => {
+    const other = await get(door.port(), '/', { host: '10.0.0.7:8899' })
+    const cookie = pageCookie(other.body)
+    const here = await get(door.port(), '/', { host: '192.168.3.197:8899', cookie })
+    assert.equal(here.status, 200)
+    assert.match(here.body, /document\.cookie = /)
+  })
+
+  it('伪造或被篡改的凭据不会被当成已登录', async () => {
     const first = await get(door.port(), '/')
-    const cookie = /document\.cookie = "([^"]+)"/.exec(first.body)[1].split('; ')[0]
-    const [name, value] = cookie.split('=')
+    const [name, value] = pageCookie(first.body).split('=')
     const [version, body, signature] = value.split('.')
     const tampered = `${name}=${version}.${body}.${signature.slice(0, -2)}AA`
     assert.equal((await get(door.port(), '/', { cookie: tampered })).status, 200)
     assert.equal((await get(door.port(), '/', { cookie: `${name}=garbage` })).status, 200)
   })
 
-  it('本机访问 /status 返回自检信息，外部访问不返回', async () => {
-    const local = await get(door.port(), '/status', { host: '127.0.0.1' })
-    assert.equal(local.status, 200)
-    const status = JSON.parse(local.body)
-    assert.equal(status.target, `127.0.0.1:${String(TARGET_PORT)}`)
-    assert.equal(status.days, DAYS)
-    assert.ok(Array.isArray(status.lanAddresses))
-    const remote = await get(door.port(), '/status', { host: '192.168.1.9' })
-    assert.equal(remote.status, 404)
+  it('任何路径都只给这一页，非 GET 一律拒绝', async () => {
+    assert.equal((await get(door.port(), '/anything')).status, 200)
+    const post = await fetch(`http://127.0.0.1:${String(door.port())}/`, { method: 'POST' })
+    assert.equal(post.status, 405)
   })
 
-  it('只提供这一个固定页面', async () => {
-    assert.equal((await get(door.port(), '/elsewhere')).status, 404)
-    assert.equal((await get(door.port(), '/page')).status, 404)
-    const post = await fetch(`http://127.0.0.1:${String(door.port())}/`, { method: 'POST' })
-    assert.equal(post.status, 404)
+  it('Host 是空串时拒绝', async () => {
+    // Node 客户端不会发出空 Host，这里直接用裸 socket 写一行请求。
+    const status = await new Promise((resolve, reject) => {
+      const socket = nodeConnect(door.port(), '127.0.0.1', () => {
+        socket.write('GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n')
+      })
+      let text = ''
+      socket.on('data', (chunk) => { text += chunk.toString('utf8') })
+      socket.on('end', () => { resolve(Number(text.split(' ')[1])) })
+      socket.on('error', reject)
+    })
+    assert.equal(status, 400)
+  })
+
+  it('DSH 端口未知时明确报错，不签错地址', async () => {
+    // 直接驱动请求处理：真实服务器在监听回调里才拿得到端口，无法构造这个情形。
+    process.env.DSH_HOME = writeCredentials(SECRET)
+    const config = { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }
+    const secret = Buffer.from('0123456789abcdef0123456789abcdef', 'utf8')
+    const response = await drive((request, response) => {
+      respondToDoor(request, response, config, { ...stubDoor(undefined), webPort: () => undefined }, secret)
+    })
+    assert.equal(response.status, 503)
+    assert.match(response.body, /找不到 DSH 的端口/u)
+  })
+
+  it('配置指定端口时优先用它', async () => {
+    const pinned = await startDoor(writeCredentials(SECRET), { targetPort: 6000 })
+    const { body } = await get(pinned.port(), '/')
+    assert.match(body, /location\.replace\("http:\/\/127\.0\.0\.1:6000\/"\)/)
+    pinned.close()
   })
 })
 
 describe('dsh-mobile-door 签名密钥来源', () => {
-  it('没有凭据记录、也读不到凭据文件时不监听端口', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'dsh-mobile-door-empty-'))
-    process.env.DSH_HOME = home
-    const warnings = []
-    const ctx = { get: () => undefined, logger: { info: () => {}, warn: (error) => { warnings.push(String(error)) } } }
-    const door = createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: TARGET_PORT }, ctx)
-    await assert.rejects(door.listen(), /读不到凭据文件|凭据文件/)
-    assert.equal(door.port(), undefined)
-    door.close()
+  it('凭据文件里没有该条目时启动失败', async () => {
+    process.env.DSH_HOME = writeCredentials(SECRET, ['other/record'])
+    assert.throws(
+      () => createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }, stubDoor()),
+      /没有 client-connection\/browser-session 条目/u,
+    )
   })
 
-  it('凭据文件里的密钥对不上 32 字节时报错', async () => {
-    const home = writeCredentials(Buffer.from('short', 'utf8'))
-    process.env.DSH_HOME = home
-    const door = createDoor(
-      { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: TARGET_PORT },
-      { get: () => undefined, logger: { info: () => {}, warn: () => {} } },
+  it('凭据文件不存在时启动失败', async () => {
+    process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-mobile-door-empty-'))
+    assert.throws(
+      () => createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }, stubDoor()),
+      /读不到凭据文件/u,
     )
-    await assert.rejects(door.listen(), /secret 不是 32 字节/)
-    door.close()
   })
 
-  it('优先使用凭据服务里的记录，而不是凭据文件', async () => {
-    const fileSecret = Buffer.from('ffffffffffffffffffffffffffffffff', 'utf8')
-    const serviceSecret = Buffer.from('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'utf8')
-    process.env.DSH_HOME = writeCredentials(fileSecret)
-    const payload = { version: 1, secret: serviceSecret.toString('base64url') }
-    const ctx = {
-      get: (name) => (name === 'credentials'
-        ? { readRecord: async () => ({ kind: 'grant', payload }) }
-        : undefined),
-      logger: { info: () => {}, warn: () => {} },
-    }
-    const door = createDoor(
-      { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: TARGET_PORT },
-      ctx,
+  it('密钥不是 32 字节时报错', async () => {
+    process.env.DSH_HOME = writeCredentials(Buffer.from('short', 'utf8'))
+    assert.throws(
+      () => createDoor({ door: true, doorPort: 0, path: '/', days: DAYS, targetPort: 0 }, stubDoor()),
+      /不是 32 字节/u,
     )
-    await door.listen()
-    const body = (await get(door.port(), '/')).body
-    const value = /document\.cookie = "[^=]+=([^;]+);/.exec(body)[1]
-    const [, encodedBody, encodedSignature] = value.split('.')
-    assert.deepEqual(
-      Buffer.from(encodedSignature, 'base64url'),
-      createHmac('sha256', serviceSecret).update(encodedBody).digest(),
-    )
-    door.close()
-  })
-
-  it('凭据服务记录形状不符时退回凭据文件并留下警告', async () => {
-    process.env.DSH_HOME = writeCredentials(SECRET)
-    const warnings = []
-    const ctx = {
-      get: (name) => (name === 'credentials'
-        ? { readRecord: async () => ({ kind: 'grant', payload: { version: 9 } }) }
-        : undefined),
-      logger: { info: () => {}, warn: (error) => { warnings.push(String(error)) } },
-    }
-    const door = createDoor(
-      { door: true, doorPort: 0, path: '/', days: DAYS, targetPort: TARGET_PORT },
-      ctx,
-    )
-    await door.listen()
-    assert.equal(warnings.length, 1)
-    assert.match(warnings[0], /凭据服务读取失败/)
-    door.close()
   })
 })

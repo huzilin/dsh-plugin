@@ -1,11 +1,10 @@
-# dsh-mobile-door bundle patch —— 挂载 host 半。默认关门（door: false）；
-# 需要进门页时在 profile 的 cordis.patch.yml 里同 id 覆盖 config。
+# dsh-mobile-door bundle patch —— 挂载 host 半。默认关闭；需要时在 profile 的
+# cordis.patch.yml 里同 id 覆盖 config 打开。
 - insert:
     - id: dsh-mobile-door
       name: dsh-mobile-door
       config:
         door: false
         doorPort: 8899
-        path: /
         days: 400
         targetPort: 0

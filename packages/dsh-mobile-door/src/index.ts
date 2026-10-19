@@ -1,21 +1,27 @@
 /**
- * dsh-mobile-door — 让手机 / iPad 不用手抄登录链接就能进入 DSH 的 Web 界面。
+ * dsh-mobile-door — 手机 / iPad 进 DSH Web 的签名认证页。
  *
- * 背景：DSH 的进门流程是「带 token 的链接 → 换取长期通行证（cookie）」。
- * 那条带 token 的链接只在 `dsh web` 启动时打印在终端里，Desktop 形态下终端
- * 不可见，手机浏览器又无法手工装 cookie。本插件额外监听一个端口，提供一次性
- * 页面 `/door`：手机在局域网打开它，页面自动写入通行证并跳转到 GUI。
+ * 形态（两段式）：
+ *   1. 手机打开 `http://<本机IP>:8899` —— 本插件在这里签发一张长期凭据写给浏览器，
+ *      然后跳转；
+ *   2. 跳转到 `http://<本机IP>:<DSH端口>` —— 由 DSH 自己提供服务，凭据已被接受，
+ *      此后不再需要回到 8899。
  *
- * 与连接插件（dsh-client-connection 的 browser-auth）写下的凭据格式对齐：
+ * 为什么能跳过去：浏览器的 cookie 按**主机名**保存、不区分端口，所以 8899 页面上
+ * 写入的凭据，浏览器访问同一主机的其它端口时会自动带上。
+ *
+ * 凭据格式必须与 DSH 连接插件（dsh-client-connection 的 browser-auth）逐项一致，
+ * 否则签出来的是一张永远 401 的纸：
  *   - 签名密钥 = 凭据记录 `client-connection/browser-session` 的 `payload.secret`
- *     （32 字节的 base64url）；凭据服务不可用时退回读取 `$DSH_HOME/.credentials.yaml`。
- *   - cookie 名 = `dsh-auth-` + base64url(sha256(authority))，authority = `主机:端口`。
- *   - cookie 值 = `v1.<base64url(JSON 载荷)>.<base64url(HMAC-SHA256 签名)>`，
- *     载荷为 `{ version: 1, authority, issuedAt, expiresAt }`。
- * 三项中任何一项对不上，签出的 cookie 只会得到 401，因此这里逐项复刻而非近似。
+ *     （32 字节 base64url）；
+ *   - cookie 名 = `dsh-auth-` + base64url(sha256(authority))，authority = `主机:端口`；
+ *   - cookie 值 = `v1.<base64url(JSON{version,authority,issuedAt,expiresAt})>.<HMAC-SHA256>`。
  *
- * 安全边界：只提供这一个固定页面，不解析请求里的任何输入，也不提供写配置的接口；
- * DSH 的端口不对外暴露，暴露的只有这个一次性页面。默认关闭，由使用者在配置里打开。
+ * 关键约束：凭据里的 authority 必须等于**浏览器实际访问 DSH 时用的那串地址**，
+ * 也就是手机地址栏里的 `主机:DSH端口`。
+ *
+ * 安全边界：只提供这一个固定页面，不转发请求、不读写配置、不接受任何输入；
+ * 默认关闭，由使用者在配置里打开；用完可改回 `door: false`。
  *
  * @module dsh-mobile-door
  */
@@ -23,63 +29,44 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
 import { readFileSync } from 'node:fs'
 import { homedir, networkInterfaces } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import type { Context } from '@deepseek-ai/cordis'
-import type { CredentialKey } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
 export const name = 'dsh-mobile-door'
 
-/** 依赖：Web 服务器必选；凭据服务可选（缺失时退回凭据文件）。 */
-export const inject = {
-  required: ['webServer'],
-  optional: ['credentials'],
-}
+/** 依赖：Web 服务器必须存在，从中读取 DSH 实际监听的端口。 */
+export const inject = ['webServer']
 
 const AUTH_RECORD_SCOPE = 'client-connection'
 const AUTH_RECORD_ID = 'browser-session'
-/**
- * 凭据记录键（`<scope>/<id>`，`dsh-credentials` 的 `credentialKey()` 产出同一字符串）。
- * 写成字面量而非运行时 `import` 该包：插件要能在没装它的宿主里加载，值完全一致。
- */
-const AUTH_RECORD_KEY = `${AUTH_RECORD_SCOPE}/${AUTH_RECORD_ID}` as CredentialKey
-const STORED_SECRET_VERSION = 1
 const SECRET_BYTES = 32
 const COOKIE_PREFIX = 'dsh-auth-'
 const COOKIE_PAYLOAD_VERSION = 1
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1000
 
-/** 插件配置：由宿主 `cordis.yml` / `cordis.patch.yml` 的 `config` 提供。 */
+/** 插件配置：由宿主 cordis.yml 的 `config` 提供。 */
 export interface Config {
-  /** 是否开启进门服务；关闭时不监听任何端口。 */
+  /** 是否开启认证页；关闭时不监听任何端口。 */
   door: boolean
-  /** 进门服务监听的端口；0 表示由系统分配。 */
+  /** 认证页监听的端口。 */
   doorPort: number
-  /** 页面路径；默认 `/`，进门服务整个端口只有这一页。 */
-  path: string
-  /** 签出的通行证有效期（天），必须不大于连接插件的 `cookieMaxAgeDays`。 */
+  /** 签出的凭据有效期（天），不得大于连接插件的 cookieMaxAgeDays。 */
   days: number
-  /** 目标 GUI 所在 authority 的端口；授权给 entry 时自动补为 Web 服务器端口。 */
+  /** 跳转目标的 DSH 端口；0 表示用 Web 服务器实际监听的端口。 */
   targetPort: number
 }
 
-/** 凭据记录的载荷（连接插件写入，本插件只读）。 */
-interface StoredSecretPayload {
-  readonly version: number
-  readonly secret: string
-}
-
-/** 浏览器通行证载荷。 */
-interface BrowserCookiePayload {
-  readonly version: typeof COOKIE_PAYLOAD_VERSION
-  readonly authority: string
-  readonly issuedAt: number
-  readonly expiresAt: number
+/** 运行期依赖，测试可替换。 */
+export interface DoorContext {
+  /** DSH Web 实际监听的端口。 */
+  webPort: () => number | undefined
+  /** 日志。 */
+  log: (message: string) => void
 }
 
 /**
@@ -105,51 +92,14 @@ function decodeBase64Url(value: string): Buffer | undefined {
 }
 
 /**
- * 把请求里的 Host 归一成验收侧使用的 authority。
+ * 从凭据文件读出签名密钥。
  *
- * 验收侧（browser-auth）用 WHATWG URL 解析 Host 后取 `.host`：小写化、去掉零填充端口的
- * 前导零、缺省端口省略。凭据名与载荷都绑定这个归一形态，所以要按同一规则构造，
- * 否则手机用 `192.168.001.5:19387` 之类写法访问时会签出一张永远验不过的 cookie。
- * @param host - 原始 Host 头。
- * @returns 归一后的 authority；无法解析时为 undefined。
- */
-function canonicalAuthority(host: string): string | undefined {
-  try {
-    // http: 是 WHATWG 的 special scheme，解析成功必有非空主机名。
-    return new URL(`http://${host}`).host
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * 从凭据记录的载荷里取出签名密钥。
- * @param payload - 记录的 payload。
+ * DSH 把密钥写在 `$DSH_HOME/.credentials.yaml`，形状固定；这里只做定向解析，
+ * 不引入 YAML 依赖。找不到或形状不符一律抛错——用错密钥签出的凭据只会得到 401，
+ * 比直接报错更难排查。
  * @returns 32 字节密钥。
  */
-function secretFromPayload(payload: unknown): Buffer {
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new Error('browser-session 凭据载荷不是对象')
-  }
-  const typed = payload as Partial<StoredSecretPayload>
-  if (typed.version !== STORED_SECRET_VERSION) {
-    throw new Error('browser-session 凭据版本不受支持')
-  }
-  const secret = typeof typed.secret === 'string' ? decodeBase64Url(typed.secret) : undefined
-  if (secret === undefined || secret.byteLength !== SECRET_BYTES) {
-    throw new Error('browser-session 凭据里的密钥不是 32 字节')
-  }
-  return secret
-}
-
-/**
- * 不经凭据服务时，从 `$DSH_HOME/.credentials.yaml` 定向读取签名密钥。
- *
- * 该文件是 DSH 自己写出的固定形状，这里只做定向解析、不引入 YAML 依赖。
- * 找不到或形状不符一律抛错——用错误密钥签出的 cookie 只会得到 401，比报错更难排查。
- * @returns 32 字节密钥。
- */
-function readSecretFromFile(): Buffer {
+export function readSigningSecret(): Buffer {
   const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
   const file = join(home, '.credentials.yaml')
   let raw: string
@@ -161,15 +111,13 @@ function readSecretFromFile(): Buffer {
   const lines = raw.split('\n')
   const anchor = lines.findIndex(line => new RegExp(`^\\s*${AUTH_RECORD_SCOPE}/${AUTH_RECORD_ID}:\\s*$`, 'u').test(line))
   if (anchor === -1) throw new Error('凭据文件里没有 client-connection/browser-session 条目')
-  const anchorIndent = lines[anchor]?.search(/\S/u) ?? -1
+  const anchorIndent = (lines[anchor] ?? '').search(/\S/u)
   for (const line of lines.slice(anchor + 1)) {
     if (line.trim() === '') continue
-    // 缩进回到条目层级即已离开该条目。
     if (line.search(/\S/u) <= anchorIndent) break
     const match = /^\s*secret:\s*(\S+)\s*$/u.exec(line)
-    const raw = match?.[1]
-    if (raw === undefined) continue
-    const secret = decodeBase64Url(raw.replace(/^["']|["']$/gu, ''))
+    if (match === null || match[1] === undefined) continue
+    const secret = decodeBase64Url(match[1].replace(/^["']|["']$/gu, ''))
     if (secret !== undefined && secret.byteLength === SECRET_BYTES) return secret
     throw new Error('凭据条目里的 secret 不是 32 字节的 base64url')
   }
@@ -177,62 +125,51 @@ function readSecretFromFile(): Buffer {
 }
 
 /**
- * 取签名密钥：优先走凭据服务（与连接插件的同一份记录），不可用时读凭据文件。
- *
- * 两条路读到的都是「连接插件实际用于签发」的那把密钥，因此换存储实现也不会
- * 签出对方不认的 cookie。
- * @param ctx - 插件上下文。
- * @returns 32 字节密钥。
- */
-async function loadSecret(ctx: Context): Promise<Buffer> {
-  const credentials = ctx.get('credentials')
-  if (credentials !== undefined) {
-    try {
-      const record = await credentials.readRecord(AUTH_RECORD_KEY)
-      if (record !== undefined && record.kind === 'grant') return secretFromPayload(record.payload)
-    } catch (error) {
-      // 凭据服务不可用或记录形状不符时退回文件读取；两条路径都失败才向上抛。
-      ctx.logger.warn(new Error(`dsh-mobile-door: 凭据服务读取失败，改读凭据文件：${String(error)}`))
-    }
-  }
-  return readSecretFromFile()
-}
-
-/**
  * 计算某个 authority 对应的 cookie 名。
  * @param authority - `主机:端口`。
  * @returns cookie 名。
  */
-function cookieName(authority: string): string {
+export function cookieName(authority: string): string {
   return COOKIE_PREFIX + encodeBase64Url(createHash('sha256').update(authority).digest())
 }
 
 /**
- * 签发一张浏览器通行证。
+ * 签发一张凭据。
  * @param authority - `主机:端口`。
  * @param secret - 签名密钥。
  * @param days - 有效期天数。
  * @returns cookie 名与值。
  */
-function mintCookie(authority: string, secret: Buffer, days: number): { name: string, value: string } {
+export function mintCookie(
+  authority: string,
+  secret: Buffer,
+  days: number,
+): { name: string, value: string } {
   const issuedAt = Date.now()
-  const expiresAt = issuedAt + days * DAY_MILLISECONDS
-  const payload: BrowserCookiePayload = { version: COOKIE_PAYLOAD_VERSION, authority, issuedAt, expiresAt }
+  const payload = {
+    version: COOKIE_PAYLOAD_VERSION,
+    authority,
+    issuedAt,
+    expiresAt: issuedAt + days * DAY_MILLISECONDS,
+  }
   const body = encodeBase64Url(Buffer.from(JSON.stringify(payload), 'utf8'))
   const signature = createHmac('sha256', secret).update(body).digest()
-  return { name: cookieName(authority), value: `v1.${body}.${encodeBase64Url(signature)}` }
+  return {
+    name: cookieName(authority),
+    value: `v${String(COOKIE_PAYLOAD_VERSION)}.${body}.${encodeBase64Url(signature)}`,
+  }
 }
 
 /**
- * 取请求携带的同源通行证值（定向解析，不实现通用 Cookie 解码）。
- * @param request - 进来的 HTTP 请求。
+ * 取请求携带的某个 cookie 值。
+ * @param request - 进来的请求。
  * @param target - cookie 名。
  * @returns cookie 值；未携带时为 undefined。
  */
 function cookieValue(request: IncomingMessage, target: string): string | undefined {
-  const rawCookie = request.headers.cookie
-  if (rawCookie === undefined) return undefined
-  for (const segment of rawCookie.split(';')) {
+  const raw = request.headers.cookie
+  if (raw === undefined) return undefined
+  for (const segment of raw.split(';')) {
     const at = segment.indexOf('=')
     if (at === -1 || segment.slice(0, at).trim() !== target) continue
     return segment.slice(at + 1).trim()
@@ -241,64 +178,51 @@ function cookieValue(request: IncomingMessage, target: string): string | undefin
 }
 
 /**
- * 校验请求自带的通行证是否由同一密钥签发、绑定同一 authority 且仍然有效。
+ * 校验一枚凭据确是本插件用同一把密钥、为同一地址签发的。
  *
- * 已持有有效通行证的设备重复打开进门页时直接跳转，不再重新签发，避免旧 cookie
- * 被覆盖成另一份有效期。
- * @param request - 进来的 HTTP 请求。
- * @param authority - 目标 authority（`主机:端口`）。
+ * 只判断「有没有带 cookie」不够：任何伪造值都会让页面提前跳转，把用户送进一个
+ * 401 的页面里，反而看不出问题。
+ * @param value - 请求携带的 cookie 值。
+ * @param authority - 期望的 `主机:端口`。
  * @param secret - 签名密钥。
- * @param days - 允许的最长有效期（天）。
- * @returns 请求是否已持有有效通行证。
+ * @returns 是否为本插件为该地址签发的有效凭据。
  */
-function hasValidPass(
-  request: IncomingMessage,
-  authority: string,
-  secret: Buffer,
-  days: number,
-): boolean {
-  const value = cookieValue(request, cookieName(authority))
+function isSignedHere(value: string | undefined, authority: string, secret: Buffer): boolean {
   if (value === undefined) return false
   const parts = value.split('.')
-  const [version, body, encodedSignature] = parts
-  if (parts.length !== 3 || version !== 'v1' || body === undefined || encodedSignature === undefined) return false
-  const actual = decodeBase64Url(encodedSignature)
+  if (parts.length !== 3 || parts[0] !== `v${String(COOKIE_PAYLOAD_VERSION)}`) return false
+  const [, body, signature] = parts
   const expected = createHmac('sha256', secret).update(body).digest()
+  const actual = decodeBase64Url(signature)
   if (actual === undefined || actual.byteLength !== expected.byteLength) return false
   if (!timingSafeEqual(actual, expected)) return false
-  const decoded = decodeBase64Url(body)
-  if (decoded === undefined) return false
-  let payload: BrowserCookiePayload
   try {
-    payload = JSON.parse(decoded.toString('utf8'))
+    const payload = JSON.parse(Buffer.from(decodeBase64Url(body) ?? Buffer.alloc(0)).toString('utf8')) as unknown
+    if (typeof payload !== 'object' || payload === null) return false
+    const record = payload as Record<string, unknown>
+    return record['authority'] === authority && typeof record['expiresAt'] === 'number' && record['expiresAt'] > Date.now()
   } catch {
+    // 载荷不是合法 JSON，说明这枚凭据不是本插件写下的样子。
     return false
   }
-  const now = Date.now()
-  return payload.version === COOKIE_PAYLOAD_VERSION
-    && payload.authority === authority
-    && payload.issuedAt <= now
-    && payload.expiresAt > now
-    && payload.expiresAt - payload.issuedAt <= days * DAY_MILLISECONDS
 }
 
 /**
- * 枚举当前非回环 IPv4 地址，供手机选择可达地址。
- * @returns IPv4 地址列表。
+ * 枚举当前可用的非回环 IPv4 地址。
+ * @returns 地址列表。
  */
-function lanAddresses(): string[] {
+export function lanAddresses(): string[] {
   return Object.values(networkInterfaces()).flat()
-    .flatMap(iface => (iface !== undefined && iface.family === 'IPv4' && !iface.internal ? [iface.address] : []))
+    .filter((iface): iface is NonNullable<typeof iface> => iface !== undefined)
+    .filter(iface => iface.family === 'IPv4' && !iface.internal)
+    .map(iface => iface.address)
 }
 
 /**
- * 渲染进门页面：先写 cookie（与目标同一主机，故 document.cookie 生效），再跳转。
- *
- * 跳转与「立即进入」按钮都用同一个绝对地址：相对地址在不同浏览器里会被补成别的主机名
- * （见 {@link DoorStatus.target}）。
- * @param authority - 目标 authority（`主机:端口`）。
- * @param cookie - 要写入的通行证。
- * @param days - 通行证有效期（天），用于 max-age。
+ * 渲染认证页：先写入凭据，再跳到 DSH 端口。
+ * @param authority - 目标 authority（`主机:DSH端口`）。
+ * @param cookie - 要写入的凭据。
+ * @param days - 有效期（天），用于 max-age。
  * @returns HTML 文本。
  */
 export function doorPage(authority: string, cookie: { name: string, value: string }, days: number): string {
@@ -312,8 +236,8 @@ export function doorPage(authority: string, cookie: { name: string, value: strin
 <style>
   :root { color-scheme: light dark; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-         font: 16px/1.6 -apple-system, system-ui, "PingFang SC", sans-serif; padding:24px; }
-  main { max-width: 26rem; text-align:center; }
+         font:16px/1.6 -apple-system,system-ui,"PingFang SC",sans-serif; padding:24px; }
+  main { max-width:26rem; text-align:center; }
   h1 { font-size:1.25rem; margin:0 0 .75rem; }
   p { margin:.5rem 0; opacity:.8; }
   a { display:inline-block; margin-top:1.25rem; padding:.85rem 1.6rem; border-radius:.75rem;
@@ -324,11 +248,11 @@ export function doorPage(authority: string, cookie: { name: string, value: strin
   <h1>正在进入 DSH</h1>
   <p id="status">正在写入登录凭据…</p>
   <p><code>${authority}</code></p>
-  <p>凭据有效期 ${String(days)} 天，期间这台设备无需再次登录。</p>
+  <p>凭据有效期 ${String(days)} 天，这台设备期间无需再来本页。</p>
   <p><a id="go" href="${target}">立即进入</a></p>
 </main>
 <script>
-  // cookie 按主机生效、不区分端口，这正是本页能替 DSH 端口写凭据的原因。
+  // cookie 按主机生效、不区分端口，这是本页能替 DSH 端口写凭据的原因。
   document.cookie = ${JSON.stringify(assignment)}
   document.getElementById('status').textContent = '凭据已写入，正在跳转…'
   location.replace(${JSON.stringify(target)})
@@ -337,59 +261,44 @@ export function doorPage(authority: string, cookie: { name: string, value: strin
 `
 }
 
-/** 进门服务的自检信息；只有从本机回环访问 `/status` 时才返回。 */
-export interface DoorStatus {
-  /** 目标 GUI 的 authority（`主机:端口`）。 */
-  target: string
-  /** 凭据有效期（天）。 */
-  days: number
-  /** 非回环 IPv4 地址，即手机可用的访问主机。 */
-  lanAddresses: string[]
-}
-
-/** 请求是否来自本机回环（按 Host 判断，不信任对端地址）。 */
-function isLoopbackRequest(request: IncomingMessage): boolean {
-  const hostname = (request.headers.host ?? '').split(':')[0]
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]'
-}
-
 /**
- * 处理进门请求：GET `config.path` 回页面，本机回环 GET `/status` 回自检信息，其余一律 404。
- * @param request - 进来的 HTTP 请求。
- * @param response - 响应所有者。
- * @param config - 已解析的配置。
+ * 处理一次进门请求：已持有有效凭据就跳转，否则签发后跳转，其余明确拒绝。
+ *
+ * 单独导出而不是闭在 `createDoor` 里，是因为「DSH 端口未知」这类情形无法用真实
+ * 监听的服务器构造出来，只能直接驱动这一步。
+ * @param request - 进来的请求。
+ * @param response - 要写的响应。
+ * @param config - 插件配置。
+ * @param door - 运行期依赖。
  * @param secret - 签名密钥。
  */
-export function handleDoor(
+export function respondToDoor(
   request: IncomingMessage,
   response: ServerResponse,
   config: Config,
+  door: DoorContext,
   secret: Buffer,
 ): void {
-  const path = (request.url ?? '/').split('?')[0]
-  if (request.method === 'GET' && path === '/status' && path !== config.path && isLoopbackRequest(request)) {
-    const status: DoorStatus = {
-      target: `127.0.0.1:${String(config.targetPort)}`,
-      days: config.days,
-      lanAddresses: lanAddresses(),
-    }
-    response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-    response.end(`${JSON.stringify(status)}\n`)
+  if (request.method !== 'GET') {
+    response.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' })
+    response.end('method not allowed\n')
     return
   }
-  if (request.method !== 'GET' || path !== config.path) {
-    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
-    response.end('not found\n')
+  const targetPort = config.targetPort !== 0 ? config.targetPort : door.webPort()
+  if (targetPort === undefined) {
+    response.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' })
+    response.end('dsh-mobile-door: 找不到 DSH 的端口\n')
     return
   }
-  const hostname = (request.headers.host ?? '').split(':')[0]
-  const authority = hostname === '' ? undefined : canonicalAuthority(`${hostname}:${String(config.targetPort)}`)
-  if (authority === undefined) {
+  const rawHost = request.headers.host
+  if (rawHost === undefined || rawHost === '') {
     response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
     response.end('missing host\n')
     return
   }
-  if (hasValidPass(request, authority, secret, config.days)) {
+  // 凭据绑定「浏览器访问 DSH 时用的地址」：同一主机名 + DSH 的端口。
+  const authority = `${rawHost.split(':')[0]}:${String(targetPort)}`
+  if (isSignedHere(cookieValue(request, cookieName(authority)), authority, secret)) {
     response.writeHead(303, { 'cache-control': 'no-store', location: `http://${authority}/` })
     response.end()
     return
@@ -402,78 +311,51 @@ export function handleDoor(
   response.end(doorPage(authority, mintCookie(authority, secret, config.days), config.days))
 }
 
-/** 进门服务实例：监听（含异步取密钥失败）的完整生命周期。 */
-export interface DoorServer {
-  /**
-   * 开始监听；签名密钥异步取到之前不占用端口。
-   * @returns 异步取密钥并开始监听，失败时 reject 同样的错误。
-   */
-  listen(): Promise<void>
-  /** 关闭监听（幂等）。 */
-  close(): void
-  /** 实际监听端口；未开始监听时为 undefined。 */
-  port(): number | undefined
-}
-
 /**
- * 创建进门服务（尚未监听）。
- * @param config - 已解析的配置。
- * @param ctx - 插件上下文（取签名密钥与日志用）。
- * @returns 服务实例。
+ * 启动认证页服务。
+ * @param config - 插件配置。
+ * @param door - 运行期依赖。
+ * @returns 关闭函数与监听端口。
  */
-export function createDoor(config: Config, ctx: Context): DoorServer {
+export function createDoor(
+  config: Config,
+  door: DoorContext,
+): { close: () => void, port: () => number | undefined } {
+  const secret = readSigningSecret()
   let server: Server | undefined
-  let closing = false
+
+  const handle = (request: IncomingMessage, response: ServerResponse): void => {
+    respondToDoor(request, response, config, door, secret)
+  }
+
+  const created = createServer(handle)
+  created.on('error', (error) => { door.log(`监听失败：${error.message}`) })
+  created.listen(config.doorPort, '0.0.0.0', () => {
+    const address = created.address()
+    const actual = typeof address === 'object' && address !== null ? address.port : config.doorPort
+    const urls = lanAddresses().map(ip => `http://${ip}:${String(actual)}`)
+    door.log(urls.length === 0 ? '认证页已启动，但没有非回环地址' : `认证页：${urls.join('  ')}`)
+  })
+  server = created
   return {
-    async listen() {
-      const secret = await loadSecret(ctx)
-      if (closing) return
-      const created = createServer((request, response) => { handleDoor(request, response, config, secret) })
-      server = created
-      await new Promise<void>((resolve, reject) => {
-        created.once('error', reject)
-        created.listen(config.doorPort, '0.0.0.0', () => {
-          created.off('error', reject)
-          resolve()
-        })
-      })
-    },
-    close() {
-      closing = true
-      server?.close()
-      server = undefined
-    },
-    port() {
+    close: () => { server?.close(); server = undefined },
+    port: () => {
       const address = server?.address()
-      return typeof address === 'object' && address !== null ? (address as AddressInfo).port : undefined
+      return typeof address === 'object' && address !== null ? address.port : undefined
     },
   }
 }
 
 /**
- * 插件入口：按配置起进门服务；默认关门。
- *
- * 组件卸载时关闭服务，避免端口被遗留进程占住。
+ * 插件入口。
  * @param ctx - 插件上下文。
  * @param config - 宿主传入的配置。
  */
 export function apply(ctx: Context, config: Config): void {
   if (!config.door) return
-  const door = createDoor(config, ctx)
-  void door.listen().then(() => {
-    const port = door.port()
-    const urls = lanAddresses().map(ip => `http://${ip}:${String(port)}${config.path}`)
-    const gui = `127.0.0.1:${String(config.targetPort)}`
-    ctx.logger.info(urls.length === 0
-      ? '[dsh-mobile-door] 进门服务已启动，但没有非回环地址；用 ADDRESS 替换成这台机器的 IP'
-      : `[dsh-mobile-door] 进门服务已启动：${urls.join('  ')}`)
-    // 页面写入的凭据绑在「访问进门页时用的主机名 + GUI 端口」上，所以跳转目标必须用同一个主机名；
-    // 不同浏览器对相对跳转的补全方式不同（有的会补成 www.<ip>），排查时先看这几行。
-    ctx.logger.info(`[dsh-mobile-door] 手机进门：用 http://ADDRESS:${String(port)}${config.path} 打开（ADDRESS 取上面列表里的 IP），`
-      + `页面会写入绑定 ADDRESS:${String(config.targetPort)} 的凭据并跳转到同一主机。`
-      + `先用本机 http://127.0.0.1:${String(port)}/status 自检（目标 ${gui}）。`)
-  }).catch((error: unknown) => {
-    ctx.logger.warn(new Error(`[dsh-mobile-door] 进门服务未启动：${error instanceof Error ? error.message : String(error)}`))
+  const door = createDoor(config, {
+    webPort: () => ctx.webServer.port,
+    log: (message) => { console.log(`[dsh-mobile-door] ${message}`) },
   })
-  ctx.effect(() => () => { door.close() }, 'dsh-mobile-door: server lifetime')
+  ctx.effect(() => () => { door.close() }, 'dsh-mobile-door: 认证页')
 }
