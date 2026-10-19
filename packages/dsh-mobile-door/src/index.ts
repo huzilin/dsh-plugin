@@ -60,7 +60,7 @@ export interface Config {
   door: boolean
   /** 进门服务监听的端口；0 表示由系统分配。 */
   doorPort: number
-  /** 页面路径（进门服务上的固定路径）。 */
+  /** 页面路径；默认 `/`，进门服务整个端口只有这一页。 */
   path: string
   /** 签出的通行证有效期（天），必须不大于连接插件的 `cookieMaxAgeDays`。 */
   days: number

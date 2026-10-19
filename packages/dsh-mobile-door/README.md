@@ -20,7 +20,7 @@ DSH 的 cookie 按**主机名**生效、不区分端口。所以只要有一个�
 不同端口的页面，就能替 GUI 的端口写好 cookie。
 
 ```
-手机 → http://192.168.x.x:8899/door   （本插件的进门页）
+手机 → http://192.168.x.x:8899        （本插件的进门页）
        页面 JS 写入 dsh-auth-<hash>=v1.… cookie（绑定 192.168.x.x:19387）
        自动跳转 → http://192.168.x.x:19387/   （DSH GUI，已登录）
 ```
@@ -62,7 +62,7 @@ cookie 只会得到 401：
   config:
     door: true          # 打开进门页
     doorPort: 8899      # 进门服务端口；0 = 系统分配
-    path: /door         # 页面路径
+    path: /             # 页面路径；整个端口只有这一页
     days: 400           # 通行证有效期，不得超过连接插件的 cookieMaxAgeDays
     targetPort: 0       # 0 = 用 DSH Web 实际端口
 ```
@@ -87,7 +87,7 @@ dsh plugin --profile desktop add 'github:huzilin/dsh-plugin#path:/packages/dsh-m
 改完冷启动一次（重启 DSH 进程）。启动日志里会打印可用的局域网地址：
 
 ```
-[dsh-mobile-door] 进门服务已启动：http://192.168.x.x:8899/door
+[dsh-mobile-door] 进门服务已启动：http://192.168.x.x:8899
 ```
 
 ## 与「公网访问」的关系
@@ -96,7 +96,7 @@ dsh plugin --profile desktop add 'github:huzilin/dsh-plugin#path:/packages/dsh-m
 
 - 局域网 / 手机同一 Wi-Fi：进门页地址直接用。
 - 外网：先让 DSH 的端口对外可达（如 Tailscale 的机器 IP），再用
-  `http://<tailscale-ip>:8899/door` 打开；cookie 绑定的是你访问时用的主机名，
+  `http://<tailscale-ip>:8899` 打开；cookie 绑定的是你访问时用的主机名，
   所以进门前后的地址主机名必须一致。
 
 ## 已知限制

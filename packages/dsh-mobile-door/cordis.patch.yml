@@ -6,6 +6,6 @@
       config:
         door: false
         doorPort: 8899
-        path: /door
+        path: /
         days: 400
         targetPort: 0
