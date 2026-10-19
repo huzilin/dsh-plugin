@@ -140,6 +140,17 @@ describe('dsh-mobile-door', () => {
     assert.equal((await get(door.port(), '/', { cookie: `${name}=garbage` })).status, 200)
   })
 
+  it('本机访问 /status 返回自检信息，外部访问不返回', async () => {
+    const local = await get(door.port(), '/status', { host: '127.0.0.1' })
+    assert.equal(local.status, 200)
+    const status = JSON.parse(local.body)
+    assert.equal(status.target, `127.0.0.1:${String(TARGET_PORT)}`)
+    assert.equal(status.days, DAYS)
+    assert.ok(Array.isArray(status.lanAddresses))
+    const remote = await get(door.port(), '/status', { host: '192.168.1.9' })
+    assert.equal(remote.status, 404)
+  })
+
   it('只提供这一个固定页面', async () => {
     assert.equal((await get(door.port(), '/elsewhere')).status, 404)
     assert.equal((await get(door.port(), '/page')).status, 404)

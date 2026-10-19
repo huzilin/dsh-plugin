@@ -257,12 +257,15 @@ function lanAddresses() {
 }
 /**
  * 渲染进门页面：先写 cookie（与目标同一主机，故 document.cookie 生效），再跳转。
+ *
+ * 跳转与「立即进入」按钮都用同一个绝对地址：相对地址在不同浏览器里会被补成别的主机名
+ * （见 {@link DoorStatus.target}）。
  * @param authority - 目标 authority（`主机:端口`）。
  * @param cookie - 要写入的通行证。
  * @param days - 通行证有效期（天），用于 max-age。
  * @returns HTML 文本。
  */
-function doorPage(authority, cookie, days) {
+export function doorPage(authority, cookie, days) {
     const target = `http://${authority}/`;
     const assignment = `${cookie.name}=${cookie.value}; path=/; max-age=${String(days * 24 * 60 * 60)}`;
     return `<!doctype html>
@@ -297,8 +300,13 @@ function doorPage(authority, cookie, days) {
 </body></html>
 `;
 }
+/** 请求是否来自本机回环（按 Host 判断，不信任对端地址）。 */
+function isLoopbackRequest(request) {
+    const hostname = (request.headers.host ?? '').split(':')[0];
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]';
+}
 /**
- * 处理进门请求：GET `config.path` 回页面，其余一律 404。
+ * 处理进门请求：GET `config.path` 回页面，本机回环 GET `/status` 回自检信息，其余一律 404。
  * @param request - 进来的 HTTP 请求。
  * @param response - 响应所有者。
  * @param config - 已解析的配置。
@@ -306,6 +314,16 @@ function doorPage(authority, cookie, days) {
  */
 export function handleDoor(request, response, config, secret) {
     const path = (request.url ?? '/').split('?')[0];
+    if (request.method === 'GET' && path === '/status' && path !== config.path && isLoopbackRequest(request)) {
+        const status = {
+            target: `127.0.0.1:${String(config.targetPort)}`,
+            days: config.days,
+            lanAddresses: lanAddresses(),
+        };
+        response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        response.end(`${JSON.stringify(status)}\n`);
+        return;
+    }
     if (request.method !== 'GET' || path !== config.path) {
         response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
         response.end('not found\n');
@@ -379,9 +397,15 @@ export function apply(ctx, config) {
     void door.listen().then(() => {
         const port = door.port();
         const urls = lanAddresses().map(ip => `http://${ip}:${String(port)}${config.path}`);
+        const gui = `127.0.0.1:${String(config.targetPort)}`;
         ctx.logger.info(urls.length === 0
-            ? '[dsh-mobile-door] 进门服务已启动，但没有非回环地址'
+            ? '[dsh-mobile-door] 进门服务已启动，但没有非回环地址；用 ADDRESS 替换成这台机器的 IP'
             : `[dsh-mobile-door] 进门服务已启动：${urls.join('  ')}`);
+        // 页面写入的凭据绑在「访问进门页时用的主机名 + GUI 端口」上，所以跳转目标必须用同一个主机名；
+        // 不同浏览器对相对跳转的补全方式不同（有的会补成 www.<ip>），排查时先看这几行。
+        ctx.logger.info(`[dsh-mobile-door] 手机进门：用 http://ADDRESS:${String(port)}${config.path} 打开（ADDRESS 取上面列表里的 IP），`
+            + `页面会写入绑定 ADDRESS:${String(config.targetPort)} 的凭据并跳转到同一主机。`
+            + `先用本机 http://127.0.0.1:${String(port)}/status 自检（目标 ${gui}）。`);
     }).catch((error) => {
         ctx.logger.warn(new Error(`[dsh-mobile-door] 进门服务未启动：${error instanceof Error ? error.message : String(error)}`));
     });
